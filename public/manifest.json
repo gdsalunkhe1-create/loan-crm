@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "CALL-Q PRO",
+  "name": "CALL-Q PRO CRM",
+  "description": "CALL-Q PRO CRM progressive web app for loan and CRM management.",
   "icons": [
     {
       "src": "favicon.ico",
@@ -19,7 +20,8 @@
     }
   ],
   "start_url": ".",
+  "scope": ".",
   "display": "standalone",
-  "theme_color": "#000000",
+  "theme_color": "#185FA5",
   "background_color": "#ffffff"
 }
