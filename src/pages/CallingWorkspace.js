@@ -1,6 +1,8 @@
 /* eslint-disable */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabase'
+import { buildIST, toDbTimestamp, formatIST } from '../utils/timeUtils'
+import CallState from '../plugins/CallState'
 import {
   IconPhone, IconPhoneOff, IconBrandWhatsapp, IconNotes,
   IconClock, IconX, IconCheck, IconFlame, IconDroplet,
@@ -10,16 +12,17 @@ import {
 } from '@tabler/icons-react'
 
 const QUICK_DISPOSITIONS = [
-  {label:'Interested',       color:'#3B6D11', bg:'#EAF3DE', status:'Interested'},
-  {label:'Callback',         color:'#854F0B', bg:'#FAEEDA', status:'Callback'},
-  {label:'RNR',              color:'#534AB7', bg:'#EEEDFE', status:'Callback'},
-  {label:'Not Interested',   color:'#791F1F', bg:'#FCEBEB', status:'Not Interested'},
-  {label:'Docs Pending',     color:'#0C447C', bg:'#E6F1FB', status:'Documents Pending'},
-  {label:'Logged In',        color:'#92400E', bg:'#FEF3C7', status:'Login'},
-  {label:'Approved',         color:'#27500A', bg:'#EAF3DE', status:'Approved'},
-  {label:'Disbursed',        color:'#065F46', bg:'#D1FAE5', status:'Disbursed'},
-  {label:'Rejected',         color:'#7F1D1D', bg:'#FEE2E2', status:'Rejected'},
+  {label:'Ringing',         color:'#534AB7', bg:'#EEEDFE'},
+  {label:'Not Reachable',   color:'#92400E', bg:'#FEF3C7'},
+  {label:'Switched Off',    color:'#6B7280', bg:'#F3F4F6'},
+  {label:'Voice Mail',      color:'#0E7490', bg:'#CFFAFE'},
+  {label:'Callback',        color:'#854F0B', bg:'#FAEEDA'},
+  {label:'Not Interested',  color:'#791F1F', bg:'#FCEBEB'},
+  {label:'Approved',        color:'#27500A', bg:'#EAF3DE'},
+  {label:'Disbursed Other', color:'#065F46', bg:'#D1FAE5'},
 ]
+
+const STAGE_OPTIONS = ['New','Interested','Callback','Documents Pending','Login','Approved','Disbursed','Not Interested','DND']
 
 const CALL_OUTCOMES = [
   'Connected','Not Connected','Busy','Switched Off','RNR','Interested','Follow Up','Rejected'
@@ -42,12 +45,13 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave }) {
+export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave, queuePosition, totalInQueue }) {
   const isMobile = useIsMobile()
   const [callStarted, setCallStarted]     = useState(false)
   const [callTimer, setCallTimer]         = useState(0)
   const [callOutcome, setCallOutcome]     = useState('')
-  const [disposition, setDisposition]     = useState(lead?.status||'New')
+  const [disposition, setDisposition]     = useState('')
+  const [leadStage, setLeadStage]         = useState(lead?.status||'New')
   const [liveNote, setLiveNote]           = useState('')
   const [noteHistory, setNoteHistory]     = useState([])
   const [followUpDate, setFollowUpDate]   = useState('')
@@ -56,6 +60,8 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
   const [temperature, setTemperature]     = useState(lead?.lead_temperature||'Cold')
   const [saving, setSaving]               = useState(false)
   const [saved, setSaved]                 = useState(false)
+  const [callSaved, setCallSaved]         = useState(false)
+  const [savedCallId, setSavedCallId]     = useState(null)
   const [showWA, setShowWA]               = useState(false)
   const [waTemplates, setWaTemplates]     = useState([])
 
@@ -81,15 +87,54 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
   const autoSaveRef= useRef(null)
   const noteRef    = useRef(null)
 
-  // Load existing note history and obligations
+  // ── CALL-STATE PLUGIN: auto-detection additions ─────────────────────────
+  // To revert: remove this block, the "CALL-STATE PLUGIN" useEffect, the
+  // callJustEnded + callNotConnected banners in JSX, and the import of CallState.
+  const seenOffhookRef   = useRef(false)   // true only after OFFHOOK this cycle
+  const callStartedRef   = useRef(false)   // mirrors callStarted for plugin callbacks
+  const handleEndCallRef = useRef(null)    // always points to latest handleEndCall
+  const isDialingRef     = useRef(false)   // mirrors isDialing for plugin callbacks
+  const [callJustEnded,    setCallJustEnded]    = useState(false)
+  const [callNotConnected, setCallNotConnected] = useState(false)
+  const [isDialing,        setIsDialing]        = useState(false)
+
+  // Reset ALL local state when the lead identity changes (power dialer next-lead)
   useEffect(()=>{
+    setDisposition('')
+    setLeadStage(lead?.status||'New')
+    setTemperature(lead?.lead_temperature||'Cold')
+    setLoanForm({
+      monthly_salary:    lead?.monthly_salary||'',
+      company_name:      lead?.company_name||'',
+      loan_type:         lead?.loan_type||'Personal Loan',
+      existing_emi:      lead?.existing_emi||'',
+      existing_loan:     lead?.existing_loan||'',
+      outstanding_amount:lead?.outstanding_amount||'',
+      housing_loan:      lead?.housing_loan||false,
+      joint_loan:        lead?.joint_loan||false,
+      loan_amount:       lead?.loan_amount||'',
+    })
+    setCallTimer(0)
+    setCallStarted(false)
+    setCallSaved(false)
+    setSavedCallId(null)
+    setLiveNote('')
+    setFollowUpDate('')
+    setFollowUpTime('')
+    setShowFollowUp(false)
+    setCallJustEnded(false)
+    setCallNotConnected(false)
+    setIsDialing(false)
+    seenOffhookRef.current = false
     if(lead?.call_history){
       try{ setNoteHistory(typeof lead.call_history==='string'?JSON.parse(lead.call_history):lead.call_history) }
-      catch(e){}
+      catch(e){ setNoteHistory([]) }
+    } else {
+      setNoteHistory([])
     }
     loadWATemplates()
     loadObligations()
-  },[lead])
+  },[lead?.id])
 
   // Auto save every 8 seconds
   useEffect(()=>{
@@ -108,6 +153,48 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
     }
     return()=>clearInterval(timerRef.current)
   },[callStarted])
+
+  // ── CALL-STATE PLUGIN: register listener once per lead ───────────────────
+  useEffect(()=>{
+    let handle = null
+    CallState.startListening().catch(()=>{})
+    CallState.addListener('callStateChanged', ({ state })=>{
+      if(state === 'OFFHOOK'){
+        // Call actually connected — NOW start the real talk timer
+        seenOffhookRef.current = true
+        setIsDialing(false)
+        setCallNotConnected(false)
+        if(!callStartedRef.current){
+          setCallTimer(0)
+          setCallStarted(true)
+          setCallSaved(false)
+          setSavedCallId(null)
+        }
+      } else if(state === 'IDLE'){
+        if(seenOffhookRef.current){
+          // Real call ended (OFFHOOK was seen) — stop timer, prompt disposition
+          seenOffhookRef.current = false
+          setIsDialing(false)
+          handleEndCallRef.current?.()
+          setCallJustEnded(true)
+        } else if(isDialingRef.current || callStartedRef.current){
+          // IDLE without OFFHOOK — missed / busy / cancelled before answer
+          setIsDialing(false)
+          setCallStarted(false)
+          setCallTimer(0)
+          setCallNotConnected(true)
+          setCallOutcome('Not Connected')
+        }
+      } else if(state === 'RINGING'){
+        // Ringing: OFFHOOK hasn't fired yet; keep isDialing state as-is
+        seenOffhookRef.current = false
+      }
+    }).then(h=>{ handle = h })
+    return()=>{
+      CallState.stopListening().catch(()=>{})
+      handle?.remove()
+    }
+  },[lead?.id])
 
   const loadWATemplates=async()=>{
     const{data}=await supabase.from('settings').select('*').eq('key','wa_templates').single()
@@ -222,14 +309,60 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
   }
 
   const startCall=()=>{
-    setCallStarted(true)
-    window.location.href=`tel:${lead.mobile}`
+    setCallTimer(0)
+    setCallStarted(false)   // timer starts only when OFFHOOK fires
+    setIsDialing(true)
+    setCallSaved(false)
+    setSavedCallId(null)
+    setCallJustEnded(false)
+    setCallNotConnected(false)
+    if(lead?.mobile) window.location.href=`tel:${lead.mobile}`
+  }
+
+  const buildCallNotesText=()=>noteHistory.map(n=>`[${n.time}] ${n.text}`).join('\n')
+
+  const saveCallRecord=async()=>{
+    const callPayload={
+      lead_id:      lead.id,
+      agent_id:     userId,
+      call_status:  callOutcome||'Answered',
+      call_outcome: disposition||'Connected',
+      duration:     formatTimer(callTimer),
+      notes:        buildCallNotesText(),
+    }
+    if(savedCallId){
+      const {data,error}=await supabase.from('calls').update(callPayload).eq('id',savedCallId).select().single()
+      if(error) throw error
+      return data
+    }
+    const {data,error}=await supabase.from('calls').insert([callPayload]).select().single()
+    if(error) throw error
+    setSavedCallId(data?.id||null)
+    return data
+  }
+
+  const handleEndCall=async()=>{
+    if(!callStarted) return
+    setIsDialing(false)
+    setCallStarted(false)
+    clearInterval(timerRef.current)
+    if(callTimer<=0) return
+    try{
+      const savedCall=await saveCallRecord()
+      if(savedCall){
+        setCallSaved(true)
+        setTimeout(()=>setCallSaved(false),2500)
+        if(onSave) onSave({call:savedCall})
+      }
+    }catch(err){
+      console.error('Failed to save call on end:', err)
+    }
   }
 
   const addTimestampedNote=()=>{
     if(!liveNote.trim())return
     const now=new Date()
-    const time=now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})
+    const time=now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})
     const entry={time, text:liveNote.trim(), at:now.toISOString()}
     setNoteHistory(prev=>[...prev, entry])
     setLiveNote('')
@@ -257,17 +390,19 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
   }
 
   const handleDispositionClick=(disp)=>{
-    setDisposition(disp.status)
-    if(disp.status==='Callback') setShowFollowUp(true)
+    setDisposition(disp.label)
+    if(disp.label==='Callback') setShowFollowUp(true)
   }
 
   const handleSaveAndNext=async()=>{
+    setCallJustEnded(false)
+    setCallNotConnected(false)
     setSaving(true)
     try {
       const now=new Date()
       const callEntry={
-        time: now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
-        date: now.toLocaleDateString('en-IN'),
+        time: now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'}),
+        date: now.toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}),
         duration: formatTimer(callTimer),
         outcome: callOutcome,
         disposition,
@@ -283,7 +418,8 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
       const notesText = noteHistory.map(n=>`[${n.time}] ${n.text}`).join('\n')
 
       const updateData = {
-        status:           disposition,
+        status:           leadStage,
+        disposition:      disposition,
         lead_temperature: temperature,
         monthly_salary:   loanForm.monthly_salary||null,
         company_name:     loanForm.company_name||null,
@@ -297,33 +433,49 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
         notes:            (lead.notes||'')+(lead.notes?'\n':'')+notesText,
         call_history:     JSON.stringify([...existingHistory, callEntry]),
         call_count:       (lead.call_count||0)+1,
+        // leads.follow_up_date is a plain `timestamp` (no timezone) column —
+        // write the canonical IST string directly, no UTC conversion needed.
         follow_up_date:   followUpDate&&followUpTime
-          ? new Date(`${followUpDate}T${followUpTime}`).toISOString()
+          ? buildIST(followUpDate,followUpTime)
           : lead.follow_up_date||null,
       }
 
-      await supabase.from('leads').update(updateData).eq('id', lead.id)
-
       // Log call
-      await supabase.from('calls').insert([{
+      const callPayload={
         lead_id:      lead.id,
         agent_id:     userId,
         call_status:  callOutcome||'Connected',
         call_outcome: disposition,
         duration:     formatTimer(callTimer),
         notes:        notesText,
-      }])
+      }
+
+      const [, callsResult] = await Promise.all([
+        supabase.from('leads').update(updateData).eq('id', lead.id),
+        savedCallId
+          ? supabase.from('calls').update(callPayload).eq('id',savedCallId).select().single()
+          : supabase.from('calls').insert([callPayload]).select().single()
+      ])
+
+      if(callsResult.error) throw callsResult.error
+      const savedCall=callsResult.data
+      if(!savedCallId && savedCall?.id) setSavedCallId(savedCall.id)
+
+      if(onSave) onSave({lead:updateData, call:savedCall})
 
       // Create callback task if needed
       if(disposition==='Callback' && followUpDate && followUpTime){
         await supabase.from('tasks').insert([{
-          title:       `Callback: ${lead.full_name}`,
-          lead_id:     lead.id,
+          title:       `Callback: ${lead?.full_name||''}`,
+          lead_id:     lead?.id,
           assigned_to: userId,
           priority:    'High',
           status:      'Pending',
           notes:       notesText,
-          due_date:    new Date(`${followUpDate}T${followUpTime}`).toISOString()
+          // tasks.due_date is `timestamptz` — must be written as an explicit
+          // UTC instant (toDbTimestamp) or Postgres stores it 5h30m off.
+          // See src/utils/timeUtils.js for the full explanation.
+          due_date:    toDbTimestamp(buildIST(followUpDate,followUpTime))
         }])
       }
 
@@ -351,39 +503,61 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
   const obligationTotals = calculateObligationTotals(obligationDrafts)
 
+  // Keep plugin-callback refs in sync with the latest render's values
+  callStartedRef.current   = callStarted
+  handleEndCallRef.current = handleEndCall
+  isDialingRef.current     = isDialing
+
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
       <div style={{background:'white',borderRadius:16,width:'100%',maxWidth:1000,maxHeight:'95vh',overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
 
         {/* ── HEADER ── */}
-        <div style={{background:'linear-gradient(135deg,#185FA5,#1e40af)',padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',gap:14}}>
-            <div style={{width:42,height:42,borderRadius:'50%',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'white'}}>
+        <div style={{background:'linear-gradient(135deg,#185FA5,#1e40af)',padding:'14px 16px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
+          {/* Left — avatar + info block */}
+          <div style={{display:'flex',alignItems:'flex-start',gap:12,flex:1,minWidth:0}}>
+            <div style={{width:42,height:42,borderRadius:'50%',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'white',flexShrink:0}}>
               {lead.full_name?.[0]?.toUpperCase()}
             </div>
-            <div>
-              <div style={{color:'white',fontWeight:700,fontSize:16}}>{lead.full_name}</div>
-              <div style={{color:'rgba(255,255,255,0.7)',fontSize:12}}>+91 {lead.mobile} {lead.city?`· ${lead.city}`:''}</div>
-            </div>
-            {/* Temperature tag */}
-            <div style={{display:'flex',gap:6,marginLeft:8}}>
-              {Object.entries(TEMP_CONFIG).map(([t,cfg])=>(
-                <button key={t} onClick={()=>setTemperature(t)}
-                  style={{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:20,border:'1.5px solid '+(temperature===t?'white':'rgba(255,255,255,0.3)'),background:temperature===t?'white':'transparent',color:temperature===t?cfg.color:'rgba(255,255,255,0.7)',fontSize:11,fontWeight:600,cursor:'pointer',transition:'all 0.15s'}}>
-                  {cfg.icon}{t}
-                </button>
-              ))}
+            <div style={{flex:1,minWidth:0}}>
+              {/* Name — max 2 lines then ellipsis */}
+              <div style={{color:'white',fontWeight:700,fontSize:15,lineHeight:1.3,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word'}}>
+                {lead?.full_name||'—'}
+              </div>
+              {/* Queue badge + temperature tags on one wrapping row */}
+              <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:5,marginTop:5}}>
+                {totalInQueue>0&&(
+                  <span style={{background:'rgba(255,255,255,0.2)',color:'white',fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:20,letterSpacing:'0.03em',flexShrink:0}}>
+                    ⚡ {queuePosition} / {totalInQueue}
+                  </span>
+                )}
+                {Object.entries(TEMP_CONFIG).map(([t,cfg])=>(
+                  <button key={t} onClick={()=>setTemperature(t)}
+                    style={{display:'flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:20,border:'1.5px solid '+(temperature===t?'white':'rgba(255,255,255,0.3)'),background:temperature===t?'white':'transparent',color:temperature===t?cfg.color:'rgba(255,255,255,0.7)',fontSize:11,fontWeight:600,cursor:'pointer',transition:'all 0.15s',flexShrink:0}}>
+                    {cfg.icon}{t}
+                  </button>
+                ))}
+              </div>
+              {/* Phone / City / App# */}
+              <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                +91 {lead?.mobile||'—'}{lead?.city?` · ${lead.city}`:''}{lead?.application_id?` · App# ${lead.application_id}`:''}
+              </div>
             </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            {/* Call timer */}
+          {/* Right — state indicator + saved + close */}
+          <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0,marginLeft:8}}>
+            {isDialing&&(
+              <div style={{background:'rgba(255,255,255,0.15)',borderRadius:8,padding:'6px 10px',color:'#fde68a',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:5}}>
+                📞 Calling…
+              </div>
+            )}
             {callStarted&&(
-              <div style={{background:'rgba(255,255,255,0.15)',borderRadius:8,padding:'6px 12px',color:'white',fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:6}}>
+              <div style={{background:'rgba(255,255,255,0.15)',borderRadius:8,padding:'6px 10px',color:'white',fontWeight:700,fontSize:13,display:'flex',alignItems:'center',gap:5}}>
                 <IconClock size={14}/>{formatTimer(callTimer)}
               </div>
             )}
-            {saved&&<div style={{background:'rgba(255,255,255,0.15)',borderRadius:8,padding:'6px 12px',color:'#86efac',fontSize:12,fontWeight:500}}>✓ Auto-saved</div>}
-            <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {saved&&<div style={{background:'rgba(255,255,255,0.15)',borderRadius:8,padding:'6px 10px',color:'#86efac',fontSize:12,fontWeight:500}}>✓</div>}
+            <button onClick={onClose} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
               <IconX size={16}/>
             </button>
           </div>
@@ -395,15 +569,34 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
           {/* LEFT — Customer Info + Loan Qualification */}
           <div style={{padding:18,overflowY:'auto',borderRight:'1px solid #E2E8F0'}}>
 
-            {/* Call button */}
+            {/* Dialing indicator */}
+            {isDialing&&(
+              <div style={{marginBottom:16,padding:16,background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:14,textAlign:'center'}}>
+                <div style={{fontSize:28,fontWeight:800,color:'#92400E',letterSpacing:2}}>📞 Calling…</div>
+                <div style={{fontSize:12,color:'#78350F',fontWeight:600,marginTop:6}}>Waiting for call to connect</div>
+              </div>
+            )}
+            {/* Live call timer (only once OFFHOOK fires) */}
+            {callStarted&&(
+              <div style={{marginBottom:16,padding:16,background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:14,textAlign:'center'}}>
+                <div style={{fontSize:34,fontWeight:800,color:'#B91C1C'}}>{formatTimer(callTimer)}</div>
+                <div style={{fontSize:12,color:'#991B1B',fontWeight:700,marginTop:4}}>Connected — real talk time</div>
+              </div>
+            )}
+            {/* Call button — 3 states: Start / Calling… / End Call */}
             <div style={{marginBottom:16,display:'flex',gap:10}}>
-              {!callStarted?(
+              {!isDialing&&!callStarted?(
                 <button onClick={startCall}
                   style={{flex:1,padding:'13px',background:'#16a34a',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 4px 14px rgba(22,163,74,0.35)'}}>
                   <IconPhone size={18}/>Start Call
                 </button>
+              ):isDialing?(
+                <button onClick={()=>setIsDialing(false)}
+                  style={{flex:1,padding:'13px',background:'#d97706',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                  <IconPhone size={18}/>Calling… — tap to cancel
+                </button>
               ):(
-                <button onClick={()=>setCallStarted(false)}
+                <button onClick={handleEndCall}
                   style={{flex:1,padding:'13px',background:'#dc2626',color:'white',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
                   <IconPhoneOff size={18}/>End Call — {formatTimer(callTimer)}
                 </button>
@@ -416,7 +609,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
             {/* LOAN QUALIFICATION */}
             <div style={{background:'#F9FAFB',borderRadius:10,padding:16,border:'1px solid #E2E8F0',marginBottom:14}}>
-              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>📋 Loan Qualification</div>
+              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:14,textTransform:'uppercase',letterSpacing:'0.5px'}}>Loan Qualification</div>
 
               <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12}}>
 
@@ -494,7 +687,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
             {/* OBLIGATIONS SECTION */}
             <div style={{background:'#111827',borderRadius:16,padding:18,border:'1px solid #334155',marginBottom:14}}>
-              <div style={{fontSize:14,fontWeight:800,color:'white',marginBottom:16,textTransform:'uppercase',letterSpacing:'0.5px'}}>💰 Existing Obligations</div>
+              <div style={{fontSize:14,fontWeight:800,color:'white',marginBottom:16,textTransform:'uppercase',letterSpacing:'0.5px'}}>Existing Obligations</div>
 
               {/* Obligation Totals */}
               <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,auto)',gap:10,marginBottom:16}}>
@@ -633,7 +826,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
             {/* Previous call history */}
             {lead.call_count>0&&(
               <div style={{background:'#FFFAF0',border:'1px solid #F6E05E',borderRadius:8,padding:12}}>
-                <div style={{fontSize:11,fontWeight:700,color:'#744210',marginBottom:8,textTransform:'uppercase'}}>📞 Previous Calls ({lead.call_count})</div>
+                <div style={{fontSize:11,fontWeight:700,color:'#744210',marginBottom:8,textTransform:'uppercase'}}>Previous Calls ({lead.call_count})</div>
                 {(()=>{
                   try{
                     const hist=typeof lead.call_history==='string'?JSON.parse(lead.call_history):lead.call_history||[]
@@ -651,9 +844,31 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
           {/* RIGHT — Notes + Quick Actions */}
           <div style={{padding:18,display:'flex',flexDirection:'column',gap:14,overflowY:'auto'}}>
 
+            {/* Real call ended — OFFHOOK was seen */}
+            {callJustEnded&&(
+              <div style={{background:'#fef3c7',border:'2px solid #f59e0b',borderRadius:12,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+                <span style={{fontSize:22,lineHeight:1}}>📞</span>
+                <div>
+                  <div style={{fontSize:14,fontWeight:800,color:'#92400e'}}>Call ended · {formatTimer(callTimer)} talk time</div>
+                  <div style={{fontSize:12,color:'#78350f',marginTop:2}}>Select a disposition below and tap <strong>Save &amp; Next Lead</strong></div>
+                </div>
+              </div>
+            )}
+
+            {/* Not connected — IDLE fired without OFFHOOK */}
+            {callNotConnected&&(
+              <div style={{background:'#f1f5f9',border:'2px solid #94a3b8',borderRadius:12,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+                <span style={{fontSize:22,lineHeight:1}}>📵</span>
+                <div>
+                  <div style={{fontSize:14,fontWeight:800,color:'#334155'}}>Call not answered</div>
+                  <div style={{fontSize:12,color:'#64748b',marginTop:2}}>Select <strong>RNR</strong>, <strong>Busy</strong> or <strong>Not Connected</strong> then tap <strong>Save &amp; Next Lead</strong></div>
+                </div>
+              </div>
+            )}
+
             {/* LIVE NOTES */}
             <div>
-              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>📝 Live Call Notes</div>
+              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>Live Call Notes</div>
 
               {/* Notes history */}
               {noteHistory.length>0&&(
@@ -682,20 +897,31 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
             {/* QUICK DISPOSITIONS */}
             <div>
-              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>⚡ Quick Disposition</div>
+              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>Quick Disposition</div>
               <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'1fr 1fr 1fr',gap:8}}>
                 {QUICK_DISPOSITIONS.map(d=>(
                   <button key={d.label} onClick={()=>handleDispositionClick(d)}
-                    style={{padding:'12px 10px',borderRadius:10,border:'2px solid '+(disposition===d.status?d.color:'#E2E8F0'),background:disposition===d.status?d.bg:'white',color:disposition===d.status?d.color:'#374151',fontSize:13,fontWeight:700,cursor:'pointer',transition:'all 0.15s',textAlign:'center'}}>
+                    style={{padding:'12px 10px',borderRadius:10,border:'2px solid '+(disposition===d.label?d.color:'#E2E8F0'),background:disposition===d.label?d.bg:'white',color:disposition===d.label?d.color:'#374151',fontSize:13,fontWeight:700,cursor:'pointer',transition:'all 0.15s',textAlign:'center'}}>
                     {d.label}
                   </button>
                 ))}
               </div>
             </div>
 
+            {/* LEAD STAGE — separate from disposition */}
+            <div>
+              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>Lead Stage (separate from disposition)</div>
+              <select
+                value={leadStage}
+                onChange={e=>setLeadStage(e.target.value)}
+                style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'2px solid #E2E8F0',background:'white',color:'#111827',fontSize:14,outline:'none',boxSizing:'border-box',fontWeight:500}}>
+                {STAGE_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
             {/* CALL OUTCOME */}
             <div>
-              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>📞 Call Outcome</div>
+              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>Call Outcome</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                 {CALL_OUTCOMES.map(o=>(
                   <button key={o} onClick={()=>setCallOutcome(o)}
@@ -725,7 +951,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
                 </div>
                 {followUpDate&&followUpTime&&(
                   <div style={{marginTop:10,fontSize:13,color:'#744210',fontWeight:600}}>
-                    ✅ Reminder set: {new Date(`${followUpDate}T${followUpTime}`).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                    ✅ Reminder set: {formatIST(buildIST(followUpDate,followUpTime))}
                   </div>
                 )}
               </div>
@@ -736,7 +962,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
               <button onClick={handleSaveAndNext} disabled={saving}
                 style={{flex:1,padding:'14px 20px',background:saving?'#E5E7EB':'#059669',color:saving?'#9CA3AF':'white',border:'none',borderRadius:12,fontSize:15,fontWeight:700,cursor:saving?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
                 <IconPlayerSkipForward size={17}/>
-                {saving?'Saving…':'Save & Next Lead'}
+                {saving?'Saving…':totalInQueue>0&&queuePosition>=totalInQueue?'Save & Finish ✓':'Save & Next Lead'}
               </button>
               <button onClick={()=>{autoSaveDraft();onClose&&onClose()}}
                 style={{padding:'14px 20px',background:'#F3F4F6',color:'#374151',border:'none',borderRadius:12,fontSize:15,fontWeight:700,cursor:'pointer'}}>
@@ -752,7 +978,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
             <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',zIndex:10}} onClick={()=>setShowWA(false)}/>
             <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:14,width:420,maxHeight:'80vh',overflow:'hidden',zIndex:20,boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
               <div style={{background:'#25D366',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,color:'white',fontWeight:700,fontSize:14}}><IconBrandWhatsapp size={18}/>WhatsApp — {lead.full_name}</div>
+                <div style={{display:'flex',alignItems:'center',gap:8,color:'white',fontWeight:700,fontSize:14}}><IconBrandWhatsapp size={18}/>WhatsApp — {lead?.full_name}</div>
                 <button onClick={()=>setShowWA(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',width:26,height:26,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
               </div>
               <div style={{padding:16,overflowY:'auto',maxHeight:'calc(80vh - 60px)'}}>

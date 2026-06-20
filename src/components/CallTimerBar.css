@@ -1,0 +1,171 @@
+/* Call Timer Bar Styles */
+.call-timer-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 0 8px 32px rgba(239, 68, 68, 0.3);
+  z-index: 10000;
+  border-bottom: 3px solid #ef4444;
+}
+
+.call-timer-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 300px;
+}
+
+.call-pulsing-dot {
+  width: 14px;
+  height: 14px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: pulse-call 2s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-call {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+.call-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.call-lead-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.call-phone {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.call-timer-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.call-timer-display {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 2px;
+  color: #fbbf24;
+}
+
+.call-status {
+  font-size: 12px;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.call-timer-right {
+  display: flex;
+  gap: 12px;
+  min-width: 300px;
+  justify-content: flex-end;
+}
+
+.call-btn {
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.not-connected-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.not-connected-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.end-call-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.end-call-btn:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .call-timer-bar {
+    height: auto;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    padding-top: 20px;
+  }
+
+  .call-timer-left {
+    width: 100%;
+    min-width: auto;
+  }
+
+  .call-timer-center {
+    width: 100%;
+  }
+
+  .call-timer-right {
+    width: 100%;
+    min-width: auto;
+    gap: 8px;
+  }
+
+  .call-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 12px 8px;
+    font-size: 13px;
+  }
+
+  .call-timer-display {
+    font-size: 24px;
+  }
+
+  .call-lead-name {
+    font-size: 14px;
+  }
+
+  .call-phone {
+    font-size: 12px;
+  }
+}

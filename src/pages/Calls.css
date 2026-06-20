@@ -1,0 +1,106 @@
+/* Calls Page — Premium Design */
+.calls-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.calls-header {
+  padding: 18px 24px 14px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+.calls-header h1 { font-size: 18px; font-weight: 700; color: #0f172a; margin: 0; }
+.calls-header p  { font-size: 13px; color: #64748b; margin: 4px 0 0; }
+
+.calls-content { padding: 20px 24px; }
+
+.recent-calls-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.recent-calls-section h2 {
+  font-size: 15px; font-weight: 700; color: #0f172a;
+  margin: 0 0 14px;
+}
+
+.loading {
+  padding: 40px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+
+.calls-list { display: flex; flex-direction: column; gap: 8px; }
+
+.call-item {
+  display: flex; justify-content: space-between;
+  align-items: center; gap: 12px;
+  padding: 13px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  cursor: default;
+}
+.call-item:hover {
+  border-color: #c8d8ec;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+
+.call-item-left {
+  display: flex; align-items: center;
+  gap: 12px; flex: 1; min-width: 0;
+}
+
+.call-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: #e6f0fb;
+  color: #185fa5;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.call-icon.missed { background: #fee2e2; color: #dc2626; }
+
+.call-details { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.call-lead { font-size: 13px; font-weight: 600; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-time { font-size: 11px; color: #94a3b8; }
+
+.call-item-right {
+  display: flex; align-items: center;
+  gap: 10px; flex-shrink: 0;
+}
+
+.call-duration {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 600; color: #374151;
+  background: #f1f5f9;
+  padding: 4px 9px; border-radius: 6px;
+}
+
+.disposition-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .calls-header { padding: 12px 16px; }
+  .calls-header h1 { font-size: 16px; }
+  .calls-content { padding: 12px 16px; }
+  .recent-calls-section { padding: 14px; }
+
+  .call-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .call-item-left  { width: 100%; }
+  .call-item-right { width: 100%; justify-content: space-between; }
+}

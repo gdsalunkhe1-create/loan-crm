@@ -1,4 +1,4 @@
-const CACHE_NAME = 'call-q-pro-crm-v1'
+const CACHE_NAME = 'call-q-pro-crm-v2'
 const OFFLINE_URLS = [
   '/',
   '/index.html',
@@ -35,7 +35,21 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  if (event.request.mode === 'navigate' || (event.request.destination === 'document' && event.request.headers.get('accept')?.includes('text/html'))) {
+  const url = new URL(event.request.url)
+
+  // Never cache Supabase API calls — always go straight to the network.
+  // Caching these caused stale lead/data responses on first load.
+  if (url.hostname.includes('supabase.co')) {
+    event.respondWith(fetch(event.request))
+    return
+  }
+
+  // Navigation requests: network-first, fall back to cached index.html for offline
+  if (
+    event.request.mode === 'navigate' ||
+    (event.request.destination === 'document' &&
+      event.request.headers.get('accept')?.includes('text/html'))
+  ) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
@@ -49,6 +63,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // Static assets (JS, CSS, images, fonts): cache-first for offline support
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {

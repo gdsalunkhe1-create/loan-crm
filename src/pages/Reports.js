@@ -1,6 +1,24 @@
 /* eslint-disable */
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null } }
+  static getDerivedStateFromError(e) { return { hasError: true, error: e.message } }
+  componentDidCatch(e, info) { console.error('Error:', e, info) }
+  render() {
+    if (this.state.hasError) return (
+      <div style={{padding:40,textAlign:'center',background:'white',borderRadius:12,border:'1px solid #fecaca',margin:20}}>
+        <div style={{fontSize:28,marginBottom:10}}>⚠️</div>
+        <div style={{fontSize:16,fontWeight:700,color:'#dc2626',marginBottom:6}}>Something went wrong</div>
+        <div style={{fontSize:13,color:'#6b7280',marginBottom:16}}>{this.state.error}</div>
+        <button onClick={()=>this.setState({hasError:false,error:null})} style={{padding:'7px 18px',background:'#185FA5',color:'white',border:'none',borderRadius:8,cursor:'pointer',marginRight:8}}>Try Again</button>
+        <button onClick={()=>window.location.reload()} style={{padding:'7px 18px',background:'white',color:'#185FA5',border:'1px solid #185FA5',borderRadius:8,cursor:'pointer'}}>Reload</button>
+      </div>
+    )
+    return this.props.children
+  }
+}
 import {
   IconUsers, IconPhoneIncoming, IconThumbUp, IconClockHour4,
   IconCircleCheck, IconMoneybag, IconAlertTriangle, IconTarget
@@ -74,6 +92,7 @@ export default function Reports({ userRole, userId }) {
   ]
 
   return (
+    <ErrorBoundary>
     <div>
       <div className="page-header">
         <div>
@@ -188,5 +207,6 @@ export default function Reports({ userRole, userId }) {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

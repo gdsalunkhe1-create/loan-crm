@@ -1,0 +1,56 @@
+/* Call Button Styles */
+.call-button {
+  background: linear-gradient(135deg, #0c7ad1 0%, #185fa5 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(12, 122, 209, 0.2);
+}
+
+.call-button:hover {
+  background: linear-gradient(135deg, #0a5fa5 0%, #164a89 100%);
+  box-shadow: 0 4px 12px rgba(12, 122, 209, 0.4);
+  transform: translateY(-2px);
+}
+
+.call-button:active {
+  transform: translateY(0);
+}
+
+/* Size Variants */
+.call-btn-xs {
+  padding: 4px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+
+.call-btn-sm {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.call-btn-md {
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.call-btn-lg {
+  padding: 12px 18px;
+  font-size: 15px;
+  border-radius: 8px;
+}
+
+.call-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

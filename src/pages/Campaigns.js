@@ -1,6 +1,24 @@
 /* eslint-disable */
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null } }
+  static getDerivedStateFromError(e) { return { hasError: true, error: e.message } }
+  componentDidCatch(e, info) { console.error('Error:', e, info) }
+  render() {
+    if (this.state.hasError) return (
+      <div style={{padding:40,textAlign:'center',background:'white',borderRadius:12,border:'1px solid #fecaca',margin:20}}>
+        <div style={{fontSize:28,marginBottom:10}}>⚠️</div>
+        <div style={{fontSize:16,fontWeight:700,color:'#dc2626',marginBottom:6}}>Something went wrong</div>
+        <div style={{fontSize:13,color:'#6b7280',marginBottom:16}}>{this.state.error}</div>
+        <button onClick={()=>this.setState({hasError:false,error:null})} style={{padding:'7px 18px',background:'#185FA5',color:'white',border:'none',borderRadius:8,cursor:'pointer',marginRight:8}}>Try Again</button>
+        <button onClick={()=>window.location.reload()} style={{padding:'7px 18px',background:'white',color:'#185FA5',border:'1px solid #185FA5',borderRadius:8,cursor:'pointer'}}>Reload</button>
+      </div>
+    )
+    return this.props.children
+  }
+}
 import {
   IconPlayerPlay, IconPhone, IconUsers, IconUpload,
   IconX, IconCheck, IconPlayerSkipForward,
@@ -24,12 +42,17 @@ export default function Campaigns({ userRole, userId }) {
   const [showCSVModal, setShowCSVModal] = useState(false)
   const [csvFile, setCsvFile] = useState(null)
   const [csvPreview, setCsvPreview] = useState([])
+  const [csvTotalCount, setCsvTotalCount] = useState(0)
   const [showAgentModal, setShowAgentModal] = useState(false)
   const [campaignStats, setCampaignStats] = useState({})
   const [selectedAgentsForCSV, setSelectedAgentsForCSV] = useState([])
   const [csvDistribution, setCsvDistribution] = useState('single')
   const [reassignModal, setReassignModal] = useState(false)
   const [selectedLeadForReassign, setSelectedLeadForReassign] = useState(null)
+  const [leadStages, setLeadStages] = useState([])
+  const [openMenuId, setOpenMenuId] = useState(null)
+  const [renamingId, setRenamingId] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
   const csvRef = useRef()
 
   const [form, setForm] = useState({
@@ -45,7 +68,19 @@ export default function Campaigns({ userRole, userId }) {
     fetchCampaigns()
     fetchAllAgents()
     fetchDispositions()
+    fetchLeadStages()
   }, [])
+
+  const fetchLeadStages = async () => {
+    const { data } = await supabase.from('lead_stages').select('*').eq('is_active',true).order('order_index')
+    if (data && data.length > 0) setLeadStages(data)
+  }
+
+  const stageStyle = name => {
+    const s = leadStages.find(st => st.name === name)
+    if (s?.color) return { bg: s.color + '22', color: s.color }
+    return { bg: '#F3F4F6', color: '#6B7280' }
+  }
 
   const fetchCampaigns = async () => {
     if (isAgent) {
@@ -129,13 +164,33 @@ export default function Campaigns({ userRole, userId }) {
     reader.onload = (evt) => {
       const text = evt.target.result
       const lines = text.split('\n').filter(l=>l.trim())
-      const headers = lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/ /g,'_'))
+      const rawHeaders = lines[0].replace(/^\uFEFF/,'').split(',').map(h=>h.trim())
+      const normalizeRow = (obj) => {
+        const find = (keys) => { for(const k of keys){ const found=Object.keys(obj).find(ok=>ok.trim().toLowerCase()===k.toLowerCase()); if(found&&obj[found]) return obj[found].trim() } return '' }
+        const dateVal = find(['date','Date','DATE','created_at'])
+        const whoCall = find(['who call','Who Call','WHO CALL','who_call'])
+        const notesBase = find(['notes','Notes','remarks','Remarks','comments','Comments','description'])
+        const combinedNotes = [notesBase, whoCall, dateVal?`Date: ${dateVal}`:''].filter(Boolean).join(' | ')
+        return {
+          full_name: find(['full_name','Full Name','Name','name','FULL NAME','customer_name','Customer Name','CUSTOMER NAME']),
+          mobile: find(['mobile','Mobile','Phone','phone','PHONE','Phone Number','phone number','contact','number','mob','cell']),
+          email: find(['email','Email','EMAIL','e-mail']),
+          city: find(['city','City','CITY','location','Location','district','District','area']),
+          loan_amount: find(['loan_amount','Loan Amount','Amt','amt','Amount','AMT','AMOUNT','loan amt','Loan Amt']),
+          status: find(['status','Status','Staus','staus','Stage','stage','STATUS']),
+          notes: combinedNotes,
+          application_id: find(['application_id','BARCODE','barcode','app_id','Application ID','ref_no','Ref No','Reference','appid','AppID']),
+          lead_source: find(['source','Source','SOURCE','lead_source','Lead Source','leadsource']),
+          product_interest: find(['product_interest','Product Interest','product','Product','loan type','Loan Type','loantype'])||'Personal Loan',
+        }
+      }
       const rows = lines.slice(1).map(line => {
         const values = line.split(',')
         const obj = {}
-        headers.forEach((h,i)=>{ obj[h]=values[i]?values[i].trim():'' })
-        return obj
+        rawHeaders.forEach((h,i)=>{ obj[h]=values[i]?values[i].trim():'' })
+        return normalizeRow(obj)
       }).filter(r=>r.full_name&&r.mobile)
+      setCsvTotalCount(rows.length)
       setCsvPreview(rows.slice(0,5))
     }
     reader.readAsText(file)
@@ -151,12 +206,32 @@ export default function Campaigns({ userRole, userId }) {
     reader.onload = async (evt) => {
       const text = evt.target.result
       const lines = text.split('\n').filter(l=>l.trim())
-      const headers = lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/ /g,'_'))
+      const rawHeaders2 = lines[0].replace(/^\uFEFF/,'').split(',').map(h=>h.trim())
+      const normalizeRow2 = (obj) => {
+        const find = (keys) => { for(const k of keys){ const found=Object.keys(obj).find(ok=>ok.trim().toLowerCase()===k.toLowerCase()); if(found&&obj[found]) return obj[found].trim() } return '' }
+        const dateVal = find(['date','Date','DATE','created_at'])
+        const whoCall = find(['who call','Who Call','WHO CALL','who_call'])
+        const notesBase = find(['notes','Notes','remarks','Remarks','comments','Comments','description'])
+        const combinedNotes = [notesBase, whoCall, dateVal?`Date: ${dateVal}`:''].filter(Boolean).join(' | ')
+        return {
+          full_name: find(['full_name','Full Name','Name','name','FULL NAME','customer_name','Customer Name']),
+          mobile: find(['mobile','Mobile','Phone','phone','PHONE','Phone Number','phone number','contact','number','mob','cell']),
+          email: find(['email','Email','EMAIL','e-mail']),
+          city: find(['city','City','CITY','location','Location','district','area']),
+          loan_amount: find(['loan_amount','Loan Amount','Amt','amt','Amount','AMT','AMOUNT','loan amt']),
+          status: find(['status','Status','Staus','staus','Stage','stage','STATUS'])||'New',
+          notes: combinedNotes||null,
+          application_id: find(['application_id','BARCODE','barcode','app_id','Application ID','ref_no','Ref No','Reference','appid'])||null,
+          lead_source: find(['source','Source','SOURCE','lead_source','Lead Source','leadsource'])||null,
+          product_interest: find(['product_interest','Product Interest','product','Product','loan type','Loan Type'])||'Personal Loan',
+          campaign_id: selectedCampaign.id,
+        }
+      }
       const allRows = lines.slice(1).map(line => {
         const values = line.split(',')
         const obj = {}
-        headers.forEach((h,i)=>{ obj[h]=values[i]?values[i].trim():'' })
-        return {...obj, status:'New', product_interest:obj.product_interest||'Personal Loan', campaign_id:selectedCampaign.id}
+        rawHeaders2.forEach((h,i)=>{ obj[h]=values[i]?values[i].trim():'' })
+        return normalizeRow2(obj)
       }).filter(r=>r.full_name&&r.mobile)
 
       let rowsToInsert = []
@@ -182,6 +257,7 @@ export default function Campaigns({ userRole, userId }) {
           setShowCSVModal(false)
           setCsvFile(null)
           setCsvPreview([])
+          setCsvTotalCount(0)
           setSelectedAgentsForCSV([])
           fetchCampaignLeads(selectedCampaign.id)
           fetchCampaignStats(selectedCampaign.id)
@@ -215,6 +291,29 @@ export default function Campaigns({ userRole, userId }) {
     fetchCampaignLeads(selectedCampaign.id)
     setReassignModal(false)
     setSelectedLeadForReassign(null)
+  }
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this campaign? This cannot be undone.')) return
+    await supabase.from('campaigns').delete().eq('id', id)
+    fetchCampaigns()
+    if (selectedCampaign?.id === id) setSelectedCampaign(null)
+  }
+
+  const handleRename = async (id, newName) => {
+    if (!newName.trim()) { setRenamingId(null); return }
+    await supabase.from('campaigns').update({ name: newName.trim() }).eq('id', id)
+    fetchCampaigns()
+    setRenamingId(null)
+  }
+
+  const handleAgentChange = async (campaignId, agentId) => {
+    if (!agentId) return
+    const { data: existing } = await supabase.from('campaign_agents')
+      .select('id').eq('campaign_id', campaignId).eq('agent_id', agentId).maybeSingle()
+    if (!existing) {
+      await supabase.from('campaign_agents').insert([{ campaign_id: campaignId, agent_id: agentId }])
+    }
   }
 
   const openCampaign = async (campaign) => {
@@ -402,19 +501,18 @@ export default function Campaigns({ userRole, userId }) {
               <div style={{background:'#FFFAF0',border:'0.5px solid #F6E05E',
                 borderRadius:'8px',padding:'10px',marginBottom:'14px',
                 fontSize:'13px',color:'#744210'}}>
-                📝 {currentLead.notes}
+                {currentLead.notes}
               </div>
             )}
 
-            <a href={'tel:'+currentLead.mobile}
-              style={{
-                display:'flex',alignItems:'center',justifyContent:'center',gap:'10px',
-                background:'#185FA5',color:'white',padding:'14px',
-                borderRadius:'10px',textDecoration:'none',fontSize:'15px',
-                fontWeight:'700',boxShadow:'0 4px 14px rgba(24,95,165,0.35)'
-              }}>
-              <IconPhone size={18}/> Call {currentLead.full_name}
-            </a>
+            <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
+              <a
+                href={'tel:'+currentLead.mobile}
+                style={{display:'flex',alignItems:'center',gap:'8px',background:'#185FA5',color:'white',padding:'12px 24px',borderRadius:'8px',textDecoration:'none',fontSize:'15px',fontWeight:'700'}}
+              >
+                <IconPhone size={20} /> Call {currentLead.mobile}
+              </a>
+            </div>
             {dialerType==='auto' && (
               <p style={{textAlign:'center',fontSize:'12px',color:'#9CA3AF',margin:'8px 0 0'}}>
                 Auto mode — next lead opens automatically after saving
@@ -646,7 +744,11 @@ export default function Campaigns({ userRole, userId }) {
                         <span style={{fontWeight:'500',fontSize:'13px'}}>{lead.full_name}</span>
                       </div>
                     </td>
-                    <td style={{color:'#718096',fontSize:'13px'}}>{lead.mobile}</td>
+                    <td style={{padding:'0'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:'8px',color:'#718096',fontSize:'13px'}}>
+                        <a href={'tel:'+lead.mobile} style={{textDecoration:'none',color:'#718096'}}>{lead.mobile}</a>
+                      </div>
+                    </td>
                     <td style={{color:'#718096',fontSize:'13px'}}>{lead.city||'-'}</td>
                     <td style={{fontWeight:'500',color:'#185FA5',fontSize:'13px'}}>
                       {lead.loan_amount?'₹'+Number(lead.loan_amount).toLocaleString('en-IN'):'-'}
@@ -659,14 +761,8 @@ export default function Campaigns({ userRole, userId }) {
                     </td>
                     <td>
                       <span style={{
-                        background:lead.status==='New'?'#F3F4F6':
-                          lead.status==='Interested'?'#E1F5EE':
-                          lead.status==='Not Interested'?'#FCEBEB':
-                          lead.status==='Callback'?'#FAEEDA':'#EEEDFE',
-                        color:lead.status==='New'?'#6B7280':
-                          lead.status==='Interested'?'#0F6E56':
-                          lead.status==='Not Interested'?'#A32D2D':
-                          lead.status==='Callback'?'#854F0B':'#534AB7',
+                        background:stageStyle(lead.status).bg,
+                        color:stageStyle(lead.status).color,
                         padding:'3px 10px',borderRadius:'20px',
                         fontSize:'12px',fontWeight:'500'
                       }}>
@@ -715,7 +811,7 @@ export default function Campaigns({ userRole, userId }) {
                     Select agents and upload CSV
                   </p>
                 </div>
-                <button onClick={()=>{setShowCSVModal(false);setCsvFile(null);setCsvPreview([]);setSelectedAgentsForCSV([])}}
+                <button onClick={()=>{setShowCSVModal(false);setCsvFile(null);setCsvPreview([]);setCsvTotalCount(0);setSelectedAgentsForCSV([])}}
                   style={{background:'rgba(255,255,255,0.15)',border:'none',
                     color:'white',width:'30px',height:'30px',borderRadius:'50%',
                     cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -840,12 +936,12 @@ export default function Campaigns({ userRole, userId }) {
                       style={{display:'none'}} onChange={handleCSVSelect}/>
                     {csvFile ? (
                       <div>
-                        <div style={{fontSize:'22px',marginBottom:'6px'}}>✅</div>
+                        <div style={{fontSize:'22px',marginBottom:'6px',color:'#3B6D11',fontWeight:700}}>✓</div>
                         <div style={{fontWeight:'600',color:'#3B6D11',fontSize:'14px'}}>
                           {csvFile.name}
                         </div>
                         <div style={{fontSize:'12px',color:'#9CA3AF',marginTop:'3px'}}>
-                          {csvPreview.length}+ leads ready
+                          {csvTotalCount > 0 ? `${csvTotalCount} leads ready` : 'Parsing...'}
                         </div>
                       </div>
                     ) : (
@@ -910,7 +1006,7 @@ export default function Campaigns({ userRole, userId }) {
                     {loading?'Uploading...':'Upload & Assign Leads'}
                   </button>
                   <button
-                    onClick={()=>{setShowCSVModal(false);setCsvFile(null);setCsvPreview([]);setSelectedAgentsForCSV([])}}
+                    onClick={()=>{setShowCSVModal(false);setCsvFile(null);setCsvPreview([]);setCsvTotalCount(0);setSelectedAgentsForCSV([])}}
                     className="btn btn-ghost">
                     Cancel
                   </button>
@@ -1060,6 +1156,7 @@ export default function Campaigns({ userRole, userId }) {
 
   // ========== CAMPAIGN LIST VIEW ==========
   return (
+    <ErrorBoundary>
     <div>
       <div className="page-header">
         <div>
@@ -1119,6 +1216,10 @@ export default function Campaigns({ userRole, userId }) {
           </div>
         )}
 
+        {openMenuId && (
+          <div style={{position:'fixed',inset:0,zIndex:99}} onClick={()=>setOpenMenuId(null)}/>
+        )}
+
         {campaigns.length===0 ? (
           <div className="card">
             <div className="empty-state">
@@ -1151,14 +1252,66 @@ export default function Campaigns({ userRole, userId }) {
                         : <IconHandClick size={20} color="white" strokeWidth={1.8}/>
                       }
                     </div>
-                    <span style={{background:'rgba(255,255,255,0.2)',color:'white',
-                      padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'600'}}>
-                      {campaign.status}
-                    </span>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{background:'rgba(255,255,255,0.2)',color:'white',
+                        padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'600'}}>
+                        {campaign.status}
+                      </span>
+                      {isAdminOrManager && (
+                        <div style={{position:'relative'}}>
+                          <button
+                            onClick={e=>{e.stopPropagation();setOpenMenuId(openMenuId===campaign.id?null:campaign.id)}}
+                            style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',
+                              width:'28px',height:'28px',borderRadius:'6px',cursor:'pointer',
+                              display:'flex',alignItems:'center',justifyContent:'center',
+                              fontSize:'18px',lineHeight:1,zIndex:100,position:'relative'}}>
+                            ⋮
+                          </button>
+                          {openMenuId===campaign.id && (
+                            <div style={{position:'absolute',top:'32px',right:0,background:'white',
+                              borderRadius:'8px',boxShadow:'0 4px 16px rgba(0,0,0,0.18)',
+                              minWidth:'130px',zIndex:200,overflow:'hidden'}}>
+                              <button
+                                onClick={e=>{e.stopPropagation();setRenamingId(campaign.id);setRenameValue(campaign.name);setOpenMenuId(null)}}
+                                style={{width:'100%',padding:'9px 14px',border:'none',background:'white',
+                                  cursor:'pointer',textAlign:'left',fontSize:'13px',color:'#374151',
+                                  display:'flex',alignItems:'center',gap:'8px'}}
+                                onMouseEnter={e=>e.currentTarget.style.background='#F3F4F6'}
+                                onMouseLeave={e=>e.currentTarget.style.background='white'}>
+                                ✏️ Rename
+                              </button>
+                              <button
+                                onClick={e=>{e.stopPropagation();setOpenMenuId(null);handleDelete(campaign.id)}}
+                                style={{width:'100%',padding:'9px 14px',border:'none',background:'white',
+                                  cursor:'pointer',textAlign:'left',fontSize:'13px',color:'#DC2626',
+                                  display:'flex',alignItems:'center',gap:'8px'}}
+                                onMouseEnter={e=>e.currentTarget.style.background='#FEF2F2'}
+                                onMouseLeave={e=>e.currentTarget.style.background='white'}>
+                                🗑️ Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <h3 style={{color:'white',margin:'0 0 4px',fontSize:'16px',fontWeight:'700'}}>
-                    {campaign.name}
-                  </h3>
+                  {renamingId===campaign.id ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e=>setRenameValue(e.target.value)}
+                      onBlur={()=>handleRename(campaign.id,renameValue)}
+                      onKeyDown={e=>{if(e.key==='Enter')handleRename(campaign.id,renameValue);if(e.key==='Escape')setRenamingId(null)}}
+                      onClick={e=>e.stopPropagation()}
+                      style={{color:'white',background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.4)',
+                        borderRadius:'6px',padding:'4px 8px',fontSize:'16px',fontWeight:'700',
+                        width:'100%',margin:'0 0 4px',outline:'none',boxSizing:'border-box'}}
+                    />
+                  ) : (
+                    <h3 style={{color:'white',margin:'0 0 4px',fontSize:'16px',fontWeight:'700'}}>
+                      {campaign.name}
+                    </h3>
+                  )}
                   <p style={{color:'rgba(255,255,255,0.65)',fontSize:'12px',margin:0}}>
                     {campaign.dialer_type==='auto'?'Auto Dialer (default)':'Manual Dialer (default)'}
                   </p>
@@ -1168,6 +1321,26 @@ export default function Campaigns({ userRole, userId }) {
                     </p>
                   )}
                 </div>
+                {isAdminOrManager && (
+                  <div style={{padding:'10px 16px',borderBottom:'0.5px solid #E2E8F0'}}>
+                    <label style={{fontSize:'11px',fontWeight:'600',color:'#6B7280',
+                      display:'block',marginBottom:'4px',letterSpacing:'0.05em'}}>
+                      ASSIGN AGENT
+                    </label>
+                    <select
+                      onClick={e=>e.stopPropagation()}
+                      onChange={e=>{if(e.target.value){handleAgentChange(campaign.id,e.target.value);e.target.value=''}}}
+                      defaultValue=""
+                      style={{width:'100%',padding:'6px 8px',borderRadius:'6px',
+                        border:'0.5px solid #E2E8F0',fontSize:'12px',color:'#374151',
+                        background:'white',cursor:'pointer'}}>
+                      <option value="">— Select agent to assign —</option>
+                      {allAgents.map(a=>(
+                        <option key={a.id} value={a.id}>{a.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div style={{padding:'14px 16px',display:'flex',gap:'8px'}}>
                   <button onClick={()=>openCampaign(campaign)}
                     className="btn btn-primary btn-sm" style={{flex:1}}>
@@ -1186,5 +1359,6 @@ export default function Campaigns({ userRole, userId }) {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

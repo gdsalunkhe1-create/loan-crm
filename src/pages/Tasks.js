@@ -1,6 +1,24 @@
 /* eslint-disable */
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null } }
+  static getDerivedStateFromError(e) { return { hasError: true, error: e.message } }
+  componentDidCatch(e, info) { console.error('Error:', e, info) }
+  render() {
+    if (this.state.hasError) return (
+      <div style={{padding:40,textAlign:'center',background:'white',borderRadius:12,border:'1px solid #fecaca',margin:20}}>
+        <div style={{fontSize:28,marginBottom:10}}>⚠️</div>
+        <div style={{fontSize:16,fontWeight:700,color:'#dc2626',marginBottom:6}}>Something went wrong</div>
+        <div style={{fontSize:13,color:'#6b7280',marginBottom:16}}>{this.state.error}</div>
+        <button onClick={()=>this.setState({hasError:false,error:null})} style={{padding:'7px 18px',background:'#185FA5',color:'white',border:'none',borderRadius:8,cursor:'pointer',marginRight:8}}>Try Again</button>
+        <button onClick={()=>window.location.reload()} style={{padding:'7px 18px',background:'white',color:'#185FA5',border:'1px solid #185FA5',borderRadius:8,cursor:'pointer'}}>Reload</button>
+      </div>
+    )
+    return this.props.children
+  }
+}
 import { IconListCheck, IconHourglass, IconAlertTriangle, IconCircleCheck, IconTrash } from '@tabler/icons-react'
 
 export default function Tasks({ userRole, userId }) {
@@ -15,28 +33,52 @@ export default function Tasks({ userRole, userId }) {
     title:'', lead_id:'', due_date:'', priority:'Medium', notes:''
   })
 
-  useEffect(() => { fetchTasks(); fetchLeads() }, [])
+  useEffect(() => { fetchTasks(); fetchLeads() }, [userId, userRole])
 
   const fetchTasks = async () => {
-    const { data } = await supabase.from('tasks').select('*').order('due_date',{ascending:true})
-    if (data) {
-      const updated = data.map(t => {
-        if (t.status!=='Completed' && new Date(t.due_date)<new Date()) return {...t,status:'Overdue'}
-        return t
-      })
-      setTasks(updated)
+    let query = supabase.from('tasks').select('*').order('due_date',{ascending:true})
+    if (userRole === 'admin' || userRole === 'manager') {
+      const { data } = await query
+      if (data) {
+        const updated = data.map(t => {
+          if (t.status!=='Completed' && new Date(t.due_date)<new Date()) return {...t,status:'Overdue'}
+          return t
+        })
+        setTasks(updated)
+      }
+    } else {
+      const { data } = await query.eq('assigned_to', userId)
+      if (data) {
+        const updated = data.map(t => {
+          if (t.status!=='Completed' && new Date(t.due_date)<new Date()) return {...t,status:'Overdue'}
+          return t
+        })
+        setTasks(updated)
+      }
     }
   }
 
   const fetchLeads = async () => {
-    const { data } = await supabase.from('leads').select('id,full_name,mobile')
+    let query = supabase.from('leads').select('id,full_name,mobile')
+    if (userRole !== 'admin' && userRole !== 'manager') {
+      query = query.eq('assigned_to', userId)
+    }
+    const { data } = await query
     if (data) setLeads(data)
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    await supabase.from('tasks').insert([{...form,status:'Pending'}])
+    // If agent picked a time that has already passed today, auto-roll to tomorrow
+    let dueDate = form.due_date
+    if (dueDate && new Date(dueDate) < new Date()) {
+      const d = new Date(dueDate)
+      d.setDate(d.getDate() + 1)
+      const pad = n => String(n).padStart(2,'0')
+      dueDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    }
+    await supabase.from('tasks').insert([{...form, due_date: dueDate, status:'Pending', assigned_to: userId}])
     setForm({title:'',lead_id:'',due_date:'',priority:'Medium',notes:''})
     setShowForm(false)
     fetchTasks()
@@ -83,6 +125,7 @@ export default function Tasks({ userRole, userId }) {
   ]
 
   return (
+    <ErrorBoundary>
     <div>
       <div className="page-header">
         <div>
@@ -270,5 +313,6 @@ export default function Tasks({ userRole, userId }) {
         </div>
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

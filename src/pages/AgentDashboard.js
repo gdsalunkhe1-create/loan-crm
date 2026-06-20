@@ -21,6 +21,8 @@ function AgentDashboard({ userId }) {
 const [showWorkspace, setShowWorkspace] = useState(false)
 const [leadQueue, setLeadQueue]         = useState([])
 const [queueIndex, setQueueIndex]       = useState(0)
+  const [mirroredLeadIds, setMirroredLeadIds] = useState(new Set())
+  const [newLeadAlert, setNewLeadAlert]       = useState(null)
 
   useEffect(() => { fetchAll() }, [dateRange])
 
@@ -56,18 +58,90 @@ const [queueIndex, setQueueIndex]       = useState(0)
     if (dateRange==='today') startDate.setHours(0,0,0,0)
     else if (dateRange==='week') startDate.setDate(now.getDate()-7)
     else if (dateRange==='month') startDate.setDate(1)
-    const [leadsRes, callsRes, tasksRes, profileRes] = await Promise.all([
+    const [leadsRes, mirrorRes, callsRes, tasksRes, profileRes] = await Promise.all([
       supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at',{ascending:false}),
+      supabase.from('leads').select('*').contains('mirror_agents', [userId]).order('created_at',{ascending:false}),
       supabase.from('calls').select('*').eq('agent_id', userId).gte('created_at', startDate.toISOString()),
       supabase.from('tasks').select('*').eq('assigned_to', userId).order('due_date',{ascending:true}),
       supabase.from('profiles').select('*').eq('id', userId).single(),
     ])
-    setMyLeads(leadsRes.data||[])
+    const ownLeads = leadsRes.data||[]
+    const mirroredLeads = (mirrorRes.data||[]).filter(l=>!ownLeads.find(o=>o.id===l.id))
+    setMirroredLeadIds(new Set(mirroredLeads.map(l=>l.id)))
+    setMyLeads([...ownLeads,...mirroredLeads])
     setMyCalls(callsRes.data||[])
     setMyTasks(tasksRes.data||[])
     setProfile(profileRes.data)
     setLoading(false)
   }
+
+  useEffect(() => {
+    if(!userId) return
+
+    const playBuzz = () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)()
+        const buzz = (freq, start, dur) => {
+          const o = ctx.createOscillator()
+          const g = ctx.createGain()
+          o.connect(g); g.connect(ctx.destination)
+          o.frequency.value = freq
+          g.gain.setValueAtTime(0.8, ctx.currentTime + start)
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+          o.start(ctx.currentTime + start)
+          o.stop(ctx.currentTime + start + dur)
+        }
+        buzz(880, 0, 0.3)
+        buzz(1100, 0.3, 0.3)
+        buzz(880, 0.6, 0.3)
+        buzz(1100, 0.9, 0.5)
+      } catch(e) { console.log('Audio error:', e) }
+      if(navigator.vibrate) navigator.vibrate([400,100,400,100,400])
+    }
+
+    const channel = supabase
+      .channel('leads-alert-'+userId)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'leads',
+        filter: `assigned_to=eq.${userId}`
+      }, (payload) => {
+        if(payload.new.assigned_to === userId && payload.old.assigned_to !== userId) {
+          playBuzz()
+          setNewLeadAlert(payload.new)
+        }
+        fetchAll()
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'leads',
+        filter: `assigned_to=eq.${userId}`
+      }, (payload) => {
+        playBuzz()
+        setNewLeadAlert(payload.new)
+        fetchAll()
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'leads'
+      }, (payload) => {
+        const newMirrors = payload.new.mirror_agents || []
+        const oldMirrors = payload.old.mirror_agents || []
+        if(newMirrors.includes(userId) && !oldMirrors.includes(userId)) {
+          playBuzz()
+          setNewLeadAlert({...payload.new, alertMessage: 'A lead has been shared with you!'})
+        }
+        if(newMirrors.includes(userId) || oldMirrors.includes(userId)) {
+          fetchAll()
+        }
+      })
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [userId]) // eslint-disable-line
 
   // Smart filtered export
   const getExportLeads = () => {
@@ -134,6 +208,40 @@ const [queueIndex, setQueueIndex]       = useState(0)
 
   return (
     <div>
+      {/* New Lead Alert */}
+      {newLeadAlert && (
+        <>
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:9000}} onClick={()=>setNewLeadAlert(null)}/>
+          <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:20,boxShadow:'0 25px 80px rgba(0,0,0,0.5)',zIndex:9001,width:'90%',maxWidth:400,overflow:'hidden'}}>
+            <div style={{background:'linear-gradient(135deg,#185FA5,#0C3A6B)',padding:'28px 24px',textAlign:'center'}}>
+              <div style={{fontSize:56,marginBottom:8}}>🔔</div>
+              <div style={{fontSize:22,fontWeight:800,color:'white',marginBottom:6}}>
+                {newLeadAlert.alertMessage || 'New Lead Assigned!'}
+              </div>
+              <div style={{fontSize:13,color:'rgba(255,255,255,0.85)'}}>
+                You have a new lead to follow up
+              </div>
+            </div>
+            <div style={{padding:'20px 24px'}}>
+              <div style={{background:'#f0f9ff',borderRadius:12,padding:'16px',marginBottom:16,border:'1px solid #bae6fd'}}>
+                <div style={{fontWeight:700,fontSize:17,color:'#0c4a6e',marginBottom:6}}>{newLeadAlert.full_name||'New Lead'}</div>
+                <div style={{fontSize:13,color:'#0369a1',marginBottom:3}}>📱 {newLeadAlert.mobile||'—'}</div>
+                {newLeadAlert.city&&<div style={{fontSize:13,color:'#0369a1',marginBottom:3}}>📍 {newLeadAlert.city}</div>}
+                {newLeadAlert.loan_amount&&<div style={{fontSize:13,color:'#0369a1'}}>💰 ₹{Number(newLeadAlert.loan_amount).toLocaleString('en-IN')}</div>}
+              </div>
+              <div style={{display:'flex',gap:10}}>
+                <button onClick={()=>{ setNewLeadAlert(null); setActiveTab('leads') }} style={{flex:1,padding:'13px',background:'#185FA5',color:'white',border:'none',borderRadius:10,fontSize:15,fontWeight:700,cursor:'pointer'}}>
+                  View Lead →
+                </button>
+                <button onClick={()=>setNewLeadAlert(null)} style={{padding:'13px 16px',background:'#f3f4f6',color:'#6b7280',border:'none',borderRadius:10,fontSize:14,cursor:'pointer'}}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Reminder Popup */}
       {reminderPopup&&(
         <>
@@ -440,7 +548,7 @@ const [queueIndex, setQueueIndex]       = useState(0)
                         <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
                           <div style={{width:'30px',height:'30px',borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'600',color:'#185FA5',fontSize:'12px',flexShrink:0}}>{lead.full_name[0]?.toUpperCase()}</div>
                           <div>
-                            <div style={{fontWeight:'500',fontSize:'13px'}}>{lead.full_name}</div>
+                            <div style={{fontWeight:'500',fontSize:'13px',display:'flex',alignItems:'center',gap:'5px'}}>{lead.full_name}{mirroredLeadIds.has(lead.id)&&<span style={{background:'#EEEDFE',color:'#534AB7',padding:'1px 6px',borderRadius:'10px',fontSize:'10px',fontWeight:'600'}}>Shared</span>}</div>
                             {lead.email&&<div style={{fontSize:'11px',color:'#A0AEC0'}}>{lead.email}</div>}
                           </div>
                         </div>
@@ -497,7 +605,7 @@ const [queueIndex, setQueueIndex]       = useState(0)
                       <td>{call.call_outcome&&<span style={{background:'#FAEEDA',color:'#854F0B',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{call.call_outcome}</span>}</td>
                       <td style={{color:'#718096',fontSize:'13px'}}>{call.duration||'-'}</td>
                       <td style={{maxWidth:'150px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px',color:'#718096'}}>{call.notes||'-'}</td>
-                      <td style={{color:'#A0AEC0',fontSize:'12px'}}>{new Date(call.created_at).toLocaleDateString('en-IN')}</td>
+                      <td style={{color:'#A0AEC0',fontSize:'12px'}}>{new Date(call.created_at).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})}</td>
                     </tr>
                   )
                 })}

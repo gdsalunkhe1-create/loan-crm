@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CALL-Q PRO</string>
+    <string name="title_activity_main">CALL-Q PRO</string>
+    <string name="package_name">in.capitalvolts.callqpro</string>
+    <string name="custom_url_scheme">in.capitalvolts.callqpro</string>
+</resources>
