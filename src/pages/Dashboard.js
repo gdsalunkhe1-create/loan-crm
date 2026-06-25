@@ -236,19 +236,18 @@ const stageBadgeStyle = {
 
 // Icon + label variant of the clay action buttons (mobile card layout)
 const actionBtnLabeledBase = {
-  display:'flex', flexDirection:'column', alignItems:'center', gap:4,
-  padding:'7px 10px', borderRadius:10, border:'none', cursor:'pointer',
-  minWidth:50, transition:'all 0.1s ease',
-  boxShadow:'0 4px 0 rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.6)',
-  position:'relative', top:0
+  display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3,
+  padding:'8px 6px', borderRadius:10, border:'none', cursor:'pointer',
+  minWidth:50, minHeight:44, transition:'all 0.1s ease',
+  fontSize:10, fontWeight:600, boxShadow:'none', position:'relative', top:0
 }
 const actionBtnLabeledStyles = {
-  call:        {...actionBtnLabeledBase, background:'linear-gradient(160deg,#34d97b,#22c55e,#16a34a)', color:'#ffffff', boxShadow:'0 4px 0 #0f6e30, 0 2px 6px rgba(22,163,74,0.35), inset 0 1px 0 rgba(255,255,255,0.5)'},
-  whatsapp:    {...actionBtnLabeledBase, background:'linear-gradient(160deg,#4ade80,#25d366,#128c50)', color:'#ffffff', boxShadow:'0 4px 0 #0a5a30, 0 2px 6px rgba(18,140,80,0.35), inset 0 1px 0 rgba(255,255,255,0.5)'},
-  obligations: {...actionBtnLabeledBase, background:'linear-gradient(160deg,#a78bfa,#7c3aed,#5b21b6)', color:'#ffffff', boxShadow:'0 4px 0 #3b0f8a, 0 2px 6px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.4)'},
-  viewObs:     {...actionBtnLabeledBase, background:'linear-gradient(160deg,#60a5fa,#3b82f6,#1d4ed8)', color:'#ffffff', boxShadow:'0 4px 0 #1039a8, 0 2px 6px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.4)'},
-  note:        {...actionBtnLabeledBase, background:'linear-gradient(160deg,#fbbf24,#f59e0b,#d97706)', color:'#ffffff', boxShadow:'0 4px 0 #8a5000, 0 2px 6px rgba(245,158,11,0.4), inset 0 1px 0 rgba(255,255,255,0.5)'},
-  view:        {...actionBtnLabeledBase, background:'linear-gradient(160deg,#38bdf8,#0ea5e9,#0284c7)', color:'#ffffff', boxShadow:'0 4px 0 #014f7a, 0 2px 6px rgba(14,165,233,0.35), inset 0 1px 0 rgba(255,255,255,0.4)'},
+  call:        {...actionBtnLabeledBase, background:'#DCFCE7', color:'#16A34A'},
+  whatsapp:    {...actionBtnLabeledBase, background:'#D1FAE5', color:'#059669'},
+  obligations: {...actionBtnLabeledBase, background:'#F5F3FF', color:'#7C3AED'},
+  viewObs:     {...actionBtnLabeledBase, background:'#EFF6FF', color:'#2563EB'},
+  note:        {...actionBtnLabeledBase, background:'#FEF3C7', color:'#D97706'},
+  view:        {...actionBtnLabeledBase, background:'#FFEDD5', color:'#EA580C'},
 }
 
 // Standard action button — icon only, no label (desktop table Actions column)
@@ -436,6 +435,15 @@ function AgentDashboard({ userId }) {
 
   useEffect(()=>{ if(userId) fetchAll() },[dateRange, userId])
   useEffect(()=>{ fetchLeadStages() },[])
+
+  useEffect(()=>{
+    if(!viewLead) return
+    const fresh=myLeads.find(l=>l.id===viewLead.id)
+    if(fresh && (fresh.notes!==viewLead.notes || fresh.status!==viewLead.status || fresh.disposition!==viewLead.disposition || fresh.call_history!==viewLead.call_history)){
+      setViewLead(fresh)
+    }
+  },[myLeads,viewLead])
+
   useEffect(()=>{
     if(!userId)return
     supabase.from('notifications').select('*').eq('agent_id',userId).eq('type','leads_assigned').order('created_at',{ascending:false}).limit(30)
@@ -1423,12 +1431,14 @@ function AgentDashboard({ userId }) {
   const getExportLeads=()=>{
     let leads=[...myLeads]
     if(exportStatus) leads=leads.filter(l=>l.status===exportStatus)
-    if(exportDateType==='today'){const t=new Date();t.setHours(0,0,0,0);leads=leads.filter(l=>new Date(l.created_at)>=t)}
-    else if(exportDateType==='week'){const w=new Date();w.setDate(w.getDate()-7);leads=leads.filter(l=>new Date(l.created_at)>=w)}
-    else if(exportDateType==='month'){const m=new Date();m.setDate(1);m.setHours(0,0,0,0);leads=leads.filter(l=>new Date(l.created_at)>=m)}
+    const inR=(ts,from,to)=>!!ts&&new Date(ts)>=from&&(!to||new Date(ts)<=to)
+    const matchDate=(l,from,to)=>inR(l.created_at,from,to)||inR(l.assigned_at,from,to)
+    if(exportDateType==='today'){const t=new Date();t.setHours(0,0,0,0);leads=leads.filter(l=>matchDate(l,t,null))}
+    else if(exportDateType==='week'){const w=new Date();w.setDate(w.getDate()-7);leads=leads.filter(l=>matchDate(l,w,null))}
+    else if(exportDateType==='month'){const m=new Date();m.setDate(1);m.setHours(0,0,0,0);leads=leads.filter(l=>matchDate(l,m,null))}
     else if(exportDateType==='custom'&&exportStartDate&&exportEndDate){
       const s=new Date(exportStartDate),e=new Date(exportEndDate);e.setHours(23,59,59,999)
-      leads=leads.filter(l=>new Date(l.created_at)>=s&&new Date(l.created_at)<=e)
+      leads=leads.filter(l=>matchDate(l,s,e))
     }
     return leads
   }
@@ -1464,8 +1474,8 @@ function AgentDashboard({ userId }) {
     const mf=agentStatusSet.length===0||agentStatusSet.includes(l.status)
     const fd=agentDateFrom?new Date(agentDateFrom):null
     const td=agentDateTo?new Date(agentDateTo+'T23:59:59'):null
-    const ld=l.created_at?new Date(l.created_at):null
-    const md=(!fd||(ld&&ld>=fd))&&(!td||(ld&&ld<=td))
+    const inDateRange=(ts)=>{ const d=ts?new Date(ts):null; return(!fd||(d&&d>=fd))&&(!td||(d&&d<=td)) }
+    const md=(!fd&&!td)||inDateRange(l.created_at)||inDateRange(l.assigned_at)
     const mCity=!filterCity||l.city===filterCity
     const mLoan=(()=>{
       if(!filterLoanAmount)return true
@@ -2872,7 +2882,7 @@ function AgentDashboard({ userId }) {
                       </div>
 
                       {/* Action buttons */}
-                      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
                         <button onClick={()=>openCallingWorkspace(lead)}
                           style={actionBtnLabeledStyles.call}>
                           <IconPhone size={16}/>
@@ -3330,10 +3340,13 @@ function TeamLeaderPanel({ userId }) {
     if(!agL.length){setLeads([]);setCalls([]);setAgentStats([]);setLoading(false);return}
     const ids=agL.map(a=>a.id)
     const[lR,cR]=await Promise.all([
-      supabase.from('leads').select('*').in('assigned_to',ids).gte('created_at',sd.toISOString()),
+      supabase.from('leads').select('*').in('assigned_to',ids).order('created_at',{ascending:false}),
       supabase.from('calls').select('*').in('agent_id',ids).gte('created_at',sd.toISOString()),
     ])
-    const lL=lR.data||[],cL=cR.data||[]
+    const allL=lR.data||[],cL=cR.data||[]
+    // Filter leads by date matching created_at OR assigned_at so reassigned leads appear
+    const inDateRange=(ts)=>!!ts&&new Date(ts)>=sd
+    const lL=allL.filter(l=>inDateRange(l.created_at)||inDateRange(l.assigned_at))
     setLeads(lL); setCalls(cL)
     setAgentStats(agL.map(a=>{
       const ac=cL.filter(c=>c.agent_id===a.id),al=lL.filter(l=>l.assigned_to===a.id)
@@ -4314,21 +4327,22 @@ export default function Dashboard({ session }) {
   const [viewLead,setViewLead]=useState(null)
   const isMobile=useIsMobile()
 
-  useEffect(()=>{ getProfile(); fetchSettings(); fetchDashboardStats() },[])
+  useEffect(()=>{ getProfile() },[session?.user?.id])
+  useEffect(()=>{ fetchSettings(); fetchDashboardStats() },[])
 
   // close sidebar on page change
   useEffect(()=>{ setSidebarOpen(false) },[activePage])
 
   const getProfile=async()=>{
+    const userId=session?.user?.id
+    if(!userId){ console.log('[Auth] No session user yet — waiting'); return }
     try{
-      const userId=session?.user?.id
-      if(!userId){console.log('[Auth] No session user');return}
       const{data,error:profileErr}=await supabase.from('profiles').select('*').eq('id',userId).single()
-      if(profileErr){console.error('[Profile] Fetch error:',profileErr);return}
-      if(!data){console.log('[Profile] No row for',userId);return}
-      const normalizedRole=(data.role||'agent').toLowerCase().trim()
-      console.log('[Profile] id:',data.id,'raw role:',data.role,'normalized:',normalizedRole)
-      setProfile({...data,role:normalizedRole})
+      if(profileErr){ console.error('[Profile] Fetch error:',profileErr) }
+      else if(data){
+        const normalizedRole=(data.role||'agent').toLowerCase().trim()
+        setProfile({...data,role:normalizedRole})
+      }
     } finally {
       setRoleLoading(false)
     }

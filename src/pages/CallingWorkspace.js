@@ -12,17 +12,18 @@ import {
 } from '@tabler/icons-react'
 
 const QUICK_DISPOSITIONS = [
+  {label:'Callback',        color:'#854F0B', bg:'#FAEEDA'},
   {label:'Ringing',         color:'#534AB7', bg:'#EEEDFE'},
   {label:'Not Reachable',   color:'#92400E', bg:'#FEF3C7'},
   {label:'Switched Off',    color:'#6B7280', bg:'#F3F4F6'},
   {label:'Voice Mail',      color:'#0E7490', bg:'#CFFAFE'},
-  {label:'Callback',        color:'#854F0B', bg:'#FAEEDA'},
+  {label:'DND',             color:'#991B1B', bg:'#FEE2E2'},
+  {label:'Not Doable',      color:'#475569', bg:'#F1F5F9'},
   {label:'Not Interested',  color:'#791F1F', bg:'#FCEBEB'},
-  {label:'Approved',        color:'#27500A', bg:'#EAF3DE'},
-  {label:'Disbursed Other', color:'#065F46', bg:'#D1FAE5'},
+  {label:'Interested',      color:'#27500A', bg:'#EAF3DE'},
 ]
 
-const STAGE_OPTIONS = ['New','Interested','Callback','Documents Pending','Login','Approved','Disbursed','Not Interested','DND']
+const STAGE_OPTIONS = ['Callback','New','Login','Approved','Disbursed','DND','Ringing','Busy','Call Cut','Not Required Hup','Wrong Number / Invalid Number','Not Required Polite','Switched Off','Lead','Voice Mail','Disbursed Other','Not Doable','Police']
 
 const CALL_OUTCOMES = [
   'Connected','Not Connected','Busy','Switched Off','RNR','Interested','Follow Up','Rejected'
@@ -98,9 +99,16 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
   const [callNotConnected, setCallNotConnected] = useState(false)
   const [isDialing,        setIsDialing]        = useState(false)
 
-  // Reset ALL local state when the lead identity changes (power dialer next-lead)
+  // Reset ALL local state ONLY when the lead identity (id) actually changes.
+  // Using a ref to track the previous id prevents re-runs when the parent
+  // refreshes the lead object (same id, new reference) mid-session — which
+  // was silently overwriting the stage the agent had already selected.
+  const prevLeadIdRef = useRef(null)
   useEffect(()=>{
+    if(prevLeadIdRef.current === lead?.id) return   // same lead — do NOT reset
+    prevLeadIdRef.current = lead?.id
     setDisposition('')
+    setCallOutcome('')
     setLeadStage(lead?.status||'New')
     setTemperature(lead?.lead_temperature||'Cold')
     setLoanForm({
@@ -136,13 +144,14 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
     loadObligations()
   },[lead?.id])
 
-  // Auto save every 8 seconds
+  // Auto save every 8 seconds — saves ONLY loan qualification fields + temperature.
+  // Never saves status/leadStage here; that only happens on explicit Save & Next.
   useEffect(()=>{
     autoSaveRef.current = setInterval(()=>{
       if(liveNote.trim()) autoSaveDraft()
     }, 8000)
     return()=>clearInterval(autoSaveRef.current)
-  },[liveNote, loanForm])
+  },[liveNote, loanForm, temperature])
 
   // Call timer
   useEffect(()=>{
@@ -371,6 +380,9 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
   const autoSaveDraft=async()=>{
     if(!lead?.id)return
+    // IMPORTANT: Never include `status` here. Stage is only written on
+    // explicit "Save & Next" so the agent's selection is never silently
+    // overwritten between auto-save ticks.
     try {
       await supabase.from('leads').update({
         monthly_salary: loanForm.monthly_salary||null,
@@ -389,6 +401,9 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
     } catch(e) {}
   }
 
+  // Disposition and Lead Stage are intentionally independent.
+  // Clicking a quick disposition only sets the disposition label + shows
+  // the follow-up scheduler for Callback; it never auto-changes leadStage.
   const handleDispositionClick=(disp)=>{
     setDisposition(disp.label)
     if(disp.label==='Callback') setShowFollowUp(true)
@@ -513,7 +528,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
       <div style={{background:'white',borderRadius:16,width:'100%',maxWidth:1000,maxHeight:'95vh',overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
 
         {/* ── HEADER ── */}
-        <div style={{background:'linear-gradient(135deg,#185FA5,#1e40af)',padding:'14px 16px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
+        <div style={{background:'linear-gradient(135deg,#2563EB,#1D4ED8)',padding:'14px 16px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
           {/* Left — avatar + info block */}
           <div style={{display:'flex',alignItems:'flex-start',gap:12,flex:1,minWidth:0}}>
             <div style={{width:42,height:42,borderRadius:'50%',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,fontWeight:700,color:'white',flexShrink:0}}>
@@ -917,19 +932,6 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
                 style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'2px solid #E2E8F0',background:'white',color:'#111827',fontSize:14,outline:'none',boxSizing:'border-box',fontWeight:500}}>
                 {STAGE_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
               </select>
-            </div>
-
-            {/* CALL OUTCOME */}
-            <div>
-              <div style={{fontSize:14,fontWeight:800,color:'#111827',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.5px'}}>Call Outcome</div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                {CALL_OUTCOMES.map(o=>(
-                  <button key={o} onClick={()=>setCallOutcome(o)}
-                    style={{padding:'10px 14px',borderRadius:20,border:'2px solid '+(callOutcome===o?'#185FA5':'#E2E8F0'),background:callOutcome===o?'#185FA5':'white',color:callOutcome===o?'white':'#374151',fontSize:13,fontWeight:600,cursor:'pointer',transition:'all 0.15s'}}>
-                    {o}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* CALLBACK SCHEDULER */}

@@ -147,19 +147,21 @@ const [queueIndex, setQueueIndex]       = useState(0)
   const getExportLeads = () => {
     let leads = [...myLeads]
     if (exportStatus) leads = leads.filter(l=>l.status===exportStatus)
+    const inR=(ts,from,to)=>!!ts&&new Date(ts)>=from&&(!to||new Date(ts)<=to)
+    const matchDate=(l,from,to)=>inR(l.created_at,from,to)||inR(l.assigned_at,from,to)
     if (exportDateType==='today') {
       const today = new Date(); today.setHours(0,0,0,0)
-      leads = leads.filter(l=>new Date(l.created_at)>=today)
+      leads = leads.filter(l=>matchDate(l,today,null))
     } else if (exportDateType==='week') {
       const w = new Date(); w.setDate(w.getDate()-7)
-      leads = leads.filter(l=>new Date(l.created_at)>=w)
+      leads = leads.filter(l=>matchDate(l,w,null))
     } else if (exportDateType==='month') {
       const m = new Date(); m.setDate(1); m.setHours(0,0,0,0)
-      leads = leads.filter(l=>new Date(l.created_at)>=m)
+      leads = leads.filter(l=>matchDate(l,m,null))
     } else if (exportDateType==='custom' && exportStartDate && exportEndDate) {
       const start = new Date(exportStartDate)
       const end = new Date(exportEndDate); end.setHours(23,59,59,999)
-      leads = leads.filter(l=>new Date(l.created_at)>=start && new Date(l.created_at)<=end)
+      leads = leads.filter(l=>matchDate(l,start,end))
     }
     return leads
   }
@@ -195,7 +197,21 @@ const [queueIndex, setQueueIndex]       = useState(0)
     'Logged','Approved','Disbursed','Not Interested','DND'
   ]
 
-  const filteredLeads = myLeads.filter(l=>{
+  const dateFilteredLeads = myLeads.filter(l=>{
+    if(dateRange==='all') return true
+    const now = new Date()
+    let sd = new Date()
+    if(dateRange==='today') sd.setHours(0,0,0,0)
+    else if(dateRange==='week') sd.setDate(now.getDate()-7)
+    else if(dateRange==='month'){ sd.setDate(1); sd.setHours(0,0,0,0) }
+    const inRange=(ts)=>!!ts&&new Date(ts)>=sd
+    // If assigned_at is null (leads imported or assigned before this field existed),
+    // fall back to created_at only — never silently drop a lead from any date view.
+    if(!l.assigned_at) return inRange(l.created_at)
+    return inRange(l.created_at)||inRange(l.assigned_at)
+  })
+
+  const filteredLeads = dateFilteredLeads.filter(l=>{
     const matchSearch = !search||
       l.full_name?.toLowerCase().includes(search.toLowerCase())||
       l.mobile?.includes(search)||
@@ -417,9 +433,9 @@ const [queueIndex, setQueueIndex]       = useState(0)
             <IconBell size={16}/> {notifications.length>0?`${notifications.length} Reminders`:'Reminders'}
             {notifications.length>0&&<span style={{position:'absolute',top:'-6px',right:'-6px',background:'#854F0B',color:'white',borderRadius:'50%',width:'18px',height:'18px',fontSize:'10px',fontWeight:'700',display:'flex',alignItems:'center',justifyContent:'center'}}>{notifications.length}</span>}
           </button>
-          {['today','week','month'].map(r=>(
+          {[['all','All'],['today','Today'],['week','This Week'],['month','This Month']].map(([r,label])=>(
             <button key={r} className={`btn ${dateRange===r?'btn-primary':'btn-ghost'}`} onClick={()=>setDateRange(r)}>
-              {r==='today'?'Today':r==='week'?'This Week':'This Month'}
+              {label}
             </button>
           ))}
           <button className="btn btn-outline" onClick={fetchAll}><IconRefresh size={15}/></button>
@@ -438,10 +454,10 @@ const [queueIndex, setQueueIndex]       = useState(0)
         {/* Stats */}
         <div className="stats-grid" style={{marginBottom:'20px'}}>
           {[
-            {icon:<IconUsers size={20} color="#185FA5"/>, label:'My Total Leads', value:myLeads.length, color:'#185FA5', bg:'#E6F1FB'},
+            {icon:<IconUsers size={20} color="#185FA5"/>, label:'My Total Leads', value:dateFilteredLeads.length, color:'#185FA5', bg:'#E6F1FB'},
             {icon:<IconPhoneIncoming size={20} color="#0F6E56"/>, label:'Calls Made', value:myCalls.length, color:'#0F6E56', bg:'#E1F5EE'},
             {icon:<IconClockHour4 size={20} color="#854F0B"/>, label:'Pending Tasks', value:pendingTasks.length, color:'#854F0B', bg:'#FAEEDA'},
-            {icon:<IconCircleCheck size={20} color="#534AB7"/>, label:'Converted', value:myLeads.filter(l=>l.status==='Approved'||l.status==='Disbursed').length, color:'#534AB7', bg:'#EEEDFE'},
+            {icon:<IconCircleCheck size={20} color="#534AB7"/>, label:'Converted', value:dateFilteredLeads.filter(l=>l.status==='Approved'||l.status==='Disbursed').length, color:'#534AB7', bg:'#EEEDFE'},
           ].map(s=>(
             <div key={s.label} className="stat-card">
               <div style={{width:'40px',height:'40px',borderRadius:'10px',background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{s.icon}</div>
@@ -453,10 +469,10 @@ const [queueIndex, setQueueIndex]       = useState(0)
         {/* Status Summary Cards */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'10px',marginBottom:'20px'}}>
           {[
-            {label:'Documents Pending', value:myLeads.filter(l=>l.status==='Documents Pending').length, color:'#534AB7', bg:'#EEEDFE'},
-            {label:'Logged', value:myLeads.filter(l=>l.status==='Logged').length, color:'#854F0B', bg:'#FAEEDA'},
-            {label:'Approved', value:myLeads.filter(l=>l.status==='Approved').length, color:'#3B6D11', bg:'#EAF3DE'},
-            {label:'Disbursed', value:myLeads.filter(l=>l.status==='Disbursed').length, color:'#0F6E56', bg:'#E1F5EE'},
+            {label:'Documents Pending', value:dateFilteredLeads.filter(l=>l.status==='Documents Pending').length, color:'#534AB7', bg:'#EEEDFE'},
+            {label:'Logged', value:dateFilteredLeads.filter(l=>l.status==='Logged').length, color:'#854F0B', bg:'#FAEEDA'},
+            {label:'Approved', value:dateFilteredLeads.filter(l=>l.status==='Approved').length, color:'#3B6D11', bg:'#EAF3DE'},
+            {label:'Disbursed', value:dateFilteredLeads.filter(l=>l.status==='Disbursed').length, color:'#0F6E56', bg:'#E1F5EE'},
           ].map(s=>(
             <div key={s.label} style={{background:s.bg,borderRadius:'10px',padding:'14px 16px',border:'0.5px solid rgba(0,0,0,0.05)'}}>
               <div style={{fontSize:'22px',fontWeight:'700',color:s.color,lineHeight:1,marginBottom:'4px'}}>{s.value}</div>
@@ -481,7 +497,7 @@ const [queueIndex, setQueueIndex]       = useState(0)
         {/* Tabs */}
         <div style={{display:'flex',gap:'4px',background:'#F0F0F0',padding:'4px',borderRadius:'10px',maxWidth:'440px',marginBottom:'16px'}}>
           {[
-            {id:'leads',label:`Leads (${myLeads.length})`},
+            {id:'leads',label:`Leads (${dateFilteredLeads.length})`},
             {id:'calls',label:`Calls (${myCalls.length})`},
             {id:'tasks',label:`Tasks (${pendingTasks.length})`},
           ].map(t=>(
@@ -519,11 +535,11 @@ const [queueIndex, setQueueIndex]       = useState(0)
 
             <div className="table-container">
               <div style={{padding:'12px 18px',borderBottom:'0.5px solid #E2E8F0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <span style={{fontWeight:'600',fontSize:'14px'}}>Showing {filteredLeads.length} of {myLeads.length} leads</span>
+                <span style={{fontWeight:'600',fontSize:'14px'}}>Showing {filteredLeads.length} of {dateFilteredLeads.length} leads</span>
                 <div style={{display:'flex',gap:'8px'}}>
-                  <span style={{background:'#FAEEDA',color:'#854F0B',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{myLeads.filter(l=>l.status==='New').length} New</span>
-                  <span style={{background:'#E1F5EE',color:'#0F6E56',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{myLeads.filter(l=>l.status==='Interested').length} Interested</span>
-                  <span style={{background:'#EEEDFE',color:'#534AB7',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{myLeads.filter(l=>l.status==='Callback').length} Callback</span>
+                  <span style={{background:'#FAEEDA',color:'#854F0B',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{dateFilteredLeads.filter(l=>l.status==='New').length} New</span>
+                  <span style={{background:'#E1F5EE',color:'#0F6E56',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{dateFilteredLeads.filter(l=>l.status==='Interested').length} Interested</span>
+                  <span style={{background:'#EEEDFE',color:'#534AB7',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'500'}}>{dateFilteredLeads.filter(l=>l.status==='Callback').length} Callback</span>
                 </div>
               </div>
               <table>

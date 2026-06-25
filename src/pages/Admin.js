@@ -1,5 +1,5 @@
 ﻿/* eslint-disable */
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 
@@ -279,6 +279,19 @@ function Users({ users, reload, showToast }) {
     }
   }
 
+  const handleUnassignAgentLeads = async (agent) => {
+    const { data: agentLeads } = await supabase.from('leads').select('id').eq('assigned_to', agent.id)
+    const ids = (agentLeads || []).map(l => l.id)
+    if (ids.length === 0) { showToast(`${agent.full_name} has no assigned leads`); return }
+    if (!window.confirm(`Unassign all ${ids.length} leads from ${agent.full_name}?\n\nThey become unassigned. Data and mirrors kept. Nothing deleted.`)) return
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100)
+      await supabase.from('leads').update({ assigned_to: null, assigned_at: null }).in('id', batch)
+    }
+    showToast(`${ids.length} leads unassigned from ${agent.full_name}`)
+    reload()
+  }
+
   const resetPwd = async (id,email) => {
     if(!window.confirm(`Reset password for ${email} to Capital@123?`))return
     const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${id}`,{method:'PUT',headers:{'Content-Type':'application/json','Authorization':`Bearer ${SERVICE_KEY}`,'apikey':SERVICE_KEY},body:JSON.stringify({password:'Capital@123'})})
@@ -327,6 +340,9 @@ function Users({ users, reload, showToast }) {
                           🗑 Delete Leads
                         </button>
                       )}
+                      {['agent','team_leader'].includes(u.role) && (
+                        <button onClick={()=>handleUnassignAgentLeads(u)} style={{padding:'5px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #fed7aa',background:'#fff7ed',color:'#d97706',cursor:'pointer'}}>↩ Unassign Leads</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -351,12 +367,31 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
   const [assignTo,setAssignTo]   = useState('')
   const [assigning,setAssigning] = useState(false)
   const [bulkDeleting,setBulkDeleting] = useState(false)
+  const [unassigning,setUnassigning] = useState(false)
   const [showAssignTypeModal, setShowAssignTypeModal] = useState(false)
   const [assignType, setAssignType] = useState('mirror')
+  const [showDupOnly, setShowDupOnly] = useState(false)
+  const [showReassignModal, setShowReassignModal] = useState(false)
+  const [reassignTarget, setReassignTarget] = useState(null)
+  const [reassignTo, setReassignTo] = useState('')
+  const [reassigning, setReassigning] = useState(false)
 
   const agents  = users.filter(u=>['agent','team_leader'].includes(u.role))
   const statuses= ['All',...Array.from(new Set(leads.map(l=>l.status).filter(Boolean)))]
   const dispNames = ['All',...(dispositions.map(d=>d.label).filter(Boolean))]
+
+  const dupLeadIds = new Set()
+  const mobileAgentCount = {}
+  leads.forEach(l => {
+    if (!l.mobile || !l.assigned_to) return
+    const key = l.mobile.replace(/\D/g,'').slice(-10) + '|' + l.assigned_to
+    mobileAgentCount[key] = (mobileAgentCount[key] || 0) + 1
+  })
+  leads.forEach(l => {
+    if (!l.mobile || !l.assigned_to) return
+    const key = l.mobile.replace(/\D/g,'').slice(-10) + '|' + l.assigned_to
+    if (mobileAgentCount[key] > 1) dupLeadIds.add(l.id)
+  })
 
   const filtered = leads.filter(l=>{
     const q=search.toLowerCase()
@@ -364,9 +399,11 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     const mS=statusF==='All'||l.status===statusF
     const mD=dispF==='All'||l.disposition===dispF
     const mA=agentF==='All'||l.assigned_to===agentF
-    const mF=!dateFrom||(l.created_at||'')>=dateFrom
-    const mT=!dateTo||(l.created_at||'')<=dateTo+'T23:59:59'
-    return mQ&&mS&&mD&&mA&&mF&&mT
+    const effDate=l.assigned_at||l.created_at
+    const inRange=(ts)=> !!ts && (!dateFrom||ts>=dateFrom) && (!dateTo||ts<=dateTo+'T23:59:59')
+    const mDate=(!dateFrom&&!dateTo) || inRange(effDate)
+    const mDup = !showDupOnly || dupLeadIds.has(l.id)
+    return mQ&&mS&&mD&&mA&&mDate&&mDup
   })
 
   const allSel = filtered.length>0&&filtered.every(l=>selected.has(l.id))
@@ -395,7 +432,8 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           const { error } = await supabase.from('leads').update({
             assigned_to: assignTo,
             mirror_agents: newMirrors,
-            assignment_type: 'mirror'
+            assignment_type: 'mirror',
+            assigned_at: new Date().toISOString()
           }).eq('id', lead.id)
           if(error) { showToast('Error: '+error.message,'error'); setAssigning(false); return }
         }
@@ -404,7 +442,8 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           await supabase.from('leads').update({
             assigned_to: assignTo,
             mirror_agents: [],
-            assignment_type: 'transfer'
+            assignment_type: 'transfer',
+            assigned_at: new Date().toISOString()
           }).in('id', ids.slice(i,i+100))
         }
       }
@@ -452,6 +491,22 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     }
   }
 
+  const handleBulkUnassign = async () => {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    if (!window.confirm(`Unassign ${ids.length} selected lead(s)?\n\nThey become unassigned. Lead data and previous-agent mirrors are kept. Nothing is deleted.`)) return
+    setUnassigning(true)
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100)
+      const { error } = await supabase.from('leads').update({ assigned_to: null, assigned_at: null }).in('id', batch)
+      if (error) { showToast('Error: ' + error.message, 'error'); setUnassigning(false); return }
+    }
+    showToast(`${ids.length} lead(s) unassigned`)
+    setSelected(new Set())
+    setUnassigning(false)
+    reload()
+  }
+
   const handleBulkDelete = async () => {
     const ids = [...selected]
     const confirmed = window.confirm(`Permanently delete ${ids.length} selected leads?\n\nThis will also delete all their call logs, tasks and obligations. This cannot be undone.`)
@@ -495,6 +550,11 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           <div><label style={LBL}>From</label><input type="date" style={SEL} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
           <div><label style={LBL}>To</label><input type="date" style={SEL} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
           <Btn outline onClick={clearFilters} style={{marginBottom:1}}>Clear</Btn>
+          <button
+            onClick={()=>setShowDupOnly(!showDupOnly)}
+            style={{padding:'8px 14px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#e5e7eb'),background:showDupOnly?'#fef2f2':'white',color:showDupOnly?'#dc2626':'#6b7280',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:1}}>
+            ⚠️ Duplicates {dupLeadIds.size > 0 ? `(${dupLeadIds.size})` : ''}
+          </button>
         </div>
         <div style={{marginTop:8,fontSize:12,color:'#6b7280'}}>{filtered.length} of {leads.length} leads</div>
       </Card>
@@ -517,6 +577,9 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           <button onClick={handleBulkDelete} disabled={bulkDeleting} style={{padding:'7px 14px',borderRadius:8,border:'none',background:'#dc2626',color:'white',cursor:'pointer',fontSize:13,fontWeight:600,opacity:bulkDeleting?0.6:1}}>
             {bulkDeleting ? 'Deleting...' : `🗑 Delete ${selected.size} Leads`}
           </button>
+          <button onClick={handleBulkUnassign} disabled={unassigning} style={{padding:'7px 14px',borderRadius:8,border:'none',background:'#d97706',color:'white',cursor:'pointer',fontSize:13,fontWeight:600,opacity:unassigning?0.6:1}}>
+            {unassigning ? 'Unassigning…' : `↩ Unassign ${selected.size} Lead${selected.size>1?'s':''}`}
+          </button>
           <Btn onClick={()=>setSelected(new Set())} style={{background:'transparent',color:'white',border:'1px solid rgba(255,255,255,0.3)'}}>Clear Selection</Btn>
         </div>
       )}
@@ -534,10 +597,14 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
               {filtered.map(l=>{
                 const agent=users.find(u=>u.id===l.assigned_to)
                 const isSel=selected.has(l.id)
+                const isDup=dupLeadIds.has(l.id)
                 return(
-                  <tr key={l.id} style={{background:isSel?'#eff6ff':'white'}}>
+                  <tr key={l.id} style={{background:isSel?'#eff6ff':isDup?'#fff7ed':'white'}}>
                     <td style={TD}><input type="checkbox" checked={isSel} onChange={()=>toggleOne(l.id)} style={{cursor:'pointer'}}/></td>
-                    <td style={TD}><div style={{fontWeight:500}}>{l.full_name||'—'}</div></td>
+                    <td style={TD}>
+                      <div>{l.full_name||'—'}</div>
+                      {dupLeadIds.has(l.id) && <span style={{display:'inline-block',marginTop:3,padding:'1px 7px',borderRadius:10,background:'#fef3c7',color:'#92400e',fontSize:10,fontWeight:700}}>⚠️ DUPLICATE</span>}
+                    </td>
                     <td style={{...TD,color:'#6b7280'}}>{l.mobile||'—'}</td>
                     <td style={TD}><Badge text={l.status||'New'} color={sc(l.status)}/></td>
                     <td style={TD}>{fmtV(l.loan_amount)}</td>
@@ -556,12 +623,16 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
                     </td>
                     <td style={{...TD,fontSize:11,color:'#9ca3af'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'}</td>
                     <td style={TD}>
-                      <button
-                        onClick={()=>handleDeleteLead(l)}
-                        style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #fecaca',background:'#fef2f2',color:'#dc2626',cursor:'pointer',whiteSpace:'nowrap'}}
-                      >
-                        🗑 Delete
-                      </button>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        <button
+                          onClick={()=>{ setReassignTarget(l); setReassignTo(''); setShowReassignModal(true) }}
+                          style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #bfdbfe',background:'#eff6ff',color:'#1d4ed8',cursor:'pointer',whiteSpace:'nowrap'}}
+                        >↩ Reassign</button>
+                        <button
+                          onClick={()=>handleDeleteLead(l)}
+                          style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #fecaca',background:'#fef2f2',color:'#dc2626',cursor:'pointer',whiteSpace:'nowrap'}}
+                        >🗑 Delete</button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -571,6 +642,39 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           </table>
         </div>
       </Card>
+
+      {showReassignModal && reassignTarget && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+          <div style={{background:'white',borderRadius:16,width:'100%',maxWidth:440,padding:28,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+            <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Reassign Lead</div>
+            <div style={{fontSize:13,color:'#6b7280',marginBottom:16}}>
+              <strong>{reassignTarget.full_name}</strong> ({reassignTarget.mobile})<br/>
+              Currently: <strong>{users.find(u=>u.id===reassignTarget.assigned_to)?.full_name||'Unassigned'}</strong>
+            </div>
+            <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1e40af'}}>
+              ✅ Original agent keeps access. New agent also gets full history.
+            </div>
+            <select style={{width:'100%',padding:'8px 12px',border:'1px solid #d1d5db',borderRadius:8,fontSize:13,marginBottom:20,background:'white',outline:'none'}} value={reassignTo} onChange={e=>setReassignTo(e.target.value)}>
+              <option value="">Select agent…</option>
+              {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
+            </select>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>{setShowReassignModal(false);setReassignTarget(null)}} style={{padding:'9px 20px',border:'1px solid #e5e7eb',borderRadius:8,background:'white',cursor:'pointer',fontSize:13}}>Cancel</button>
+              <button disabled={!reassignTo||reassigning} onClick={async()=>{
+                if(!reassignTo||!reassignTarget) return
+                setReassigning(true)
+                const currentMirrors = reassignTarget.mirror_agents||[]
+                const newMirrors = [...new Set([...currentMirrors, reassignTarget.assigned_to, reassignTo].filter(Boolean))]
+                await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror'}).eq('id',reassignTarget.id)
+                showToast('Lead reassigned. Original agent retains access.')
+                setShowReassignModal(false);setReassignTarget(null);setReassignTo('');setReassigning(false);reload()
+              }} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9ca3af',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600}}>
+                {reassigning?'Reassigning…':'Reassign Lead'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAssignTypeModal && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
@@ -779,7 +883,7 @@ function ActivityLog({ activityLog, users, reload }) {
 }
 
 // ─── CSV IMPORT ──────────────────────────────────────────────────────────────
-function CSVImport({ users, onImported, showToast }) {
+function CSVImport({ users, leads, onImported, showToast }) {
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState([])
   const [errors, setErrors] = useState([])
@@ -787,6 +891,7 @@ function CSVImport({ users, onImported, showToast }) {
   const [assignTo, setAssignTo] = useState('')
   const [imported, setImported] = useState(0)
   const [dragOver, setDragOver] = useState(false)
+  const [dupInfo, setDupInfo] = useState({ existing: 0, inFile: 0 })
 
   const agents = users.filter(u => ['agent','team_leader'].includes(u.role))
 
@@ -836,6 +941,16 @@ function CSVImport({ users, onImported, showToast }) {
         }
         if (name.trim() && mobile.trim()) valid.push(row)
       })
+      const existing = new Set((leads||[]).map(l=>(l.mobile||'').replace(/\s/g,'')))
+      const seen = new Set()
+      let dExisting = 0, dInFile = 0
+      valid.forEach(row => {
+        const m = (row['Contact']||row['Contatct']||row['contact']||'').replace(/\s/g,'')
+        if (existing.has(m)) dExisting++
+        else if (seen.has(m)) dInFile++
+        else seen.add(m)
+      })
+      setDupInfo({ existing: dExisting, inFile: dInFile })
       setErrors(errs)
       setPreview(valid.slice(0, 5))
     }
@@ -855,8 +970,14 @@ function CSVImport({ users, onImported, showToast }) {
           const mobile = row['Contact'] || row['Contatct'] || row['contact'] || ''
           return name.trim() && mobile.trim()
         })
-        const leads = valid.map(row => {
+        const existing = new Set((leads || []).map(l => (l.mobile||'').replace(/\s/g,'')))
+        const seen = new Set()
+        let skipped = 0
+        const leadsToInsert = []
+        valid.forEach(row => {
           const mobile = (row['Contact'] || row['Contatct'] || row['contact'] || '').replace(/\s/g,'')
+          if (existing.has(mobile) || seen.has(mobile)) { skipped++; return }
+          seen.add(mobile)
           const loanAmt = row['Loan Amount'] || row['loan amount'] || ''
           const loanAmtNum = parseFloat(loanAmt.replace(/[^0-9.]/g,'')) || null
           let createdAt = new Date().toISOString()
@@ -868,7 +989,7 @@ function CSVImport({ users, onImported, showToast }) {
               if (!isNaN(d)) createdAt = d.toISOString()
             }
           }
-          return {
+          leadsToInsert.push({
             full_name: (row['Name'] || row['name'] || '').trim(),
             mobile: mobile,
             city: (row['City'] || row['city'] || '').trim(),
@@ -879,11 +1000,11 @@ function CSVImport({ users, onImported, showToast }) {
             status: 'New',
             assigned_to: assignTo || null,
             created_at: createdAt,
-          }
+          })
         })
         let count = 0
-        for (let i = 0; i < leads.length; i += 50) {
-          const batch = leads.slice(i, i + 50)
+        for (let i = 0; i < leadsToInsert.length; i += 50) {
+          const batch = leadsToInsert.slice(i, i + 50)
           const { error } = await supabase.from('leads').insert(batch)
           if (error) {
             showToast('Error importing batch: ' + error.message, 'error')
@@ -892,7 +1013,7 @@ function CSVImport({ users, onImported, showToast }) {
             setImported(count)
           }
         }
-        showToast(`Successfully imported ${count} leads!`)
+        showToast(skipped > 0 ? `Imported ${count} leads · skipped ${skipped} duplicate${skipped>1?'s':''}` : `Successfully imported ${count} leads!`)
         setFile(null)
         setPreview([])
         setErrors([])
@@ -963,6 +1084,16 @@ function CSVImport({ users, onImported, showToast }) {
             <div key={i} style={{fontSize:12,color:'#dc2626',marginBottom:2}}>• {e}</div>
           ))}
           {errors.length > 5 && <div style={{fontSize:12,color:'#dc2626'}}>...and {errors.length-5} more</div>}
+        </div>
+      )}
+
+      {(dupInfo.existing > 0 || dupInfo.inFile > 0) && (
+        <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'12px 16px',marginBottom:16}}>
+          <div style={{fontWeight:600,color:'#b45309',fontSize:13,marginBottom:4}}>
+            {dupInfo.existing + dupInfo.inFile} duplicate{(dupInfo.existing + dupInfo.inFile)>1?'s':''} detected — these will be skipped, not assigned:
+          </div>
+          {dupInfo.existing > 0 && <div style={{fontSize:12,color:'#b45309'}}>• {dupInfo.existing} already in the system (same mobile)</div>}
+          {dupInfo.inFile > 0 && <div style={{fontSize:12,color:'#b45309'}}>• {dupInfo.inFile} repeated within this file</div>}
         </div>
       )}
 
@@ -1115,7 +1246,7 @@ function Config({ users, onImported, showToast, leads, reload }) {
     <div>
       <h2 style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:16}}>Configuration</h2>
       <Card style={{padding:20,marginBottom:20}}>
-        <CSVImport users={users||[]} onImported={onImported} showToast={showToast} />
+        <CSVImport users={users||[]} leads={leads||[]} onImported={onImported} showToast={showToast} />
       </Card>
       <Card style={{padding:20,marginBottom:16}}>
         <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>🔍 Find Duplicate Leads</div>
@@ -1181,9 +1312,10 @@ function ExportModal({ leads, users, dispositions, onClose }) {
       const mS=statusF==='All'||l.status===statusF
       const mD=dispF==='All'||l.disposition===dispF
       const mA=agentF==='All'||l.assigned_to===agentF
-      const mF=!from||(l.created_at||'')>=from
-      const mT=!to||(l.created_at||'')<=to+'T23:59:59'
-      return mW&&mS&&mD&&mA&&mF&&mT
+      const effDate=l.assigned_at||l.created_at
+      const inRange=(ts)=> !!ts && (!from||ts>=from) && (!to||ts<=to+'T23:59:59')
+      const mDate=(!from&&!to) || inRange(effDate)
+      return mW&&mS&&mD&&mA&&mDate
     })
   }
 
@@ -2017,10 +2149,29 @@ export default function FullAdminPanel() {
 
   useEffect(()=>{ supabase.auth.getSession().then(({data:{session}})=>{ if(session?.user)setAdminUser(session.user) }); fetchData() },[])
 
+  useEffect(()=>{
+    const ch=supabase.channel('admin-leads-rt')
+      .on('postgres_changes',{event:'*',schema:'public',table:'leads'},(payload)=>{
+        if(payload.eventType==='UPDATE'&&payload.new?.id){
+          setLeads(prev=>prev.map(l=>l.id===payload.new.id?{...l,...payload.new}:l))
+        } else if(payload.eventType==='INSERT'&&payload.new?.id){
+          setLeads(prev=>prev.some(l=>l.id===payload.new.id)?prev:[payload.new,...prev])
+        } else if(payload.eventType==='DELETE'&&payload.old?.id){
+          setLeads(prev=>prev.filter(l=>l.id!==payload.old.id))
+        } else {
+          fetchData()
+        }
+      })
+      .subscribe()
+    return ()=>{ supabase.removeChannel(ch) }
+  },[])
+
   const showToast = (msg,type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3500) }
 
+  const didInitialLoadRef = useRef(false)
   const fetchData = async () => {
-    setLoading(true)
+    const silent = didInitialLoadRef.current
+    if(!silent) setLoading(true)
     try {
       const [uR,lR,cR,dR] = await Promise.all([
         supabase.from('profiles').select('*').order('role'),
@@ -2044,7 +2195,8 @@ export default function FullAdminPanel() {
     } catch(err) {
       setRenderError('Failed to load data: '+err.message)
     } finally {
-      setLoading(false)
+      if(!silent) setLoading(false)
+      didInitialLoadRef.current = true
     }
   }
 

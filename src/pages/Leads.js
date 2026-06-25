@@ -113,12 +113,19 @@ export default function Leads({ userRole, userId }) {
   useEffect(() => { if(selectedLead) setPendingStatus(selectedLead.status||'New') }, [selectedLead])
 
   const fetchLeads = async () => {
-    let query = supabase.from('leads').select('*').order('created_at',{ascending:false})
     if (userRole === 'agent') {
-      query = query.eq('assigned_to', userId)
+      const [{ data: assigned }, { data: mirrored }] = await Promise.all([
+        supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at',{ascending:false}),
+        supabase.from('leads').select('*').contains('mirror_agents', [userId]).order('created_at',{ascending:false})
+      ])
+      const merged = [...(assigned||[]), ...(mirrored||[])]
+      const seen = new Set()
+      const deduped = merged.filter(l => { if(seen.has(l.id)) return false; seen.add(l.id); return true })
+      setLeads(deduped)
+    } else {
+      const { data } = await supabase.from('leads').select('*').order('created_at',{ascending:false})
+      if (data) setLeads(data)
     }
-    const { data } = await query
-    if (data) setLeads(data)
   }
 
   const fetchStatuses = async () => {
