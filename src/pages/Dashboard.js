@@ -4446,6 +4446,10 @@ export default function Dashboard({ session }) {
     const [adminStages,setAdminStages]     =useState([])
     const [stageForm,setStageForm]         =useState({name:'',color:'#3b82f6'})
     const [apRtConnected,setApRtConnected] =useState(false)
+    const [reassignTarget,setReassignTarget]=useState(null)
+    const [reassignTo,setReassignTo]       =useState('')
+    const [reassigning,setReassigning]     =useState(false)
+    const [showDupOnly,setShowDupOnly]     =useState(false)
     const fetchLeadsRef                    =useRef(null)
 
     useEffect(()=>{ fetchUsers(); fetchDispositions(); fetchLeadSources(); fetchLeads(); fetchAuthUsers(); fetchSettings(); fetchActivityFull(); fetchAdminStages() },[])
@@ -4498,6 +4502,45 @@ export default function Dashboard({ session }) {
     const fetchSettings=async()=>{ const{data}=await supabase.from('settings').select('key,value'); if(!data)return; const m={}; data.forEach(s=>{m[s.key]=s.value}); setSettings(m) }
     const fetchActivityFull=async()=>{ const{data}=await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500); if(data) setActivityFull(data) }
     const showApToast=(msg,type='success')=>{ setApToast({msg,type}); setTimeout(()=>setApToast(null),3500) }
+
+    // Per-lead reassign — always mirror so the original agent keeps access and the
+    // new agent also gets the lead with full history (prevents agent data loss)
+    const doReassignLead=async()=>{
+      if(!reassignTo||!reassignTarget)return
+      setReassigning(true)
+      try{
+        const agent=users.find(u=>u.id===reassignTo)
+        const originalAgent=reassignTarget.assigned_to
+        const currentMirrors=reassignTarget.mirror_agents||[]
+        const newMirrors=[...new Set([...currentMirrors,originalAgent,reassignTo].filter(Boolean))]
+        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror'}).eq('id',reassignTarget.id)
+        if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
+        await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
+        try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
+        showApToast('Lead reassigned to '+(agent?.full_name||'agent')+'. Original agent retains access.')
+        setReassignTarget(null); setReassignTo(''); fetchLeads(); fetchActivityFull()
+      }catch(err){ showApToast('Error: '+err.message,'error') }
+      setReassigning(false)
+    }
+
+    const handleUnassignLead=async(l)=>{
+      if(!users.find(u=>u.id===l.assigned_to)?.full_name||'agent')+'?'))return
+      const{error}=await supabase.from('leads').update({assigned_to:null,mirror_agents:[],assignment_type:null}).eq('id',l.id)
+      if(error){ showApToast('Error: '+error.message,'error'); return }
+      showApToast('Lead unassigned'); fetchLeads()
+    }
+
+    const handleDeleteLead=async(l)=>{
+      if(!window.confirm('Delete lead "'+(l.full_name||'')+'" ('+(l.mobile||'')+')?\n\nThis also deletes its call logs, tasks and obligations. This cannot be undone.'))return
+      try{
+        await supabase.from('calls').delete().eq('lead_id',l.id)
+        await supabase.from('tasks').delete().eq('lead_id',l.id)
+        await supabase.from('loan_obligations').delete().eq('lead_id',l.id)
+        await supabase.from('activity_log').delete().eq('lead_id',l.id)
+        await supabase.from('leads').delete().eq('id',l.id)
+        showApToast('Lead "'+(l.full_name||'')+'" deleted'); fetchLeads()
+      }catch(e){ showApToast('Error deleting lead: '+e.message,'error') }
+    }
 
     const doReassignExport=async(leadsToExport)=>{
       if(!leadsToExport||!leadsToExport.length){ showApToast('No leads to export','error'); return }
@@ -4609,7 +4652,12 @@ export default function Dashboard({ session }) {
     const agentRows=users.filter(u=>u.role==='agent').map(a=>{ const ml=adminLeads.filter(l=>l.assigned_to===a.id); const au=authUsers.find(u=>u.id===a.id); return{...a,callsToday:callLogs.filter(c=>c.agent_id===a.id&&(c.created_at||'').startsWith(td)).length,totalLeads:ml.length,leadsMonth:ml.filter(l=>(l.created_at||'').startsWith(tm)).length,interested:ml.filter(l=>l.status==='Interested').length,callback:ml.filter(l=>l.status==='Callback').length,disbursed:ml.filter(l=>l.status==='Disbursed').length,lastLogin:au?.last_sign_in_at||null} }).sort((a,b)=>b.callsToday-a.callsToday)
     const mk=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:IST_TZ}).toLowerCase().replace(' ','_')
     const manualStats=[{key:'disbursements_'+mk,label:'Disbursements This Month'},{key:'applications_'+mk,label:'Applications Logged In'},{key:'obligations_'+mk,label:'Obligations Disbursed'}]
-    const filteredLeads=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF; const mF=!leadDateFrom||(l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.created_at||'')<=leadDateTo+'T23:59:59'; return mQ&&mS&&mA&&mF&&mT })
+    // Duplicate detection: same mobile (last 10 digits) assigned to the same agent more than once
+    const dupKeyCount={}
+    adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
+    const dupLeadIds=new Set()
+    adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) dupLeadIds.add(l.id) })
+    const filteredLeads=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF; const mF=!leadDateFrom||(l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mF&&mT&&mDup })
     const allLdSel=filteredLeads.length>0&&filteredLeads.every(l=>selected.has(l.id))
     const filteredAct=activityFull.filter(a=>{ const mA=!actFdAgent||a.assigned_to===actFdAgent||a.assigned_by===actFdAgent; const mD=!actFdDate||(a.created_at||'').startsWith(actFdDate); return mA&&mD })
     const apStageStyle=name=>{const s=adminStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return{bg:'#F7FAFC',color:'#4A5568'}}
@@ -4871,7 +4919,11 @@ export default function Dashboard({ session }) {
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateTo} onChange={e=>setLeadDateTo(e.target.value)}/>
                 <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
                 <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
+                <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
               </div>
+              {dupLeadIds.size>0&&(
+                <div style={{fontSize:12,color:'#dc2626',fontWeight:600,marginBottom:10}}>⚠️ {dupLeadIds.size} duplicate lead{dupLeadIds.size>1?'s':''} detected (same mobile assigned to the same agent)</div>
+              )}
               {selected.size>0&&(
                 <div style={{background:'#185FA5',color:'white',padding:'10px 14px',borderRadius:8,marginBottom:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                   <span style={{fontSize:13,fontWeight:600}}>{selected.size} lead{selected.size>1?'s':''} selected</span>
@@ -4897,9 +4949,9 @@ export default function Dashboard({ session }) {
                 
                 <div style={{overflowX:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={{width:36,padding:'11px 12px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>{['Name','Mobile','Sheet No.','Status','Agent','Loan Amt','Obligations','FOIR%','Obl. EMI','Last Note','Actions','Date'].map(h=><th key={h} style={{padding:'11px 12px',textAlign:'left',fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}>{h}</th>)}</tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={11}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; return(<tr key={l.id} style={{background:selected.has(l.id)?'#EFF6FF':'white',borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background='white'}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={11}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'11px 12px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
-<td style={{padding:'11px 12px',verticalAlign:'middle'}}><div style={{fontWeight:600,fontSize:13,color:'#1E293B'}}>{l.full_name||'—'}</div></td>
+<td style={{padding:'11px 12px',verticalAlign:'middle'}}><div style={{fontWeight:600,fontSize:13,color:'#1E293B'}}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:3,padding:'1px 7px',borderRadius:10,background:'#FEF3C7',color:'#92400E',fontSize:10,fontWeight:700}}>⚠️ DUPLICATE</span>}</td>
 <td style={{padding:'11px 12px',verticalAlign:'middle',fontSize:12.5,color:'#475569',fontVariantNumeric:'tabular-nums'}}>{l.mobile||'—'}</td>
 <td style={{padding:'11px 12px',verticalAlign:'middle',fontSize:12,color:'#64748B',whiteSpace:'nowrap'}}>{l.sheet_number||<span style={{color:'#CBD5E1'}}>—</span>}</td>
 <td style={{padding:'11px 12px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'4px 11px',borderRadius:6,fontSize:11,fontWeight:600,whiteSpace:'nowrap',border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{l.status||'New'}</span></td>
@@ -4914,6 +4966,9 @@ export default function Dashboard({ session }) {
     <button onClick={()=>setViewLead(l)} style={{background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:12,fontWeight:600,padding:'5px 14px',borderRadius:6,cursor:'pointer'}}>View</button>
     <a href={'tel:'+(l.mobile||'')} title='Call' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:30,height:30,borderRadius:8,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={15} color='#DC2626'/></a>
     <a href={'https://wa.me/91'+(l.mobile||'')} target='_blank' rel='noreferrer' title='WhatsApp' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:30,height:30,borderRadius:8,border:'1px solid #BBF7D0',background:'#F0FDF4',textDecoration:'none'}}><IconBrandWhatsapp size={15} color='#25D366'/></a>
+    <button onClick={()=>{setReassignTarget(l);setReassignTo('')}} title='Reassign to another agent (original keeps access)' style={{background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:11,fontWeight:600,padding:'5px 10px',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}}>↩ Reassign</button>
+    <button onClick={()=>handleUnassignLead(l)} title='Remove agent assignment' style={{background:'#FFF7ED',border:'1px solid #FED7AA',color:'#C2410C',fontSize:11,fontWeight:600,padding:'5px 10px',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}}>⊘ Unassign</button>
+    <button onClick={()=>handleDeleteLead(l)} title='Delete lead permanently' style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',fontSize:11,fontWeight:600,padding:'5px 10px',borderRadius:6,cursor:'pointer',whiteSpace:'nowrap'}}>🗑 Delete</button>
   </div>
 </td>
 <td style={{padding:'11px 12px',verticalAlign:'middle',fontSize:11.5,color:'#94A3B8',whiteSpace:'nowrap'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'}</td>
@@ -4921,6 +4976,24 @@ export default function Dashboard({ session }) {
                   </tbody></table>
                 </div>
               </div>
+              {reassignTarget&&(
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>{setReassignTarget(null);setReassignTo('')}}>
+                  <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,width:'100%',maxWidth:440,padding:28,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+                    <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Reassign Lead</div>
+                    <div style={{fontSize:13,color:'#64748B',marginBottom:16}}><strong>{reassignTarget.full_name}</strong> ({reassignTarget.mobile})<br/>Currently assigned to: <strong>{users.find(u=>u.id===reassignTarget.assigned_to)?.full_name||'Unassigned'}</strong></div>
+                    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1E40AF'}}>✅ <strong>Safe Reassign:</strong> The original agent keeps access to this lead. The new agent also gets it with full history.</div>
+                    <label className='form-label'>Assign To</label>
+                    <select className='form-input' style={{width:'100%',marginBottom:20}} value={reassignTo} onChange={e=>setReassignTo(e.target.value)}>
+                      <option value=''>Select agent…</option>
+                      {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
+                    </select>
+                    <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                      <button onClick={()=>{setReassignTarget(null);setReassignTo('')}} style={{padding:'9px 20px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:13}}>Cancel</button>
+                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Reassigning…':'Reassign Lead'}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {activeTab==='activity'&&(
