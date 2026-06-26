@@ -1,4 +1,4 @@
-﻿/* eslint-disable */
+/* eslint-disable */
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
@@ -515,7 +515,7 @@ function AgentDashboard({ userId }) {
             }
             return prev
           }
-          if(upd.assigned_to&&upd.assigned_to!==userId){
+          if(upd.assigned_to&&upd.assigned_to!==userId&&!(upd.mirror_agents||[]).includes(userId)){
             const next=[...prev.filter(l=>l.id!==upd.id)]
             computePipelineStats(next)
             return next
