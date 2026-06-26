@@ -4891,9 +4891,9 @@ export default function Dashboard({ session }) {
                             {i>2&&<span style={{color:'#A0AEC0',fontSize:12}}>#{i+1}</span>}
                           </td>
                         </tr>
-
+                      ))}
                     </tbody>
-
+                  </table>
                 </div>
               )}
             </div>
