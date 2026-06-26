@@ -4887,13 +4887,13 @@ export default function Dashboard({ session }) {
                           <td>
                             {i===0&&<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥇 Top</span>}
                             {i===1&&<span style={{background:'#F3F4F6',color:'#374151',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥈 2nd</span>}
-                            {i===2&&<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥉 3rd</span>}
+
                             {i>2&&<span style={{color:'#A0AEC0',fontSize:12}}>#{i+1}</span>}
                           </td>
                         </tr>
-                      ))}
+
                     </tbody>
-                  </table>
+
                 </div>
               )}
             </div>
