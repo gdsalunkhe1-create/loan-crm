@@ -4524,7 +4524,7 @@ export default function Dashboard({ session }) {
     }
 
     const handleUnassignLead=async(l)=>{
-      if(!users.find(u=>u.id===l.assigned_to)?.full_name||'agent')+'?'))return
+      if(!window.confirm('Unassign "'+(l.full_name||'this lead')+'" from '+(users.find(u=>u.id===l.assigned_to)?.full_name||'agent')+'?'))return
       const{error}=await supabase.from('leads').update({assigned_to:null,mirror_agents:[],assignment_type:null}).eq('id',l.id)
       if(error){ showApToast('Error: '+error.message,'error'); return }
       showApToast('Lead unassigned'); fetchLeads()
