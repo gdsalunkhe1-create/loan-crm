@@ -515,7 +515,7 @@ function AgentDashboard({ userId }) {
             }
             return prev
           }
-          if(upd.assigned_to&&upd.assigned_to!==userId){fetchAllRef.current?.();return prev;}if(false){
+          if(upd.assigned_to&&upd.assigned_to!==userId){setTimeout(()=>fetchAllRef.current?.(),50);return prev;}if(false){
             const next=[...prev.filter(l=>l.id!==upd.id)]
             computePipelineStats(next)
             return next
