@@ -515,7 +515,7 @@ function AgentDashboard({ userId }) {
             }
             return prev
           }
-          if(false&&upd.assigned_to&&upd.assigned_to!==userId&&!(upd.mirror_agents||[]).includes(userId)){
+          if(upd.assigned_to&&upd.assigned_to!==userId&&!(upd.mirror_agents||[]).includes(userId)){
             const next=[...prev.filter(l=>l.id!==upd.id)]
             computePipelineStats(next)
             return next
@@ -858,14 +858,14 @@ function AgentDashboard({ userId }) {
     else if(dateRange==='week')  sd.setDate(now.getDate()-7)
     else if(dateRange==='month') sd.setDate(1)
     const[lR,cR,tR,pR]=await Promise.all([
-      supabase.from('leads').select('*').or(`assigned_to.eq.${userId},mirror_agents.cs.{${userId}}`).order('created_at',{ascending:false}),
+    const[lR,mirR,cR,tR,pR]=await Promise.all([
+      supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}),
+      supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}),
       supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
       supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
       supabase.from('profiles').select('*').eq('id',userId).single(),
     ])
-    const leads=lR.data||[]
-    let obligationMap={}
-    if(leads.length>0){
+    const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id))]
       const leadIds=leads.map(l=>l.id).filter(Boolean)
       const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
       if(!oErr){
