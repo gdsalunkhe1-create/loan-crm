@@ -928,15 +928,21 @@ function AgentDashboard({ userId }) {
 
   const updateLeadStatus=async(leadId,newStatus)=>{
     const lead=myLeads.find(l=>l.id===leadId)
-    if(lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId){
-      showToast('This lead is read-only — you can view it but cannot change its stage','error'); return
-    }
+    const isMirrorLead=lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
     if(newStatus==='Callback'){
       setCallbackLead(lead)
       setCallbackDate(istToday())
       setCallbackTime('10:00')
       setCallbackNotes('')
       setShowCallbackModal(true)
+      return
+    }
+    if(isMirrorLead){
+      const newMirrorStatuses={...(lead.mirror_agent_statuses||{}), [userId]:newStatus}
+      const {error}=await supabase.from('leads').update({mirror_agent_statuses:newMirrorStatuses}).eq('id',leadId)
+      if(error){ showToast('Could not update stage: '+error.message,'error'); return }
+      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,mirror_agent_statuses:newMirrorStatuses}:l))
+      showToast('Stage updated to '+newStatus)
       return
     }
     console.log('[Action] updateLeadStatus → DB write:', leadId, newStatus)
