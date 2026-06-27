@@ -864,7 +864,7 @@ function AgentDashboard({ userId }) {
       supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
       supabase.from('profiles').select('*').eq('id',userId).single(),
     ])
-    const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id))]
+    const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
     let obligationMap={}
     const leadIds=leads.map(l=>l.id).filter(Boolean)
     const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
@@ -4514,7 +4514,8 @@ export default function Dashboard({ session }) {
         const originalAgent=reassignTarget.assigned_to
         const currentMirrors=reassignTarget.mirror_agents||[]
         const newMirrors=[...new Set([...currentMirrors,originalAgent].filter(Boolean))]
-        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
+        const newMirrorStatuses={...(reassignTarget.mirror_agent_statuses||{})}; if(originalAgent) newMirrorStatuses[originalAgent]=reassignTarget.status
+        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,mirror_agent_statuses:newMirrorStatuses,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
         try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
