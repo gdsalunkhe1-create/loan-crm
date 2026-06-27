@@ -3210,6 +3210,7 @@ function AgentDashboard({ userId }) {
                 <div style={{fontSize:13,color:txt1,lineHeight:1.5}}>{viewLead.notes}</div>
               </div>
             )}
+            {(leadObligations[viewLead.id]||[]).length>0&&(<div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:11,color:txt2,marginBottom:6,fontWeight:600}}>Obligations</div>{(leadObligations[viewLead.id]||[]).map((ob,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt1,padding:'3px 0',borderBottom:'1px solid rgba(0,0,0,0.05)'}}><span>{ob.bank_name||'Bank '+(i+1)}</span><span style={{fontWeight:600}}>EMI: ₹{Number(ob.emi_amount||0).toLocaleString('en-IN')}</span></div>))}<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#6366f1'}}>Total EMI: ₹{(leadObligations[viewLead.id]||[]).reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0).toLocaleString('en-IN')}</div></div>)}
           </div>
         </div>
       )}
