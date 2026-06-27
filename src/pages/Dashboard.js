@@ -1,4 +1,4 @@
-/* eslint-disable */
+ï»¿/* eslint-disable */
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import * as XLSX from 'xlsx'
@@ -76,7 +76,7 @@ class ErrorBoundary extends React.Component {
 }
 
 const STATUS_OPTIONS = ['New','Interested','Callback','Login','Approved','Disbursed','Not Interested','DND']
-// 'YYYY-MM-DD' for today in IST — used only to default/min-bound date pickers.
+// 'YYYY-MM-DD' for today in IST ï¿½ used only to default/min-bound date pickers.
 // Built from the single canonical nowIST() so it can never drift from the
 // reminder engine's notion of "now".
 const istToday = () => nowIST().slice(0,10)
@@ -250,7 +250,7 @@ const actionBtnLabeledStyles = {
   view:        {...actionBtnLabeledBase, background:'#FFEDD5', color:'#EA580C'},
 }
 
-// Standard action button — icon only, no label (desktop table Actions column)
+// Standard action button ï¿½ icon only, no label (desktop table Actions column)
 const actionBtnSimpleBase = {
   padding:'5px 9px', borderRadius:10, border:'none',
   cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center',
@@ -464,7 +464,7 @@ function AgentDashboard({ userId }) {
     checkRemindersRef.current?.()
     fetchWATemplates()
     fetchCallbackTasksRef.current?.()
-    // 30-second poll — refs always point to the latest function so closures stay fresh
+    // 30-second poll ï¿½ refs always point to the latest function so closures stay fresh
     const iv=setInterval(()=>{checkRemindersRef.current?.();fetchCallbackTasksRef.current?.()},30000)
     return()=>clearInterval(iv)
   },[userId])
@@ -630,7 +630,7 @@ function AgentDashboard({ userId }) {
 
     const onVisible=()=>{
       if(document.visibilityState==='visible'){
-        console.log('[RT] tab visible — re-syncing')
+        console.log('[RT] tab visible ï¿½ re-syncing')
         fetchAllRef.current?.()
         setLastSynced(new Date())
       }
@@ -667,9 +667,9 @@ function AgentDashboard({ userId }) {
 
   const fetchCallbackTasks=async()=>{
     if(!userId) return
-    // Fetch ALL non-terminal callbacks — no date restriction, so overdue tasks
+    // Fetch ALL non-terminal callbacks ï¿½ no date restriction, so overdue tasks
     // AND tomorrow's/future callbacks all surface (filtering happens client-side
-    // below, never as a DB-side comparison against the timestamptz column —
+    // below, never as a DB-side comparison against the timestamptz column ï¿½
     // see timeUtils.js for why that matters).
     const{data}=await supabase.from('tasks').select('*')
       .eq('assigned_to',userId)
@@ -696,7 +696,7 @@ function AgentDashboard({ userId }) {
     })
 
     // Persistent list: every non-resolved callback whose window has opened
-    // (due_date - 5min has arrived) stays in the list continuously — this is
+    // (due_date - 5min has arrived) stays in the list continuously ï¿½ this is
     // deliberately broader than the popup trigger below, so callbacks don't
     // disappear from the panel between the every-5-minute popup pulses.
     const displayTasks=allTasks.filter(t=>t.status!=='Attempted'&&isReminderActive(t))
@@ -704,7 +704,7 @@ function AgentDashboard({ userId }) {
 
     // Popup/beep = shouldTriggerReminder (5-min-before window, repeating
     // every SNOOZE_INTERVAL_MIN). last_snooze_at is read from the DB row
-    // first — that's what makes the snooze cadence survive a page refresh —
+    // first ï¿½ that's what makes the snooze cadence survive a page refresh ï¿½
     // and falls back to the in-memory ref only as an optimistic same-tab cache.
     const triggeredTasks=allTasks.filter(t=>
       t.status!=='Attempted'&&shouldTriggerReminder(t, t.last_snooze_at||snoozedTasksRef.current[t.id]||null)
@@ -719,7 +719,7 @@ function AgentDashboard({ userId }) {
       triggeredTasks.forEach(t=>{
         snoozedTasksRef.current[t.id]=now
         supabase.from('tasks').update({last_snooze_at:toDbTimestamp(now)}).eq('id',t.id)
-          .then(({error})=>{ if(error) console.error('[Reminder] last_snooze_at write failed — has the migration been run? See REMINDER_ENGINE_MIGRATION.sql', error) })
+          .then(({error})=>{ if(error) console.error('[Reminder] last_snooze_at write failed ï¿½ has the migration been run? See REMINDER_ENGINE_MIGRATION.sql', error) })
       })
       setShowCallbackReminder(true)
       if(!alreadyBuzzingRef.current){
@@ -733,7 +733,7 @@ function AgentDashboard({ userId }) {
     console.log('[Action] markCallbackDone ? DB write task:', taskId)
     const {data,error}=await supabase.from('tasks').update({status:'Completed',last_snooze_at:null}).eq('id',taskId).select()
     if(error){ console.error('[Action] markCallbackDone error:', error); showToast('Could not mark done: '+error.message,'error'); return }
-    if(!data||data.length===0){ console.warn('[Action] markCallbackDone updated 0 rows — RLS blocked or task not found'); showToast('Not saved — permission denied on this task','error'); fetchCallbackTasks(); return }
+    if(!data||data.length===0){ console.warn('[Action] markCallbackDone updated 0 rows ï¿½ RLS blocked or task not found'); showToast('Not saved ï¿½ permission denied on this task','error'); fetchCallbackTasks(); return }
     delete snoozedTasksRef.current[taskId]
     setCallbackTasks(prev=>[...prev.filter(t=>t.id!==taskId)])
     setMyTasks(prev=>[...prev.map(t=>t.id===taskId?{...t,status:'Completed'}:t)])
@@ -749,7 +749,7 @@ function AgentDashboard({ userId }) {
     console.log('[Action] markCallbackAttempted ? DB write task:', taskId)
     const {data,error}=await supabase.from('tasks').update({status:'Attempted',last_snooze_at:null}).eq('id',taskId).select()
     if(error){ console.error('[Action] markCallbackAttempted error:', error); showToast('Could not mark attempted: '+error.message,'error'); return }
-    if(!data||data.length===0){ console.warn('[Action] markCallbackAttempted updated 0 rows — RLS blocked or task not found'); showToast('Not saved — permission denied on this task','error'); fetchCallbackTasks(); return }
+    if(!data||data.length===0){ console.warn('[Action] markCallbackAttempted updated 0 rows ï¿½ RLS blocked or task not found'); showToast('Not saved ï¿½ permission denied on this task','error'); fetchCallbackTasks(); return }
     delete snoozedTasksRef.current[taskId]
     setCallbackTasks(prev=>[...prev.filter(t=>t.id!==taskId)])
     setMyTasks(prev=>[...prev.map(t=>t.id===taskId?{...t,status:'Attempted'}:t)])
@@ -763,7 +763,7 @@ function AgentDashboard({ userId }) {
 
   // Combine the date+time pickers into the canonical IST value, then convert
   // to the absolute instant Postgres needs for the `timestamptz` due_date
-  // column (see timeUtils.js — this conversion is the actual bug fix).
+  // column (see timeUtils.js ï¿½ this conversion is the actual bug fix).
   const scheduleDueDate=(dateStr,timeStr)=>toDbTimestamp(buildIST(dateStr,timeStr))
 
   // If the composed datetime is already in the past, roll forward by exactly 1 day
@@ -795,7 +795,7 @@ function AgentDashboard({ userId }) {
     console.log('[Action] scheduleCallback ? DB write lead:', callbackLead.id, 'task due:', iso)
     const {data:lData,error:lErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
     if(lErr){ console.error('[Action] scheduleCallback lead update error:', lErr); showToast('Could not update stage: '+lErr.message,'error') }
-    else if(!lData||lData.length===0){ console.warn('[Action] scheduleCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
+    else if(!lData||lData.length===0){ console.warn('[Action] scheduleCallback lead update hit 0 rows ï¿½ RLS blocked or lead not found'); showToast('Stage not saved ï¿½ permission denied on this lead','error'); fetchAllRef.current?.() }
     else { setMyLeads(prev=>[...prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback'}:l)]); fetchAllRef.current?.() }
     const {error:tErr}=await supabase.from('tasks').insert([{
       title:'Callback: '+callbackLead.full_name,
@@ -822,7 +822,7 @@ function AgentDashboard({ userId }) {
     if(!callbackLead) return
     const {data:skipData,error:skipErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
     if(skipErr){ console.error('[Action] skipCallback lead update error:', skipErr); showToast('Could not update stage: '+skipErr.message,'error') }
-    else if(!skipData||skipData.length===0){ console.warn('[Action] skipCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
+    else if(!skipData||skipData.length===0){ console.warn('[Action] skipCallback lead update hit 0 rows ï¿½ RLS blocked or lead not found'); showToast('Stage not saved ï¿½ permission denied on this lead','error'); fetchAllRef.current?.() }
     else { setMyLeads(prev=>prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback'}:l)); showToast('Stage updated to Callback'); fetchAllRef.current?.() }
     setShowCallbackModal(false)
   }
@@ -830,7 +830,7 @@ function AgentDashboard({ userId }) {
   const checkReminders=async()=>{
     if(!userId)return
     // Fetch ALL non-terminal, non-callback tasks for this agent (callbacks are
-    // handled by the dedicated popup above) — no DB-side date filter, so every
+    // handled by the dedicated popup above) ï¿½ no DB-side date filter, so every
     // comparison happens client-side through the canonical IST module.
     const{data}=await supabase.from('tasks').select('*')
       .eq('assigned_to',userId).in('status',['Pending','In Progress'])
@@ -927,8 +927,11 @@ function AgentDashboard({ userId }) {
   }
 
   const updateLeadStatus=async(leadId,newStatus)=>{
+    const lead=myLeads.find(l=>l.id===leadId)
+    if(lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId){
+      showToast('This lead is read-only â€” you can view it but cannot change its stage','error'); return
+    }
     if(newStatus==='Callback'){
-      const lead=myLeads.find(l=>l.id===leadId)
       setCallbackLead(lead)
       setCallbackDate(istToday())
       setCallbackTime('10:00')
@@ -939,15 +942,15 @@ function AgentDashboard({ userId }) {
     console.log('[Action] updateLeadStatus ? DB write:', leadId, newStatus)
     const {data,error}=await supabase.from('leads').update({status:newStatus}).eq('id',leadId).select()
     if(error){ console.error('[Action] updateLeadStatus DB error:', error); showToast('Could not update stage: '+error.message,'error'); return }
-    if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.(); return }
-    // Optimistic update — RT subscription will also fire on other devices
+    if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows ï¿½ RLS blocked or lead not found'); showToast('Stage not saved ï¿½ permission denied on this lead','error'); fetchAllRef.current?.(); return }
+    // Optimistic update ï¿½ RT subscription will also fire on other devices
     setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,status:newStatus}:l)])
     showToast('Stage updated to '+newStatus)
     fetchAllRef.current?.()
     if(newStatus==='Lead'){
       const lead=data[0]
       notifyAdmins({type:'lead_saved',lead_id:leadId,customer_name:lead.full_name,amount:lead.loan_amount||null,
-        message:`?? ${profile?.full_name||'Agent'} booked a LEAD — ${lead.full_name}${lead.loan_amount?' · ?'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
+        message:`?? ${profile?.full_name||'Agent'} booked a LEAD ï¿½ ${lead.full_name}${lead.loan_amount?' ï¿½ ?'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
       })
     }
   }
@@ -968,7 +971,7 @@ function AgentDashboard({ userId }) {
     console.log('[Action] saveNote ? DB write lead:', noteLead.id)
     const {error}=await supabase.from('leads').update({notes:updated}).eq('id',noteLead.id)
     if(error){ console.error('[Action] saveNote DB error:', error); return }
-    // Optimistic update — RT subscription will also fire on other devices
+    // Optimistic update ï¿½ RT subscription will also fire on other devices
     setMyLeads(prev=>[...prev.map(l=>l.id===noteLead.id?{...l,notes:updated}:l)])
     setNoteLead(prev=>prev?{...prev,notes:updated}:prev)
     setShowNoteModal(false); setNoteText('')
@@ -1126,14 +1129,14 @@ function AgentDashboard({ userId }) {
     const relaxationLoans=['Personal Loan','Housing Loan','Car Loan','Bike Loan','Consumer Durable Loan']
     if(relaxationLoans.includes(ob.obligation_type)&&remaining<=3)return '< 3 EMIs left'
     const isBT=ob.balance_transfer===true||ob.balance_transfer==='true'||ob.balance_transfer==='Yes'||ob.balance_transfer==='yes'
-    if(isBT&&obligated===0)return 'BT Applied — Not Obligated'
+    if(isBT&&obligated===0)return 'BT Applied ï¿½ Not Obligated'
     if(ob.obligation_type==='Credit Card'){
       const out=parseFloat(ob.outstanding_amount)||0
       if(out>0)return `5% of ?${out.toLocaleString('en-IN')} outstanding = ?${Math.round(out*0.05).toLocaleString('en-IN')} obligated`
       return null
     }
-    if(obligated===0)return '100% — Co-applicant'
-    if(obligated===emi*0.5)return '50% — Joint / Both'
+    if(obligated===0)return '100% ï¿½ Co-applicant'
+    if(obligated===emi*0.5)return '50% ï¿½ Joint / Both'
     return null
   }
 
@@ -1191,7 +1194,7 @@ function AgentDashboard({ userId }) {
       if(String(obligation.id).startsWith('tmp-')){
         const {data,error}=await supabase.from('loan_obligations').insert([payload]).select().single()
         if(error) throw error
-        if(!data) throw new Error('Insert succeeded but no data returned — check RLS SELECT policy on loan_obligations')
+        if(!data) throw new Error('Insert succeeded but no data returned ï¿½ check RLS SELECT policy on loan_obligations')
         console.log('[saveObligationCard] inserted:', data.id)
         const updated=[...(getLeadObligations(leadId)||[]),data]
         updateSavedObligations(leadId,updated)
@@ -1200,12 +1203,12 @@ function AgentDashboard({ userId }) {
         const _cname=selectedLeadForObligations?.full_name||''
         notifyAdmins({type:'obligation_added',lead_id:leadId,customer_name:_cname,
           amount:payload.required_loan_amount||payload.loan_amount||null,
-          message:`?? ${profile?.full_name||'Agent'} added a requirement for ${_cname}${payload.required_loan_amount?' · ?'+Number(payload.required_loan_amount).toLocaleString('en-IN'):''}`,
+          message:`?? ${profile?.full_name||'Agent'} added a requirement for ${_cname}${payload.required_loan_amount?' ï¿½ ?'+Number(payload.required_loan_amount).toLocaleString('en-IN'):''}`,
         })
       } else {
         const {data,error}=await supabase.from('loan_obligations').update(payload).eq('id',obligation.id).select().single()
         if(error) throw error
-        if(!data) throw new Error('Update succeeded but no data returned — check RLS SELECT policy on loan_obligations')
+        if(!data) throw new Error('Update succeeded but no data returned ï¿½ check RLS SELECT policy on loan_obligations')
         console.log('[saveObligationCard] updated:', data.id)
         const updated=(getLeadObligations(leadId)||[]).map(item=>item.id===data.id?data:item)
         updateSavedObligations(leadId,updated)
@@ -1256,7 +1259,7 @@ function AgentDashboard({ userId }) {
 
   const enrichDraftTitle=(ob)=>{
     const title=ob.obligation_type||'New Obligation'
-    const bank=ob.bank_name?` — ${ob.bank_name}`:''
+    const bank=ob.bank_name?` ï¿½ ${ob.bank_name}`:''
     return title+bank
   }
 
@@ -1271,7 +1274,7 @@ function AgentDashboard({ userId }) {
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
     const stamp=`[${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} - ${agentName}]`
-    const entry=`${stamp}: WhatsApp sent — "${tpl.name}" template`
+    const entry=`${stamp}: WhatsApp sent ï¿½ "${tpl.name}" template`
     const updated=(waLead.notes||'')?(waLead.notes+'\n'+entry):entry
     supabase.from('leads').update({notes:updated}).eq('id',waLead.id)
     setMyLeads(prev=>prev.map(l=>l.id===waLead.id?{...l,notes:updated}:l))
@@ -1279,7 +1282,7 @@ function AgentDashboard({ userId }) {
     showToast('WhatsApp opened for '+waLead.full_name)
   }
 
-  // Quick one-click WA send (no modal) — logs note and opens WA directly
+  // Quick one-click WA send (no modal) ï¿½ logs note and opens WA directly
   const sendWAQuick=(tpl,lead)=>{
     const name=lead.full_name?.split(' ')[0]||'Customer'
     const amount=Number(lead.loan_amount||0).toLocaleString('en-IN')
@@ -1289,7 +1292,7 @@ function AgentDashboard({ userId }) {
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
     const stamp=`[${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} - ${agentName}]`
-    const entry=`${stamp}: WhatsApp sent — "${tpl.name}" template`
+    const entry=`${stamp}: WhatsApp sent ï¿½ "${tpl.name}" template`
     const updated=(lead.notes||'')?(lead.notes+'\n'+entry):entry
     supabase.from('leads').update({notes:updated}).eq('id',lead.id)
     setMyLeads(prev=>prev.map(l=>l.id===lead.id?{...l,notes:updated}:l))
@@ -1452,7 +1455,7 @@ function AgentDashboard({ userId }) {
     showToast('Report downloaded!')
   }
 
-  // Thin display-formatting aliases over the canonical timeUtils.formatIST —
+  // Thin display-formatting aliases over the canonical timeUtils.formatIST ï¿½
   // kept under their original names so the many render call sites below
   // don't all need touching, but the actual date logic now lives in exactly
   // one place (src/utils/timeUtils.js).
@@ -1461,7 +1464,7 @@ function AgentDashboard({ userId }) {
   const fmtIST=(v)=>formatIST(v,'datetime')
   const isISTToday=(v)=>parseIST(v)?.slice(0,10)===istToday()
 
-  // Dynamic stage helpers — fall back to module-level constants when table not yet loaded
+  // Dynamic stage helpers ï¿½ fall back to module-level constants when table not yet loaded
   const stageNames=leadStages.length>0?leadStages.map(s=>s.name):STATUS_OPTIONS
   const stageStyle=name=>{const s=leadStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return STATUS_STYLE[name]||{bg:'#F3F4F6',color:'#6B7280'}}
 
@@ -1572,7 +1575,7 @@ function AgentDashboard({ userId }) {
         />
       )}
 
-      {/* POWER DIALER — QUEUE COMPLETE */}
+      {/* POWER DIALER ï¿½ QUEUE COMPLETE */}
       {showWorkspace&&queueComplete&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
           <div style={{background:'white',borderRadius:20,padding:'40px 48px',maxWidth:480,width:'100%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
@@ -1602,7 +1605,7 @@ function AgentDashboard({ userId }) {
         </div>
       )}
 
-      {/* WA QUICK SEND POPUP — desktop: fixed near button, mobile: fixed bottom sheet */}
+      {/* WA QUICK SEND POPUP ï¿½ desktop: fixed near button, mobile: fixed bottom sheet */}
       {showWAQuick&&(
         <>
           {isMobile?(
@@ -1862,14 +1865,14 @@ function AgentDashboard({ userId }) {
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <IconBrandWhatsapp size={20} color="white"/>
                 <div>
-                  <div style={{color:'white',fontWeight:700,fontSize:14}}>WhatsApp — {waLead.full_name}</div>
+                  <div style={{color:'white',fontWeight:700,fontSize:14}}>WhatsApp ï¿½ {waLead.full_name}</div>
                   <div style={{color:'rgba(255,255,255,0.75)',fontSize:11}}>+91 {waLead.mobile}</div>
                 </div>
               </div>
               <button onClick={()=>setShowWAModal(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={15}/></button>
             </div>
             <div style={{padding:'16px 18px',overflowY:'auto',flex:1}}>
-              <div style={{fontSize:12,color:'#6B7280',marginBottom:12}}>Tap a template — name and amount auto-fill:</div>
+              <div style={{fontSize:12,color:'#6B7280',marginBottom:12}}>Tap a template ï¿½ name and amount auto-fill:</div>
               {waTemplates.map(tpl=>(
                 <div key={tpl.id} onClick={()=>sendWATemplate(tpl)}
                   style={{background:tpl.tagBg||'#F9FAFB',border:'1px solid #E5E7EB',borderRadius:10,padding:14,marginBottom:10,cursor:'pointer'}}>
@@ -1878,7 +1881,7 @@ function AgentDashboard({ userId }) {
                     <span style={{background:tpl.tagColor,color:'white',fontSize:10,padding:'2px 8px',borderRadius:20,fontWeight:600}}>{tpl.tag}</span>
                   </div>
                   <div style={{fontSize:12,color:'#4B5563',lineHeight:1.5}}>
-                    {tpl.message.replace(/{name}/g,waLead.full_name?.split(' ')[0]||'Customer').replace(/{amount}/g,Number(waLead.loan_amount||0).toLocaleString('en-IN')).replace(/{emi}/g,Math.round((Number(waLead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')).slice(0,120)+'…'}
+                    {tpl.message.replace(/{name}/g,waLead.full_name?.split(' ')[0]||'Customer').replace(/{amount}/g,Number(waLead.loan_amount||0).toLocaleString('en-IN')).replace(/{emi}/g,Math.round((Number(waLead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')).slice(0,120)+'ï¿½'}
                   </div>
                   <div style={{marginTop:8,fontSize:11,color:tpl.tagColor,fontWeight:600}}>? Opens WhatsApp</div>
                 </div>
@@ -1895,7 +1898,7 @@ function AgentDashboard({ userId }) {
           <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300}} onClick={()=>setShowNoteModal(false)}/>
           <div style={{position:'fixed',top:isMobile?'auto':'50%',bottom:isMobile?0:'auto',left:isMobile?0:'50%',transform:isMobile?'none':'translate(-50%,-50%)',background:'white',borderRadius:isMobile?'16px 16px 0 0':16,boxShadow:'0 24px 60px rgba(0,0,0,0.18)',zIndex:400,width:isMobile?'100%':'90%',maxWidth:420,overflow:'hidden'}}>
             <div style={{background:'#854F0B',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,color:'white',fontWeight:700,fontSize:14}}><IconNotes size={16}/>Add Note — {noteLead.full_name}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8,color:'white',fontWeight:700,fontSize:14}}><IconNotes size={16}/>Add Note ï¿½ {noteLead.full_name}</div>
               <button onClick={()=>setShowNoteModal(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
             </div>
             <div style={{padding:'16px 18px'}}>
@@ -1930,7 +1933,7 @@ function AgentDashboard({ userId }) {
                 </div>
                 <div>
                   <div style={{fontWeight:700,fontSize:15}}>Schedule Callback</div>
-                  <div style={{fontSize:12,opacity:0.8}}>{callbackLead.full_name} · {callbackLead.mobile}</div>
+                  <div style={{fontSize:12,opacity:0.8}}>{callbackLead.full_name} ï¿½ {callbackLead.mobile}</div>
                 </div>
               </div>
               <button onClick={()=>setShowCallbackModal(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
@@ -1953,7 +1956,7 @@ function AgentDashboard({ userId }) {
               <div style={{marginBottom:14}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Reason for callback</label>
                 <textarea value={callbackNotes} onChange={e=>setCallbackNotes(e.target.value)}
-                  placeholder="Reason for callback…"
+                  placeholder="Reason for callbackï¿½"
                   rows={3}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',color:'#111827'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
@@ -1986,7 +1989,7 @@ function AgentDashboard({ userId }) {
                   <IconPhone size={18}/>
                 </div>
                 <div>
-                  <div style={{fontWeight:700,fontSize:15}}>Log Call — {callLogLead.full_name}</div>
+                  <div style={{fontWeight:700,fontSize:15}}>Log Call ï¿½ {callLogLead.full_name}</div>
                   <div style={{fontSize:12,opacity:0.82}}>{callLogLead.mobile}</div>
                 </div>
               </div>
@@ -2000,7 +2003,7 @@ function AgentDashboard({ userId }) {
                 <select value={callLogDisposition} onChange={e=>setCallLogDisposition(e.target.value)}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white',color:'#111827',outline:'none',boxSizing:'border-box'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}>
-                  <option value="">— Select Disposition —</option>
+                  <option value="">ï¿½ Select Disposition ï¿½</option>
                   {CALL_DISPOSITIONS.map(d=><option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
@@ -2011,7 +2014,7 @@ function AgentDashboard({ userId }) {
                   <div style={{maxHeight:100,overflowY:'auto',border:'1px solid #e5e7eb',borderRadius:8,padding:'6px 10px'}}>
                     {previousOutcomes.map((o,i)=>(
                       <div key={i} style={{fontSize:12,color:'#374151',padding:'4px 0',borderBottom:i<previousOutcomes.length-1?'1px solid #f3f4f6':'none',display:'flex',justifyContent:'space-between'}}>
-                        <span style={{fontWeight:600}}>{o.call_outcome||'—'}</span>
+                        <span style={{fontWeight:600}}>{o.call_outcome||'ï¿½'}</span>
                         <span style={{color:'#9ca3af'}}>{new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})}</span>
                       </div>
                     ))}
@@ -2020,7 +2023,7 @@ function AgentDashboard({ userId }) {
               ):(
                 <div style={{fontSize:12,color:'#9ca3af',marginBottom:14,fontStyle:'italic'}}>No previous call outcomes for this lead</div>
               )}
-              {/* Lead Stage — separate from disposition */}
+              {/* Lead Stage ï¿½ separate from disposition */}
               <div style={{marginBottom:12}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.04em'}}>Lead Stage</label>
                 <select value={callLogStage} onChange={e=>setCallLogStage(e.target.value)}
@@ -2053,7 +2056,7 @@ function AgentDashboard({ userId }) {
               <div style={{marginBottom:16}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.04em'}}>Notes</label>
                 <textarea value={callLogNotes} onChange={e=>setCallLogNotes(e.target.value)}
-                  placeholder="Add call notes here…"
+                  placeholder="Add call notes hereï¿½"
                   rows={3}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',color:'#111827'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
@@ -2062,7 +2065,7 @@ function AgentDashboard({ userId }) {
               <div style={{display:'flex',gap:8}}>
                 <button onClick={saveCallLog} disabled={savingCallLog}
                   style={{flex:1,padding:'12px',background:savingCallLog?'#93C5FD':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingCallLog?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                  <IconDeviceFloppy size={15}/>{savingCallLog?'Saving…':'Save Call Log'}
+                  <IconDeviceFloppy size={15}/>{savingCallLog?'Savingï¿½':'Save Call Log'}
                 </button>
                 <button onClick={()=>setShowCallLogModal(false)}
                   style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
@@ -2093,7 +2096,7 @@ function AgentDashboard({ userId }) {
                   {selectedLeadForObligations.status&&(()=>{const ss=stageStyle(selectedLeadForObligations.status);return<span style={{background:ss.bg,color:ss.color,fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,flexShrink:0}}>{selectedLeadForObligations.status}</span>})()}
                   {obModalReadOnly&&<span style={{background:'#1e40af',color:'#93c5fd',fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,letterSpacing:'0.06em',flexShrink:0}}>VIEW ONLY</span>}
                 </div>
-                {selectedLeadForObligations.mobile&&<div style={{fontSize:12,color:'#64748b',marginTop:3}}>{selectedLeadForObligations.mobile}{selectedLeadForObligations.company_name?` · ${selectedLeadForObligations.company_name}`:''}</div>}
+                {selectedLeadForObligations.mobile&&<div style={{fontSize:12,color:'#64748b',marginTop:3}}>{selectedLeadForObligations.mobile}{selectedLeadForObligations.company_name?` ï¿½ ${selectedLeadForObligations.company_name}`:''}</div>}
               </div>
             </div>
             <div style={{display:'flex',gap:8,flexShrink:0,alignItems:'center'}}>
@@ -2204,7 +2207,7 @@ function AgentDashboard({ userId }) {
                 {isObEditing&&(
                   <div style={{display:'flex',gap:6}}>
                     <textarea rows={3} value={obModalNoteInput} onChange={e=>setObModalNoteInput(e.target.value)}
-                      placeholder="Add a note and press Enter…"
+                      placeholder="Add a note and press Enterï¿½"
                       onKeyDown={e=>{
                         if(e.key==='Enter'&&!e.shiftKey&&obModalNoteInput.trim()){
                           e.preventDefault()
@@ -2252,7 +2255,7 @@ function AgentDashboard({ userId }) {
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:140,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>Eligible Loan Amt</div>
                     {!(obModalNetTakeHome||obModalSalary)
-                      ? <div style={{fontSize:20,fontWeight:600,color:'#64748b'}}>—</div>
+                      ? <div style={{fontSize:20,fontWeight:600,color:'#64748b'}}>ï¿½</div>
                       : <div style={{fontSize:18,fontWeight:600,color:obligationTotals.eligibleLoan>0?'#34D399':'#ef4444'}}>?{obligationTotals.eligibleLoan.toLocaleString('en-IN')}</div>
                     }
                     {(obModalNetTakeHome||obModalSalary)&&<div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:4}}>Avail EMI: ?{Math.round(obligationTotals.availableEMI).toLocaleString('en-IN')}</div>}
@@ -2304,10 +2307,10 @@ function AgentDashboard({ userId }) {
                             const isBT=ob.balance_transfer===true||ob.balance_transfer==='true'||ob.balance_transfer==='Yes'||ob.balance_transfer==='yes'
                             return(<>
                               {cl>0&&<span>Credit Limit ?{cl.toLocaleString('en-IN')}</span>}
-                              {cl>0&&out>0&&<span style={{color:'#475569'}}>·</span>}
+                              {cl>0&&out>0&&<span style={{color:'#475569'}}>ï¿½</span>}
                               <span>{out>0?`Outstanding ?${out.toLocaleString('en-IN')}`:'Outstanding not set'}</span>
                               {out>0&&(isBT
-                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>BT Applied — Not Obligated</span>
+                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>BT Applied ï¿½ Not Obligated</span>
                                 :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ?{Math.round(out*0.05).toLocaleString('en-IN')} (5% of Outstanding)</span>
                               )}
                             </>)
@@ -2318,12 +2321,12 @@ function AgentDashboard({ userId }) {
                             return(<>
                               <span>{orig>0?`EMI ?${orig.toLocaleString('en-IN')}`:'EMI not set'}</span>
                               {orig>0&&(obl===0&&reason
-                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Not Obligated · {reason}</span>
+                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Not Obligated ï¿½ {reason}</span>
                                 :obl<orig
-                                  ?<span style={{background:'#1e3a5f',color:'#93c5fd',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ?{obl.toLocaleString('en-IN')} · {reason}</span>
+                                  ?<span style={{background:'#1e3a5f',color:'#93c5fd',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ?{obl.toLocaleString('en-IN')} ï¿½ {reason}</span>
                                   :<span style={{background:'#1f2937',color:'#64748b',fontSize:10,fontWeight:600,padding:'1px 7px',borderRadius:12}}>Obligated ?{obl.toLocaleString('en-IN')}</span>
                               )}
-                              <span style={{color:'#475569'}}>·</span>
+                              <span style={{color:'#475569'}}>ï¿½</span>
                               <span>{ob.outstanding_amount?`Outstanding ?${Number(ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
                             </>)
                           })()}
@@ -2347,10 +2350,10 @@ function AgentDashboard({ userId }) {
                     {showExpanded&&obModalReadOnly&&(
                       <div style={{marginTop:10,display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8,fontSize:12}}>
                         <div style={{color:'#64748b'}}>Type<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.obligation_type}</div></div>
-                        <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'—'}</div></div>
-                        <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'?'+Number(ob.emi_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{ob.outstanding_amount?'?'+Number(ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'?'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'ï¿½'}</div></div>
+                        <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'?'+Number(ob.emi_amount).toLocaleString('en-IN'):'ï¿½'}</div></div>
+                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{ob.outstanding_amount?'?'+Number(ob.outstanding_amount).toLocaleString('en-IN'):'ï¿½'}</div></div>
+                        <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'?'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'ï¿½'}</div></div>
                         <div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>? Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>
                         {ob.tenure_months&&<div style={{color:'#64748b'}}>Tenure<div style={{color:'#e2e8f0',marginTop:2}}>{ob.tenure_months} months</div></div>}
                         {ob.bounce&&ob.bounce!=='No'&&<div style={{color:'#64748b'}}>Bounce<div style={{color:'#f87171',fontWeight:600,marginTop:2}}>{ob.bounce}</div></div>}
@@ -2374,7 +2377,7 @@ function AgentDashboard({ userId }) {
                             <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                               {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>?</span>}
                             </div>
-                            <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes ï¿½ BT':'No'}</span>
                           </div>
                           <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
                         </div>
@@ -2521,12 +2524,12 @@ function AgentDashboard({ userId }) {
             <div style={{background:'linear-gradient(135deg,#185FA5,#2563EB)',padding:'16px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div>
                 <div style={{color:'white',fontWeight:700,fontSize:15}}>Export Leads Report</div>
-                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Filter by stage or date — download CSV</div>
+                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Filter by stage or date ï¿½ download CSV</div>
               </div>
               <button onClick={()=>setShowExportModal(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:30,height:30,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={14}/></button>
             </div>
             <div style={{padding:16,overflowY:'auto',flex:1}}>
-              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 1 — Select Stage</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 1 ï¿½ Select Stage</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:7,marginBottom:16}}>
                 {['',...stageNames].map(s=>{
                   const st=stageStyle(s)||{}
@@ -2534,7 +2537,7 @@ function AgentDashboard({ userId }) {
                   return <div key={s} onClick={()=>setExportStatus(s)} style={{padding:'7px 13px',borderRadius:20,border:'1.5px solid '+(sel?(s?st.color:'#185FA5'):'#E5E7EB'),background:sel?(s?st.bg:'#185FA5'):'white',color:sel?(s?st.color:'white'):'#6B7280',fontSize:12,fontWeight:500,cursor:'pointer'}}>{s||'All Stages'}</div>
                 })}
               </div>
-              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 2 — Select Date</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 2 ï¿½ Select Date</div>
               <div style={{display:'flex',gap:7,flexWrap:'wrap',marginBottom:12}}>
                 {[{id:'all',label:'All Time'},{id:'today',label:'Today'},{id:'week',label:'This Week'},{id:'month',label:'This Month'},{id:'custom',label:'?? Custom'}].map(d=>(
                   <div key={d.id} onClick={()=>setExportDateType(d.id)} style={{padding:'7px 13px',borderRadius:20,border:'1.5px solid '+(exportDateType===d.id?'#185FA5':'#E5E7EB'),background:exportDateType===d.id?'#185FA5':'white',color:exportDateType===d.id?'white':'#6B7280',fontSize:12,fontWeight:500,cursor:'pointer'}}>{d.label}</div>
@@ -2549,7 +2552,7 @@ function AgentDashboard({ userId }) {
               <div style={{background:exportCount>0?'#EBF8FF':'#FFF5F5',border:'1px solid '+(exportCount>0?'#BEE3F8':'#FED7D7'),borderRadius:10,padding:'14px 16px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:20,color:exportCount>0?'#185FA5':'#A32D2D'}}>{exportCount} leads ready</div>
-                  <div style={{fontSize:12,color:'#9CA3AF',marginTop:2}}>Stage: <strong>{exportStatus||'All'}</strong> · Period: <strong>{exportDateType}</strong></div>
+                  <div style={{fontSize:12,color:'#9CA3AF',marginTop:2}}>Stage: <strong>{exportStatus||'All'}</strong> ï¿½ Period: <strong>{exportDateType}</strong></div>
                 </div>
                 <div style={{fontSize:28}}>??</div>
               </div>
@@ -2569,7 +2572,7 @@ function AgentDashboard({ userId }) {
       <div style={{background:'linear-gradient(135deg,#0f3460 0%,#185FA5 100%)',padding:isMobile?'12px 14px':'12px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,position:'sticky',top:0,zIndex:50}}>
         <div style={{minWidth:0,flex:1}}>
           <div style={{fontSize:isMobile?14:16,fontWeight:700,color:'#ffffff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{greeting||'Welcome back ??'}</div>
-          {!isMobile&&<div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>{lastSynced?`Synced ${lastSynced.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:IST_TZ})} · `:''}Ready to close more loans today? ??</div>}
+          {!isMobile&&<div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>{lastSynced?`Synced ${lastSynced.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:IST_TZ})} ï¿½ `:''}Ready to close more loans today? ??</div>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
           {!isMobile&&(
@@ -2656,9 +2659,9 @@ function AgentDashboard({ userId }) {
                 <div style={{minWidth:0,flex:1}}>
                   <div style={{fontWeight:600,fontSize:12,color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title.replace('Callback: ','')}</div>
                   <div style={{fontSize:11,color:'#B45309',marginTop:1}}>
-                    {compareIST(task.due_date,nowIST())<0?'Overdue · ':'Today · '}
+                    {compareIST(task.due_date,nowIST())<0?'Overdue ï¿½ ':'Today ï¿½ '}
                     {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}
-                    {task.notes&&` · ${task.notes}`}
+                    {task.notes&&` ï¿½ ${task.notes}`}
                   </div>
                 </div>
                 <button onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead)openCallingWorkspace(lead)}}
@@ -2670,7 +2673,7 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* PIPELINE CARDS — 2x2 on mobile */}
+        {/* PIPELINE CARDS ï¿½ 2x2 on mobile */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>?? Pipeline Overview</div>
           <button onClick={()=>setShowPipeline(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
@@ -2690,7 +2693,7 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* STAT CARDS — 2x2 on mobile */}
+        {/* STAT CARDS ï¿½ 2x2 on mobile */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>?? Today's Stats</div>
           <button onClick={()=>setShowStatCards(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
@@ -2757,7 +2760,7 @@ function AgentDashboard({ userId }) {
         {/* -------- LEADS TAB -------- */}
         {activeTab==='leads'&&(
           <div>
-            {/* POWER DIALER BUTTON — heavy physical master switch */}
+            {/* POWER DIALER BUTTON ï¿½ heavy physical master switch */}
             <div style={{borderRadius:14,padding:'0 0 4px',marginBottom:10,background:'rgba(10,40,40,0.25)',boxShadow:'inset 0 -3px 6px rgba(0,0,0,0.15)'}}>
               <button onClick={startPowerDialer}
                 onMouseEnter={e=>{e.currentTarget.style.boxShadow='0 6px 20px rgba(20,88,88,0.5), 0 3px 8px rgba(20,88,88,0.3), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -3px 6px rgba(0,0,0,0.25)'; e.currentTarget.style.transform='translateY(-1px)'}}
@@ -2765,18 +2768,18 @@ function AgentDashboard({ userId }) {
                 onMouseDown={e=>{e.currentTarget.style.transform='translateY(2px)'; e.currentTarget.style.boxShadow='0 2px 6px rgba(20,88,88,0.4), inset 0 3px 6px rgba(0,0,0,0.3)'}}
                 onMouseUp={e=>{e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 6px 20px rgba(20,88,88,0.5), inset 0 1px 0 rgba(255,255,255,0.2)'}}
                 style={{width:'100%',padding:'12px 20px',background:'linear-gradient(135deg,#1e7a7a,#1a6b6b,#145858)',color:'#fff',border:'none',borderRadius:12,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:10,boxShadow:'0 4px 15px rgba(26,107,107,0.45), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -3px 6px rgba(0,0,0,0.25)',letterSpacing:'0.3px',transition:'all 0.15s ease'}}>
-                <IconBolt size={17}/> ? Start Power Dialer — {filteredLeads.length||myLeads.length} Leads
+                <IconBolt size={17}/> ? Start Power Dialer ï¿½ {filteredLeads.length||myLeads.length} Leads
               </button>
             </div>
 
-            {/* FILTER BAR — simple clean style */}
+            {/* FILTER BAR ï¿½ simple clean style */}
             <div style={filterBarWrapStyle}>
               <div style={{flex:'1 1 280px',minWidth:0,position:'relative'}}>
                 <IconSearch size={14} color="#A0AEC0" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}/>
                 <input
                   className="mobile-input"
                   style={{...filterSearchStyle,width:'100%',boxSizing:'border-box'}}
-                  placeholder="Search name, mobile…"
+                  placeholder="Search name, mobileï¿½"
                   value={search} onChange={e=>setSearch(e.target.value)}
                   onFocus={e=>{e.currentTarget.style.borderColor='#185FA5'}}
                   onBlur={e=>{e.currentTarget.style.borderColor='#d1d5db'}}/>
@@ -2835,14 +2838,16 @@ function AgentDashboard({ userId }) {
             {isMobile?(
               <div>
                 {loading?(
-                  <div style={{padding:30,textAlign:'center',color:txt2}}>Loading…</div>
+                  <div style={{padding:30,textAlign:'center',color:txt2}}>Loadingï¿½</div>
                 ):filteredLeads.length===0?(
                   <div style={{padding:30,textAlign:'center',color:txt2,background:bg1,borderRadius:12,border:'1px solid '+bdr}}>
                     <IconUsers size={32} strokeWidth={1.2} color="#CBD5E0" style={{display:'block',margin:'0 auto 8px'}}/>
                     {search||agentStatusSet.length||agentDateFrom||agentDateTo?'No leads match':'No leads assigned yet'}
                   </div>
                 ):filteredLeads.map(lead=>{
-                  const st=stageBadgeStyle[lead.status]||{bg:'#F1EFE8',color:'#5F5E5A'}
+                  const isMirrorLead=Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
+                  const displayStatus=isMirrorLead?(lead.mirror_agent_statuses?.[userId]||lead.status):lead.status
+                  const st=stageBadgeStyle[displayStatus]||{bg:'#F1EFE8',color:'#5F5E5A'}
                   const tc=TEMP_COLORS[lead.lead_temperature]||TEMP_COLORS.Cold
                   return(
                     <div key={lead.id} style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:14,marginBottom:10}}>
@@ -2852,7 +2857,7 @@ function AgentDashboard({ userId }) {
                           <div style={{width:36,height:36,borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,color:'#185FA5',fontSize:13,flexShrink:0}}>{initials(lead.full_name)}</div>
                           <div>
                             <div style={{fontWeight:700,fontSize:14,color:txt1}}>{lead.full_name}</div>
-                            <div style={{fontSize:12,color:txt2}}>{lead.mobile}{lead.city?` · ${lead.city}`:''}</div>
+                            <div style={{fontSize:12,color:txt2}}>{lead.mobile}{lead.city?` ï¿½ ${lead.city}`:''}</div>
                             {lead.application_id&&<div style={{fontSize:10,color:txt2,marginTop:1}}>App# {lead.application_id}</div>}
                             {lead.sheet_number&&<div style={{fontSize:10,color:txt2,marginTop:1}}>?? {lead.sheet_number}</div>}
                             {lead.previous_status&&lead.previous_status!=='New'&&<div style={{display:'inline-block',marginTop:2,fontSize:10,fontWeight:600,color:'#92400E',background:'#FEF3C7',padding:'1px 7px',borderRadius:10}}>was: {lead.previous_status}</div>}
@@ -2940,7 +2945,7 @@ function AgentDashboard({ userId }) {
                     </thead>
                     <tbody>
                       {loading?(
-                        <tr><td colSpan={6} style={{padding:40,textAlign:'center',fontSize:13,color:txt2}}>Loading…</td></tr>
+                        <tr><td colSpan={6} style={{padding:40,textAlign:'center',fontSize:13,color:txt2}}>Loadingï¿½</td></tr>
                       ):filteredLeads.length===0?(
                         <tr><td colSpan={6} style={{padding:40,textAlign:'center'}}>
                           <IconUsers size={36} strokeWidth={1.2} color="#CBD5E0" style={{display:'block',margin:'0 auto 8px'}}/>
@@ -2959,7 +2964,7 @@ function AgentDashboard({ userId }) {
                                 <div>
                                   <div style={{fontWeight:600,fontSize:13,color:txt1}}>{lead.full_name}</div>
                                   <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:txt2}}>
-                                    <span>{lead.mobile}{lead.city?` · ${lead.city}`:''}</span>
+                                    <span>{lead.mobile}{lead.city?` ï¿½ ${lead.city}`:''}</span>
                                   </div>
                                   {lead.application_id&&<div style={{fontSize:10,color:'#9CA3AF'}}>App# {lead.application_id}</div>}
                                   {lead.call_count>0&&<div style={{fontSize:10,color:'#9CA3AF'}}>?? {lead.call_count} calls</div>}
@@ -3085,9 +3090,9 @@ function AgentDashboard({ userId }) {
                             <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <span>{lead?.mobile||'-'}</span>
                           </div>
-                            <span>·</span>
+                            <span>ï¿½</span>
                             <span>{call.duration||'-'}</span>
-                            <span>·</span>
+                            <span>ï¿½</span>
                             <span>{new Date(call.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ})}</span>
                             {lead && getLeadObligations(lead.id).length>0&&(
                               <span style={{background:'#EFF6FF',color:'#1D4ED8',padding:'3px 8px',borderRadius:20,fontSize:11,fontWeight:600}}>?? {getLeadObligations(lead.id).length} obligations</span>
@@ -3146,7 +3151,7 @@ function AgentDashboard({ userId }) {
         {/* -------- TASKS TAB -------- */}
         {activeTab==='tasks'&&(
           <div>
-            <div style={{marginBottom:10,fontSize:13,color:txt2}}>{pendingTasks.length} pending · {overdueTasks.length} overdue</div>
+            <div style={{marginBottom:10,fontSize:13,color:txt2}}>{pendingTasks.length} pending ï¿½ {overdueTasks.length} overdue</div>
             {pendingTasks.length===0
               ?<div style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:40,textAlign:'center'}}>
                   <div style={{fontSize:28,marginBottom:8}}>?</div>
@@ -3184,18 +3189,18 @@ function AgentDashboard({ userId }) {
                 <div style={{fontWeight:700,fontSize:16,color:txt1}}>{viewLead.full_name}</div>
                 <div style={{fontSize:13,color:txt2}}>{viewLead.mobile}</div>
               </div>
-              <button onClick={()=>setViewLead(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:22,color:txt2,lineHeight:1}}>×</button>
+              <button onClick={()=>setViewLead(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:22,color:txt2,lineHeight:1}}>ï¿½</button>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
               {[
-                ['Current Status',viewLead.status||'—'],
-                ['Previous Status',viewLead.previous_status||'—'],
-                ['Previous Agent',viewLead.previous_agent_name||'—'],
-                ['Sheet No.',viewLead.sheet_number||'—'],
-                ['City',viewLead.city||'—'],
+                ['Current Status',viewLead.status||'ï¿½'],
+                ['Previous Status',viewLead.previous_status||'ï¿½'],
+                ['Previous Agent',viewLead.previous_agent_name||'ï¿½'],
+                ['Sheet No.',viewLead.sheet_number||'ï¿½'],
+                ['City',viewLead.city||'ï¿½'],
                 ['Loan Amount',fmtAmt(viewLead.loan_amount)],
-                ['Company',viewLead.company||'—'],
-                ['App ID',viewLead.application_id||'—'],
+                ['Company',viewLead.company||'ï¿½'],
+                ['App ID',viewLead.application_id||'ï¿½'],
               ].map(([label,val])=>(
                 <div key={label} style={{background:bg0,borderRadius:8,padding:'10px 12px'}}>
                   <div style={{fontSize:11,color:txt2,marginBottom:3}}>{label}</div>
@@ -3263,7 +3268,7 @@ function WATemplateEditor() {
         </div>
         <button onClick={saveTemplates} disabled={loading}
           style={{display:'flex',alignItems:'center',gap:7,background:saved?'#EAF3DE':'#185FA5',color:saved?'#27500A':'white',border:'none',padding:'9px 18px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>
-          <IconDeviceFloppy size={15}/>{loading?'Saving…':saved?'? Saved!':'Save Templates'}
+          <IconDeviceFloppy size={15}/>{loading?'Savingï¿½':saved?'? Saved!':'Save Templates'}
         </button>
       </div>
       {templates.map((tpl,idx)=>(
@@ -3284,7 +3289,7 @@ function WATemplateEditor() {
             </div>
           </div>
           <div>
-            <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Message · {'{name}'} {'{amount}'} {'{emi}'}</label>
+            <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Message ï¿½ {'{name}'} {'{amount}'} {'{emi}'}</label>
             <textarea value={tpl.message} onChange={e=>updateTpl(tpl.id,'message',e.target.value)} style={{width:'100%',padding:'10px',border:'1px solid #E2E8F0',borderRadius:7,fontSize:12,outline:'none',resize:'vertical',minHeight:90,fontFamily:'inherit',lineHeight:1.6,boxSizing:'border-box',color:'#374151'}} onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
           </div>
           <div style={{marginTop:10,background:'#F0FFF4',border:'1px solid #86EFAC',borderRadius:8,padding:10}}>
@@ -3322,7 +3327,7 @@ function TeamLeaderPanel({ userId }) {
   const checkOverdueTasks=async()=>{
     if(!myAgents.length)return
     const ids=myAgents.map(a=>a.id)
-    // No DB-side due_date filter — tasks.due_date is `timestamptz`, and a
+    // No DB-side due_date filter ï¿½ tasks.due_date is `timestamptz`, and a
     // naive IST string compared server-side would be evaluated in UTC terms.
     // Fetch broadly and compare through the canonical IST module instead.
     const{data}=await supabase.from('tasks').select('*,profiles!tasks_assigned_to_fkey(full_name)').in('assigned_to',ids).in('status',['Pending','In Progress'])
@@ -3370,7 +3375,7 @@ function TeamLeaderPanel({ userId }) {
               {overdueAlerts.map(t=>(
                 <div key={t.id} style={{padding:12,borderRadius:8,background:'#FFF5F5',border:'1px solid #FED7D7',marginBottom:8}}>
                   <div style={{fontWeight:600,fontSize:13,color:'#A32D2D',marginBottom:4}}>{t.title}</div>
-                  <div style={{fontSize:12,color:'#718096'}}>Agent: {t.profiles?.full_name||'Unknown'} · Due: {fmtIST(t.due_date)}</div>
+                  <div style={{fontSize:12,color:'#718096'}}>Agent: {t.profiles?.full_name||'Unknown'} ï¿½ Due: {fmtIST(t.due_date)}</div>
                 </div>
               ))}
             </div>
@@ -3433,7 +3438,7 @@ function TeamLeaderPanel({ userId }) {
             <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0',display:'flex',justifyContent:'space-between'}}>
               <span style={{fontWeight:600,fontSize:14}}>Team Performance</span>
             </div>
-            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading…</div>:(
+            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loadingï¿½</div>:(
               isMobile?(
                 <div style={{padding:'8px 12px'}}>
                   {agentStats.map(a=>(
@@ -3554,7 +3559,7 @@ function ManagerPanel({ userId }) {
       <div className="page-header">
         <div>
           <h1 style={{display:'flex',alignItems:'center',gap:8,fontSize:isMobile?16:18}}><IconChartBar size={isMobile?18:22} strokeWidth={1.6}/>Manager Dashboard</h1>
-          <p>{agents.length} agents · {teamLeaders.length} TLs</p>
+          <p>{agents.length} agents ï¿½ {teamLeaders.length} TLs</p>
         </div>
         <div style={{display:'flex',gap:6,alignItems:'center'}}>
           {isMobile?(
@@ -3598,7 +3603,7 @@ function ManagerPanel({ userId }) {
             <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0'}}>
               <span style={{fontWeight:600,fontSize:14}}>Agent Performance</span>
             </div>
-            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading…</div>:(
+            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loadingï¿½</div>:(
               isMobile?(
                 <div style={{padding:'8px 12px'}}>
                   {agentStats.map(a=>(
@@ -3650,7 +3655,7 @@ function ManagerPanel({ userId }) {
               <span style={{fontSize:12,color:'#A0AEC0'}}>{calls.length} records</span>
             </div>
             {loading?
-              <div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading…</div>
+              <div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loadingï¿½</div>
             :calls.length===0?
               <div className="empty-state" style={{padding:24}}><h3>No call logs yet</h3></div>
             :isMobile?
@@ -3666,11 +3671,11 @@ function ManagerPanel({ userId }) {
                       </div>
                       <div style={{display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'#718096'}}>
                         <span>{agent?.full_name||'Unknown Agent'}</span>
-                        <span>·</span>
+                        <span>ï¿½</span>
                         <span>{call.call_status||'Status'}</span>
-                        <span>·</span>
+                        <span>ï¿½</span>
                         <span>{call.call_outcome||'-'}</span>
-                        <span>·</span>
+                        <span>ï¿½</span>
                         <span>{new Date(call.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ})}</span>
                       </div>
                     </div>
@@ -3920,7 +3925,7 @@ Return only the raw JSON. No markdown, no explanation.`
           >
             <div style={{fontSize:40,marginBottom:12}}>??</div>
             <div style={{fontWeight:600,color:'#374151',marginBottom:6}}>Drop bank statement PDF here</div>
-            <div style={{fontSize:13,color:'#9ca3af'}}>or click to browse · PDF only</div>
+            <div style={{fontSize:13,color:'#9ca3af'}}>or click to browse ï¿½ PDF only</div>
             {file && <div style={{marginTop:12,color:BSA_P,fontWeight:500,fontSize:13}}>? {file.name}</div>}
           </div>
           <input id="bsa-dash-input" type="file" accept="application/pdf" style={{display:'none'}} onChange={e=>setFile(e.target.files[0])}/>
@@ -4137,11 +4142,11 @@ Return only the raw JSON. No markdown, no explanation.`
             </Card>
           )}
 
-          {/* CC Card Rotation — high severity RED */}
+          {/* CC Card Rotation ï¿½ high severity RED */}
           {result.cc_card_rotation?.detected&&result.cc_card_rotation?.transactions?.length>0&&(
             <Card style={{marginBottom:16,borderLeft:'4px solid #dc2626'}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>
-                ?? CC Card Rotation / Cash Advance ({result.cc_card_rotation.transaction_count} transactions · ?{(result.cc_card_rotation.total_amount||0).toLocaleString('en-IN')} total)
+                ?? CC Card Rotation / Cash Advance ({result.cc_card_rotation.transaction_count} transactions ï¿½ ?{(result.cc_card_rotation.total_amount||0).toLocaleString('en-IN')} total)
               </div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -4163,7 +4168,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {result.stock_market_activity?.detected&&result.stock_market_activity?.transactions?.length>0&&(
             <Card style={{marginBottom:16}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#7c3aed'}}>
-                ?? Stock Market / Trading Activity ({result.stock_market_activity.transaction_count} txns · Invested ?{(result.stock_market_activity.total_invested||0).toLocaleString('en-IN')} · Withdrawn ?{(result.stock_market_activity.total_withdrawn||0).toLocaleString('en-IN')})
+                ?? Stock Market / Trading Activity ({result.stock_market_activity.transaction_count} txns ï¿½ Invested ?{(result.stock_market_activity.total_invested||0).toLocaleString('en-IN')} ï¿½ Withdrawn ?{(result.stock_market_activity.total_withdrawn||0).toLocaleString('en-IN')})
               </div>
               {result.stock_market_activity.brokers_seen?.length>0&&(
                 <div style={{padding:'10px 20px',display:'flex',flexWrap:'wrap',gap:6,borderBottom:'1px solid #f3f4f6'}}>
@@ -4192,9 +4197,9 @@ Return only the raw JSON. No markdown, no explanation.`
             <Card style={{marginBottom:16,borderLeft:`4px solid ${result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}`}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                 <span style={{fontWeight:600,fontSize:14,color:result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}}>
-                  ?? Small Loan Disbursals ({result.small_loan_disbursals.disbursal_count} · ?{(result.small_loan_disbursals.total_disbursed||0).toLocaleString('en-IN')} total)
+                  ?? Small Loan Disbursals ({result.small_loan_disbursals.disbursal_count} ï¿½ ?{(result.small_loan_disbursals.total_disbursed||0).toLocaleString('en-IN')} total)
                 </span>
-                {result.small_loan_disbursals.frequent&&<Badge text='FREQUENT — HIGH RISK' color='#dc2626'/>}
+                {result.small_loan_disbursals.frequent&&<Badge text='FREQUENT ï¿½ HIGH RISK' color='#dc2626'/>}
               </div>
               {result.small_loan_disbursals.lenders_seen?.length>0&&(
                 <div style={{padding:'10px 20px',display:'flex',flexWrap:'wrap',gap:6,borderBottom:'1px solid #f3f4f6'}}>
@@ -4259,7 +4264,7 @@ Return only the raw JSON. No markdown, no explanation.`
             </Card>
           )}
 
-          {/* Forex / International Trading — high severity RED */}
+          {/* Forex / International Trading ï¿½ high severity RED */}
           {result.forex_trading?.length>0&&(
             <Card style={{marginBottom:16,borderLeft:'4px solid #dc2626'}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>?? Forex / International Trading ({result.forex_trading.length})</div>
@@ -4294,11 +4299,11 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:catColor(t.category)}}>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{t.date}</td>
                       <td style={{...TD,maxWidth:280}}>{t.description}</td>
-                      <td style={{...TD,color:'#dc2626',fontWeight:t.debit?600:400}}>{t.debit?'?'+t.debit.toLocaleString('en-IN'):'—'}</td>
-                      <td style={{...TD,color:'#16a34a',fontWeight:t.credit?600:400}}>{t.credit?'?'+t.credit.toLocaleString('en-IN'):'—'}</td>
-                      <td style={TD}>{t.balance?'?'+t.balance.toLocaleString('en-IN'):'—'}</td>
+                      <td style={{...TD,color:'#dc2626',fontWeight:t.debit?600:400}}>{t.debit?'?'+t.debit.toLocaleString('en-IN'):'ï¿½'}</td>
+                      <td style={{...TD,color:'#16a34a',fontWeight:t.credit?600:400}}>{t.credit?'?'+t.credit.toLocaleString('en-IN'):'ï¿½'}</td>
+                      <td style={TD}>{t.balance?'?'+t.balance.toLocaleString('en-IN'):'ï¿½'}</td>
                       <td style={TD}><Badge text={t.category||'OTHER'} color={['BOUNCE','ECS_RETURN','CC_FUNDING','GAMBLING'].includes(t.category)?'#dc2626':['SALARY','GST','INSURANCE'].includes(t.category)?'#16a34a':'#6b7280'}/></td>
-                      <td style={TD}>{t.flag?<Badge text={t.flag} color='#dc2626'/>:'—'}</td>
+                      <td style={TD}>{t.flag?<Badge text={t.flag} color='#dc2626'/>:'ï¿½'}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -4336,7 +4341,7 @@ export default function Dashboard({ session }) {
 
   const getProfile=async()=>{
     const userId=session?.user?.id
-    if(!userId){ console.log('[Auth] No session user yet — waiting'); return }
+    if(!userId){ console.log('[Auth] No session user yet ï¿½ waiting'); return }
     try{
       const{data,error:profileErr}=await supabase.from('profiles').select('*').eq('id',userId).single()
       if(profileErr){ console.error('[Profile] Fetch error:',profileErr) }
@@ -4504,7 +4509,7 @@ export default function Dashboard({ session }) {
     const fetchActivityFull=async()=>{ const{data}=await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500); if(data) setActivityFull(data) }
     const showApToast=(msg,type='success')=>{ setApToast({msg,type}); setTimeout(()=>setApToast(null),3500) }
 
-    // Per-lead reassign — always mirror so the original agent keeps access and the
+    // Per-lead reassign ï¿½ always mirror so the original agent keeps access and the
     // new agent also gets the lead with full history (prevents agent data loss)
     const doReassignLead=async()=>{
       if(!reassignTo||!reassignTarget)return
@@ -4546,7 +4551,7 @@ export default function Dashboard({ session }) {
 
     const doReassignExport=async(leadsToExport)=>{
       if(!leadsToExport||!leadsToExport.length){ showApToast('No leads to export','error'); return }
-      showApToast('Preparing export…')
+      showApToast('Preparing exportï¿½')
       try{
         const ids=leadsToExport.map(l=>l.id)
         const[callRes,oblRes,taskRes]=await Promise.all([
@@ -4565,7 +4570,7 @@ export default function Dashboard({ session }) {
           const obls=oblMap[l.id]||[]
           const lastCall=calls[0]
           const agent=users.find(u=>u.id===l.assigned_to)
-          const oblSummary=obls.map(o=>`${o.obligation_type||'Loan'} @ ${o.bank_name||'—'} EMI ?${o.emi_amount||0}`).join(' | ')
+          const oblSummary=obls.map(o=>`${o.obligation_type||'Loan'} @ ${o.bank_name||'ï¿½'} EMI ?${o.emi_amount||0}`).join(' | ')
           const cbTask=taskMap[l.id]
           const cbDate=cbTask&&cbTask.due_date?String(cbTask.due_date).replace('T',' ').slice(0,16):''
           return[
@@ -4699,13 +4704,13 @@ export default function Dashboard({ session }) {
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10,marginBottom:16}}>
                 {manualStats.map(m=>(<div key={m.key} style={{background:'white',padding:'14px 16px',borderRadius:10,border:'1px solid #E2E8F0'}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}><div style={{fontSize:12,color:'#718096',fontWeight:500}}>{m.label}</div><button onClick={()=>{setEditManualKey(m.key);setEditManualVal(settings[m.key]||'')}} style={{background:'none',border:'none',cursor:'pointer',color:'#A0AEC0',fontSize:13,padding:0}}>?</button></div>
-                  {editManualKey===m.key?(<div style={{display:'flex',gap:6}}><input className='form-input' style={{flex:1,padding:'4px 8px',fontSize:13}} value={editManualVal} onChange={e=>setEditManualVal(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveManualSetting(m.key,editManualVal)}}/><button className='btn btn-primary btn-sm' onClick={()=>saveManualSetting(m.key,editManualVal)} disabled={savingManual}>{savingManual?'…':'Save'}</button></div>):(<div style={{fontSize:24,fontWeight:700,color:'#185FA5'}}>{settings[m.key]||'—'}</div>)}
+                  {editManualKey===m.key?(<div style={{display:'flex',gap:6}}><input className='form-input' style={{flex:1,padding:'4px 8px',fontSize:13}} value={editManualVal} onChange={e=>setEditManualVal(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveManualSetting(m.key,editManualVal)}}/><button className='btn btn-primary btn-sm' onClick={()=>saveManualSetting(m.key,editManualVal)} disabled={savingManual}>{savingManual?'ï¿½':'Save'}</button></div>):(<div style={{fontSize:24,fontWeight:700,color:'#185FA5'}}>{settings[m.key]||'ï¿½'}</div>)}
                 </div>))}
               </div>
               <div className='table-container' style={{marginBottom:16}}>
-                <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0',fontWeight:600,fontSize:14}}>Agent Performance — {new Date().toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:IST_TZ})}</div>
+                <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0',fontWeight:600,fontSize:14}}>Agent Performance ï¿½ {new Date().toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:IST_TZ})}</div>
                 <div style={{overflowX:'auto'}}><table><thead><tr>{['Agent','Calls Today','Total Leads','Leads/Month','Interested','Callback','Disbursed','Last Login'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-                <tbody>{agentRows.length===0?(<tr><td colSpan={8} style={{textAlign:'center',color:'#A0AEC0',padding:24}}>No agents</td></tr>):agentRows.map(r=>(<tr key={r.id}><td><div style={{fontWeight:500}}>{r.full_name}</div></td><td style={{textAlign:'center',fontWeight:700,color:r.callsToday>0?'#15803d':'#718096'}}>{r.callsToday}</td><td style={{textAlign:'center'}}>{r.totalLeads}</td><td style={{textAlign:'center'}}>{r.leadsMonth}</td><td style={{textAlign:'center',color:'#7c3aed'}}>{r.interested}</td><td style={{textAlign:'center',color:'#d97706'}}>{r.callback}</td><td style={{textAlign:'center',color:'#15803d',fontWeight:600}}>{r.disbursed}</td><td style={{fontSize:11,color:'#A0AEC0'}}>{r.lastLogin?new Date(r.lastLogin).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'—'}</td></tr>))}
+                <tbody>{agentRows.length===0?(<tr><td colSpan={8} style={{textAlign:'center',color:'#A0AEC0',padding:24}}>No agents</td></tr>):agentRows.map(r=>(<tr key={r.id}><td><div style={{fontWeight:500}}>{r.full_name}</div></td><td style={{textAlign:'center',fontWeight:700,color:r.callsToday>0?'#15803d':'#718096'}}>{r.callsToday}</td><td style={{textAlign:'center'}}>{r.totalLeads}</td><td style={{textAlign:'center'}}>{r.leadsMonth}</td><td style={{textAlign:'center',color:'#7c3aed'}}>{r.interested}</td><td style={{textAlign:'center',color:'#d97706'}}>{r.callback}</td><td style={{textAlign:'center',color:'#15803d',fontWeight:600}}>{r.disbursed}</td><td style={{fontSize:11,color:'#A0AEC0'}}>{r.lastLogin?new Date(r.lastLogin).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'ï¿½'}</td></tr>))}
                 </tbody></table></div>
               </div>
             </div>
@@ -4800,7 +4805,7 @@ export default function Dashboard({ session }) {
                               </div>
                             </td>
                             <td><select value={user.role} onChange={e=>updateUserRole(user.id,e.target.value)} style={{background:rc.bg,color:rc.color,border:'none',padding:'4px 10px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>{['agent','team_leader','manager','admin'].map(r=><option key={r} value={r} style={{background:'white',color:'black'}}>{r.replace('_',' ').toUpperCase()}</option>)}</select></td>
-                            <td style={{fontSize:12,color:'#4A5568'}}>{user.mobile||'—'}</td>
+                            <td style={{fontSize:12,color:'#4A5568'}}>{user.mobile||'ï¿½'}</td>
                             <td><select value={user.team_leader_id||''} onChange={e=>assignTeamLeader(user.id,e.target.value)} style={{padding:'4px 8px',border:'1px solid #E2E8F0',borderRadius:6,fontSize:12,background:'white',color:'#4A5568',outline:'none'}}><option value="">No TL</option>{teamLeaders.map(tl=><option key={tl.id} value={tl.id}>{tl.full_name}</option>)}</select></td>
                             <td><span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,fontWeight:500,color:user.status==='active'?'#0F6E56':'#718096'}}><span style={{width:6,height:6,borderRadius:'50%',background:user.status==='active'?'#1D9E75':'#A0AEC0'}}></span>{user.status==='active'?'Active':'Inactive'}</span></td>
                             <td>
@@ -4810,7 +4815,7 @@ export default function Dashboard({ session }) {
                                   :<button onClick={()=>{setEditingUser(user.id);setEditForm({full_name:user.full_name||'',mobile:user.mobile||'',department:user.department||'',role:user.role,team_leader_id:user.team_leader_id||'',manager_id:user.manager_id||''})}} style={{width:28,height:28,borderRadius:6,border:'1px solid #E2E8F0',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#185FA5'}}><IconEdit size={14} strokeWidth={1.5}/></button>
                                 }
                                 <button className="btn btn-ghost btn-sm" onClick={()=>toggleUserStatus(user.id,user.status||'active')}>{user.status==='active'?'Deactivate':'Activate'}</button>
-                                <button onClick={()=>deleteUser(user.id,user.email)} style={{width:28,height:28,borderRadius:6,border:'1px solid #FED7D7',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#FC8181',fontSize:16}}>×</button>
+                                <button onClick={()=>deleteUser(user.id,user.email)} style={{width:28,height:28,borderRadius:6,border:'1px solid #FED7D7',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#FC8181',fontSize:16}}>ï¿½</button>
                               </div>
                             </td>
                           </tr>
@@ -4834,7 +4839,7 @@ export default function Dashboard({ session }) {
                     <div style={{background:'linear-gradient(135deg,#0C3A6B,#185FA5)',padding:'11px 16px',color:'white',fontWeight:600,fontSize:13,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
                         <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700}}>{gi(tl.full_name)}</div>
-                        {tl.full_name}<span style={{opacity:0.7,fontWeight:400,fontSize:11}}>— Team Leader</span>
+                        {tl.full_name}<span style={{opacity:0.7,fontWeight:400,fontSize:11}}>ï¿½ Team Leader</span>
                       </div>
                       <span style={{background:'rgba(255,255,255,0.2)',borderRadius:12,padding:'2px 10px',fontSize:11}}>{tlAgents.length} agents</span>
                     </div>
@@ -4866,7 +4871,7 @@ export default function Dashboard({ session }) {
           {activeTab==='leaderboard'&&(
             <div>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-                <h3 style={{fontSize:15,fontWeight:600}}>Leaderboard — Calls This Week</h3>
+                <h3 style={{fontSize:15,fontWeight:600}}>Leaderboard ï¿½ Calls This Week</h3>
                 <button className="btn btn-outline" style={{fontSize:12}} onClick={fetchLeaderboard}>Refresh</button>
               </div>
               {leaderboard.length===0?(
@@ -4933,7 +4938,7 @@ export default function Dashboard({ session }) {
                     <option value=''>Reassign to agent...</option>
                     {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
-                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`?? ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'? Reassign'}</button>
+                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`?? ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigningï¿½':'? Reassign'}</button>
                   <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>?? Delete Selected</button>
                   <button onClick={()=>setSelected(new Set())} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontSize:12}}>Clear</button>
                 </div>
@@ -4957,11 +4962,11 @@ export default function Dashboard({ session }) {
 </tr></thead>
                   <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>?? DUP</span>}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'ï¿½'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>?? DUP</span>}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'ï¿½'}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{l.status||'New'}</span></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={agent?.full_name||''}>{agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'?'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>—</span>}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'?'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>ï¿½</span>}</td>
 
 
 <td style={{padding:'8px 4px',verticalAlign:'middle',whiteSpace:'nowrap'}}>
@@ -4974,7 +4979,7 @@ export default function Dashboard({ session }) {
     <button onClick={()=>handleDeleteLead(l)} title='Delete lead permanently' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',fontSize:12,cursor:'pointer'}}>??</button>
   </div>
 </td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11,color:'#94A3B8',whiteSpace:'nowrap'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11,color:'#94A3B8',whiteSpace:'nowrap'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'ï¿½'}</td>
 </tr>) })}
                   </tbody></table>
                 </div>
@@ -4987,12 +4992,12 @@ export default function Dashboard({ session }) {
                     <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1E40AF'}}>? <strong>Safe Reassign:</strong> The original agent keeps access to this lead. The new agent also gets it with full history.</div>
                     <label className='form-label'>Assign To</label>
                     <select className='form-input' style={{width:'100%',marginBottom:20}} value={reassignTo} onChange={e=>setReassignTo(e.target.value)}>
-                      <option value=''>Select agent…</option>
+                      <option value=''>Select agentï¿½</option>
                       {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                     </select>
                     <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
                       <button onClick={()=>{setReassignTarget(null);setReassignTo('')}} style={{padding:'9px 20px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:13}}>Cancel</button>
-                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Reassigning…':'Reassign Lead'}</button>
+                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Reassigningï¿½':'Reassign Lead'}</button>
                     </div>
                   </div>
                 </div>
@@ -5011,7 +5016,7 @@ export default function Dashboard({ session }) {
               <div className='table-container'>
                 <div style={{overflowX:'auto'}}>
                   <table><thead><tr>{['Date','Lead Name','Action','Assigned To','Assigned By','Previous Agent'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-                  <tbody>{filteredAct.length===0?(<tr><td colSpan={6}><div className='empty-state'><h3>No activity yet</h3><p>Lead assignments will appear here</p></div></td></tr>):filteredAct.map(a=>(<tr key={a.id}><td style={{fontSize:11,color:'#718096',whiteSpace:'nowrap'}}>{a.created_at?new Date(a.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'—'}</td><td style={{fontWeight:500,fontSize:13}}>{a.lead_name||'—'}</td><td><span style={{background:a.action==='Reassigned'?'#FEF3C7':'#E6F1FB',color:a.action==='Reassigned'?'#92400E':'#185FA5',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:500}}>{a.action||'—'}</span></td><td style={{fontSize:12}}>{a.assigned_to_name||users.find(u=>u.id===a.assigned_to)?.full_name||'—'}</td><td style={{fontSize:12,color:'#718096'}}>{a.assigned_by_name||users.find(u=>u.id===a.assigned_by)?.full_name||'—'}</td><td style={{fontSize:12,color:'#A0AEC0'}}>{a.previous_agent_name||'—'}</td></tr>))}
+                  <tbody>{filteredAct.length===0?(<tr><td colSpan={6}><div className='empty-state'><h3>No activity yet</h3><p>Lead assignments will appear here</p></div></td></tr>):filteredAct.map(a=>(<tr key={a.id}><td style={{fontSize:11,color:'#718096',whiteSpace:'nowrap'}}>{a.created_at?new Date(a.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'ï¿½'}</td><td style={{fontWeight:500,fontSize:13}}>{a.lead_name||'ï¿½'}</td><td><span style={{background:a.action==='Reassigned'?'#FEF3C7':'#E6F1FB',color:a.action==='Reassigned'?'#92400E':'#185FA5',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:500}}>{a.action||'ï¿½'}</span></td><td style={{fontSize:12}}>{a.assigned_to_name||users.find(u=>u.id===a.assigned_to)?.full_name||'ï¿½'}</td><td style={{fontSize:12,color:'#718096'}}>{a.assigned_by_name||users.find(u=>u.id===a.assigned_by)?.full_name||'ï¿½'}</td><td style={{fontSize:12,color:'#A0AEC0'}}>{a.previous_agent_name||'ï¿½'}</td></tr>))}
                   </tbody></table>
                 </div>
               </div>
@@ -5033,7 +5038,7 @@ export default function Dashboard({ session }) {
                     <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:d.color,flexShrink:0}}/><span style={{fontWeight:500,fontSize:12}}>{d.label}</span></div>
                     <div style={{display:'flex',gap:4}}>
                       <button onClick={()=>toggleDisposition(d.id,d.is_active)} style={{fontSize:10,padding:'2px 6px',border:'1px solid #E2E8F0',borderRadius:4,background:'transparent',cursor:'pointer',color:'#718096'}}>{d.is_active?'Off':'On'}</button>
-                      <button onClick={()=>deleteDisposition(d.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>×</button>
+                      <button onClick={()=>deleteDisposition(d.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>ï¿½</button>
                     </div>
                   </div>
                 ))}
@@ -5065,7 +5070,7 @@ export default function Dashboard({ session }) {
                     <button onClick={()=>moveAdminStage(s.id,-1)} disabled={i===0} style={{background:'none',border:'none',cursor:i===0?'default':'pointer',color:i===0?'#E2E8F0':'#718096',fontSize:13,padding:'0 2px',lineHeight:1}}>?</button>
                     <button onClick={()=>moveAdminStage(s.id,1)} disabled={i===adminStages.length-1} style={{background:'none',border:'none',cursor:i===adminStages.length-1?'default':'pointer',color:i===adminStages.length-1?'#E2E8F0':'#718096',fontSize:13,padding:'0 2px',lineHeight:1}}>?</button>
                     <button onClick={()=>toggleAdminStage(s.id,s.is_active)} style={{fontSize:10,padding:'2px 6px',border:'1px solid #E2E8F0',borderRadius:4,background:'transparent',cursor:'pointer',color:'#718096'}}>{s.is_active?'Off':'On'}</button>
-                    <button onClick={()=>deleteAdminStage(s.id,s.name)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>×</button>
+                    <button onClick={()=>deleteAdminStage(s.id,s.name)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>ï¿½</button>
                   </div>
                 ))}
                 {adminStages.length===0&&<div style={{color:'#A0AEC0',fontSize:13,padding:12}}>No stages found. Run the SQL setup script in Supabase to create the lead_stages table and insert defaults.</div>}
@@ -5088,7 +5093,7 @@ export default function Dashboard({ session }) {
                     <span style={{fontWeight:500,fontSize:12}}>{s.name}</span>
                     <div style={{display:'flex',gap:4}}>
                       <button onClick={()=>toggleLeadSource(s.id,s.is_active)} style={{fontSize:10,padding:'2px 6px',border:'1px solid #E2E8F0',borderRadius:4,background:'transparent',cursor:'pointer',color:'#718096'}}>{s.is_active?'Off':'On'}</button>
-                      <button onClick={()=>deleteLeadSource(s.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>×</button>
+                      <button onClick={()=>deleteLeadSource(s.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>ï¿½</button>
                     </div>
                   </div>
                 ))}
@@ -5134,7 +5139,7 @@ export default function Dashboard({ session }) {
                     <div style={{padding:16,color:'#A0AEC0',fontSize:13}}>No activity logs found.</div>
                   ):activityLogs.map(log=>(
                     <div key={log.id} style={{padding:'10px 16px',borderBottom:'1px solid #F3F4F6'}}>
-                      <div style={{fontSize:12,fontWeight:500,color:'#2D3748'}}>{log.profiles?.full_name||'Unknown'} — <span style={{color:'#185FA5'}}>{log.action}</span></div>
+                      <div style={{fontSize:12,fontWeight:500,color:'#2D3748'}}>{log.profiles?.full_name||'Unknown'} ï¿½ <span style={{color:'#185FA5'}}>{log.action}</span></div>
                       {log.details&&<div style={{fontSize:11,color:'#718096',marginTop:2}}>{typeof log.details==='string'?log.details:JSON.stringify(log.details)}</div>}
                       <div style={{fontSize:10,color:'#A0AEC0',marginTop:2}}>{new Date(log.created_at).toLocaleString('en-IN',{timeZone:IST_TZ})}</div>
                     </div>
@@ -5303,7 +5308,7 @@ export default function Dashboard({ session }) {
         })
         const{error,data}=await supabase.from('leads').insert(chunk).select('id')
         if(error){ fail+=chunk.length; if(!firstError)firstError=error.message }
-        else if(!data||data.length===0){ fail+=chunk.length; if(!firstError)firstError='No rows were inserted — likely a Row Level Security (RLS) block on assigning leads to this agent.' }
+        else if(!data||data.length===0){ fail+=chunk.length; if(!firstError)firstError='No rows were inserted ï¿½ likely a Row Level Security (RLS) block on assigning leads to this agent.' }
         else { ok+=data.length; if(data.length<chunk.length){ fail+=chunk.length-data.length } }
       }
       setImportResult({ok,fail,total:valid.length,error:firstError})
@@ -5317,7 +5322,7 @@ export default function Dashboard({ session }) {
       <div className="page-header">
         <div>
           <h1 style={{display:'flex',alignItems:'center',gap:8,fontSize:isMobile?16:18}}><IconLayoutDashboard size={isMobile?18:22} strokeWidth={1.6}/>Dashboard</h1>
-          <p>Welcome, {profile?.full_name||'Admin'} — {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:IST_TZ})}</p>
+          <p>Welcome, {profile?.full_name||'Admin'} ï¿½ {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:IST_TZ})}</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           <button onClick={()=>{setShowImport(true);fetchCSVAgents();setRawRows([]);setFileHeaders([]);setColMap({});setCsvError('');setImportResult(null)}}
@@ -5366,20 +5371,20 @@ export default function Dashboard({ session }) {
             <div style={{background:'linear-gradient(135deg,#185FA5,#1e40af)',padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div>
                 <div style={{color:'white',fontWeight:700,fontSize:16,display:'flex',alignItems:'center',gap:8}}><IconDownload size={18}/>Import Leads from Excel / CSV</div>
-                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Upload any Excel or CSV — map columns in the next step</div>
+                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Upload any Excel or CSV ï¿½ map columns in the next step</div>
               </div>
               <button onClick={()=>setShowImport(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={16}/></button>
             </div>
             <div style={{padding:20,overflowY:'auto',flex:1}}>
               {/* Step 1: Upload */}
               <div style={{marginBottom:18}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 1 — Upload Excel (.xlsx/.xls) or CSV file</div>
+                <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 1 ï¿½ Upload Excel (.xlsx/.xls) or CSV file</div>
                 <div style={{background:'#F8FAFC',border:'2px dashed #CBD5E0',borderRadius:10,padding:'20px',textAlign:'center',cursor:'pointer',position:'relative'}}
                   onClick={()=>document.getElementById('csv-file-input').click()}>
                   <input id="csv-file-input" type="file" accept=".xlsx,.xls,.csv,.txt" style={{display:'none'}} onChange={handleFile}/>
                   <IconDownload size={28} color="#94A3B8" style={{display:'block',margin:'0 auto 8px'}}/>
                   <div style={{fontSize:13,fontWeight:600,color:'#374151'}}>Click to upload Excel (.xlsx/.xls) or CSV</div>
-                  <div style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>Upload Excel (.xlsx/.xls) or CSV — any column headers</div>
+                  <div style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>Upload Excel (.xlsx/.xls) or CSV ï¿½ any column headers</div>
                 </div>
                 {csvError&&<div style={{marginTop:8,color:'#DC2626',fontSize:12,fontWeight:500}}>{csvError}</div>}
               </div>
@@ -5387,7 +5392,7 @@ export default function Dashboard({ session }) {
               {/* Step 2: Column Mapping */}
               {fileHeaders.length>0&&(
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 2 — Map Columns <span style={{fontWeight:400,color:'#6B7280',fontSize:12}}>(* required)</span></div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 2 ï¿½ Map Columns <span style={{fontWeight:400,color:'#6B7280',fontSize:12}}>(* required)</span></div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
                     {[
                       {field:'full_name',label:'Name *',required:true},
@@ -5404,7 +5409,7 @@ export default function Dashboard({ session }) {
                         <div style={{fontSize:11,fontWeight:600,color:required?'#DC2626':'#6B7280',marginBottom:3}}>{label}</div>
                         <select value={colMap[field]||''} onChange={e=>setColMap(p=>({...p,[field]:e.target.value||null}))}
                           style={{width:'100%',padding:'7px 10px',border:'1.5px solid '+(required&&!colMap[field]?'#FCA5A5':'#E2E8F0'),borderRadius:7,fontSize:12,outline:'none',background:'white'}}>
-                          <option value="">— none —</option>
+                          <option value="">ï¿½ none ï¿½</option>
                           {fileHeaders.map(h=><option key={h} value={h}>{h}</option>)}
                         </select>
                       </div>
@@ -5416,10 +5421,10 @@ export default function Dashboard({ session }) {
               {/* Step 3: Assign */}
               {rawRows.length>0&&(
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 3 — Assign to Agent (optional)</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 3 ï¿½ Assign to Agent (optional)</div>
                   <select value={assignTo} onChange={e=>setAssignTo(e.target.value)}
                     style={{width:'100%',padding:'10px 12px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',background:'white'}}>
-                    <option value="">— Unassigned —</option>
+                    <option value="">ï¿½ Unassigned ï¿½</option>
                     {csvAgents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
                   </select>
                 </div>
@@ -5429,7 +5434,7 @@ export default function Dashboard({ session }) {
               {csvRows.length>0&&(
                 <div style={{marginBottom:18}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#111827'}}>Preview — {csvRows.length} rows ({csvRows.filter(r=>r._valid).length} valid)</div>
+                    <div style={{fontSize:13,fontWeight:700,color:'#111827'}}>Preview ï¿½ {csvRows.length} rows ({csvRows.filter(r=>r._valid).length} valid)</div>
                     {csvRows.filter(r=>!r._valid).length>0&&<span style={{fontSize:11,color:'#DC2626',fontWeight:600}}>{csvRows.filter(r=>!r._valid).length} rows missing Name/Number will be skipped</span>}
                   </div>
                   <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #E2E8F0'}}>
@@ -5443,11 +5448,11 @@ export default function Dashboard({ session }) {
                         {csvRows.slice(0,8).map(r=>(
                           <tr key={r._row} style={{borderTop:'1px solid #F3F4F6',opacity:r._valid?1:0.4}}>
                             <td style={{padding:'7px 12px',color:'#9CA3AF'}}>{r._row}</td>
-                            <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'—'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.mobile||'—'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.loan_amount?'?'+r.loan_amount:'—'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.application_id||'—'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||'—'}</td>
+                            <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'ï¿½'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.mobile||'ï¿½'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.loan_amount?'?'+r.loan_amount:'ï¿½'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.application_id||'ï¿½'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||'ï¿½'}</td>
                             <td style={{padding:'7px 12px'}}>{r._valid?<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>? OK</span>:<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 7px',borderRadius:4,fontWeight:600}}>Skip</span>}</td>
                           </tr>
                         ))}
@@ -5462,7 +5467,7 @@ export default function Dashboard({ session }) {
               {importResult&&(
                 <div style={{background:importResult.fail===0?'#F0FFF4':'#FFFBEB',border:'1px solid '+(importResult.fail===0?'#86EFAC':'#FCD34D'),borderRadius:10,padding:14,marginBottom:16}}>
                   <div style={{fontWeight:700,fontSize:14,color:importResult.fail===0?'#065F46':'#92400E',marginBottom:4}}>Import Complete</div>
-                  <div style={{fontSize:13,color:importResult.fail===0?'#166534':'#78350F'}}>? {importResult.ok} leads imported successfully{importResult.fail>0?` · ?? ${importResult.fail} failed`:''}</div>
+                  <div style={{fontSize:13,color:importResult.fail===0?'#166534':'#78350F'}}>? {importResult.ok} leads imported successfully{importResult.fail>0?` ï¿½ ?? ${importResult.fail} failed`:''}</div>
                   {importResult.error&&<div style={{fontSize:12,color:'#dc2626',marginTop:6}}>Error: {importResult.error}</div>}
                 </div>
               )}
@@ -5472,7 +5477,7 @@ export default function Dashboard({ session }) {
               {rawRows.length>0&&!importResult&&(
                 <button onClick={handleImport} disabled={importing||!colMap.full_name||!colMap.mobile||csvRows.filter(r=>r._valid).length===0}
                   style={{padding:'9px 20px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',opacity:(importing||!colMap.full_name||!colMap.mobile||csvRows.filter(r=>r._valid).length===0)?0.6:1}}>
-                  {importing?'Importing…':`Import ${csvRows.filter(r=>r._valid).length} Leads`}
+                  {importing?'Importingï¿½':`Import ${csvRows.filter(r=>r._valid).length} Leads`}
                 </button>
               )}
               {importResult&&<button onClick={()=>setShowImport(false)} style={{padding:'9px 20px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Done</button>}
@@ -5569,10 +5574,10 @@ export default function Dashboard({ session }) {
   if(roleLoading) return(
     <div className='loading-screen'>
       <div className='spinner spinner-lg'/>
-      <p>Loading…</p>
+      <p>Loadingï¿½</p>
     </div>
   )
-  // admin uses main layout — no early return
+  // admin uses main layout ï¿½ no early return
 
   return(
     <div style={{display:'flex',minHeight:'100vh',background:'var(--bg)'}}>
@@ -5644,22 +5649,22 @@ export default function Dashboard({ session }) {
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,width:'100%',maxWidth:520,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 50px rgba(0,0,0,0.25)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'18px 22px',borderBottom:'1px solid #EEF2F6'}}>
               <div>
-                <div style={{fontSize:17,fontWeight:700,color:'#0F172A'}}>{viewLead.full_name||'—'}</div>
-                <div style={{fontSize:13,color:'#64748B'}}>{viewLead.mobile||'—'}</div>
+                <div style={{fontSize:17,fontWeight:700,color:'#0F172A'}}>{viewLead.full_name||'ï¿½'}</div>
+                <div style={{fontSize:13,color:'#64748B'}}>{viewLead.mobile||'ï¿½'}</div>
               </div>
-              <button onClick={()=>setViewLead(null)} style={{border:'none',background:'#F1F5F9',width:32,height:32,borderRadius:8,cursor:'pointer',fontSize:18,color:'#475569'}}>×</button>
+              <button onClick={()=>setViewLead(null)} style={{border:'none',background:'#F1F5F9',width:32,height:32,borderRadius:8,cursor:'pointer',fontSize:18,color:'#475569'}}>ï¿½</button>
             </div>
             <div style={{padding:'18px 22px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px 18px'}}>
               {[
-                ['Status',viewLead.status||'—'],
-                ['Previous Status',viewLead.previous_status||'—'],
-                ['Sheet No.',viewLead.sheet_number||'—'],
-                ['City',viewLead.city||'—'],
-                ['Loan Amount',viewLead.loan_amount?'?'+Number(viewLead.loan_amount).toLocaleString('en-IN'):'—'],
-                ['Monthly Salary',viewLead.monthly_salary?'?'+Number(viewLead.monthly_salary).toLocaleString('en-IN'):'—'],
-                ['Company',viewLead.company_name||'—'],
-                ['Application ID',viewLead.application_id||'—'],
-                ['Date',viewLead.created_at?new Date(viewLead.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'],
+                ['Status',viewLead.status||'ï¿½'],
+                ['Previous Status',viewLead.previous_status||'ï¿½'],
+                ['Sheet No.',viewLead.sheet_number||'ï¿½'],
+                ['City',viewLead.city||'ï¿½'],
+                ['Loan Amount',viewLead.loan_amount?'?'+Number(viewLead.loan_amount).toLocaleString('en-IN'):'ï¿½'],
+                ['Monthly Salary',viewLead.monthly_salary?'?'+Number(viewLead.monthly_salary).toLocaleString('en-IN'):'ï¿½'],
+                ['Company',viewLead.company_name||'ï¿½'],
+                ['Application ID',viewLead.application_id||'ï¿½'],
+                ['Date',viewLead.created_at?new Date(viewLead.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'ï¿½'],
               ].map(([k,v])=>(
                 <div key={k}>
                   <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>{k}</div>
@@ -5668,7 +5673,7 @@ export default function Dashboard({ session }) {
               ))}
               <div style={{gridColumn:'1 / -1'}}>
                 <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>Notes</div>
-                <div style={{fontSize:13.5,color:'#334155',whiteSpace:'pre-wrap',lineHeight:1.5}}>{viewLead.notes||'—'}</div>
+                <div style={{fontSize:13.5,color:'#334155',whiteSpace:'pre-wrap',lineHeight:1.5}}>{viewLead.notes||'ï¿½'}</div>
               </div>
             </div>
           </div>
