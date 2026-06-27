@@ -4514,7 +4514,7 @@ export default function Dashboard({ session }) {
         const originalAgent=reassignTarget.assigned_to
         const currentMirrors=reassignTarget.mirror_agents||[]
         const newMirrors=[...new Set([...currentMirrors,originalAgent].filter(Boolean))]
-        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',status:'New',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
+        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
         try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
