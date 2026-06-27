@@ -49,7 +49,7 @@ class ErrorBoundary extends React.Component {
           border: '1px solid #fecaca',
           margin: 20
         }}>
-          <div style={{fontSize: 32, marginBottom: 12}}>??</div>
+          <div style={{fontSize: 32, marginBottom: 12}}>⚠️</div>
           <div style={{fontSize: 18, fontWeight: 700, color: '#dc2626', marginBottom: 8}}>
             Something went wrong
           </div>
@@ -76,7 +76,7 @@ class ErrorBoundary extends React.Component {
 }
 
 const STATUS_OPTIONS = ['New','Interested','Callback','Login','Approved','Disbursed','Not Interested','DND']
-// 'YYYY-MM-DD' for today in IST � used only to default/min-bound date pickers.
+// 'YYYY-MM-DD' for today in IST — used only to default/min-bound date pickers.
 // Built from the single canonical nowIST() so it can never drift from the
 // reminder engine's notion of "now".
 const istToday = () => nowIST().slice(0,10)
@@ -108,12 +108,12 @@ const STATUS_STYLE = {
 const PIPELINE = ['New','Interested','Callback','Login','Approved','Disbursed']
 
 const TEMP_COLORS = {
-  Hot: {bg:'#FEE2E2', color:'#DC2626', icon:'??'},
-  Warm:{bg:'#FEF3C7', color:'#D97706', icon:'??'},
-  Cold:{bg:'#DBEAFE', color:'#2563EB', icon:'??'},
+  Hot: {bg:'#FEE2E2', color:'#DC2626', icon:'🔥'},
+  Warm:{bg:'#FEF3C7', color:'#D97706', icon:'☀️'},
+  Cold:{bg:'#DBEAFE', color:'#2563EB', icon:'❄️'},
 }
 
-// -- Simple clean theme for the agent-dashboard filter bar --
+// ── Simple clean theme for the agent-dashboard filter bar ──
 const filterBarWrapStyle = {
   display:'flex', gap:10, alignItems:'center', flexWrap:'wrap',
   padding:'12px 16px', borderRadius:12,
@@ -250,7 +250,7 @@ const actionBtnLabeledStyles = {
   view:        {...actionBtnLabeledBase, background:'#FFEDD5', color:'#EA580C'},
 }
 
-// Standard action button � icon only, no label (desktop table Actions column)
+// Standard action button — icon only, no label (desktop table Actions column)
 const actionBtnSimpleBase = {
   padding:'5px 9px', borderRadius:10, border:'none',
   cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center',
@@ -289,23 +289,23 @@ const YES_NO_OPTIONS = ['No','Yes']
 
 const DEFAULT_WA_TEMPLATES = [
   {
-    id:'docs', name:'Docs Reminder', icon:'??', tag:'DOCS',
+    id:'docs', name:'Docs Reminder', icon:'📄', tag:'DOCS',
     tagColor:'#22C55E', tagBg:'#F0FFF4',
-    message:`Hi {name} ??, We have received your loan application for ?{amount}.\n\nTo proceed, please share:\n?? PAN Card\n?? Aadhaar Card\n?? Last 3 months bank statement\n?? Latest salary slip\n\nFeel free to reply here if you have any questions!`
+    message:`Hi {name} 😊, We have received your loan application for ₹{amount}.\n\nTo proceed, please share:\n📄 PAN Card\n📄 Aadhaar Card\n📄 Last 3 months bank statement\n📄 Latest salary slip\n\nFeel free to reply here if you have any questions!`
   },
   {
-    id:'emi', name:'EMI Details', icon:'??', tag:'EMI',
+    id:'emi', name:'EMI Details', icon:'💰', tag:'EMI',
     tagColor:'#3B82F6', tagBg:'#EFF6FF',
-    message:`Hi {name} ??, Here are your EMI details for the loan of ?{amount}:\n\n?? EMI Amount: ?{emi}/month\n?? Tenure: 36 months\n?? Interest Rate: 12.5% p.a.\n\nPlease review and confirm to proceed. ??`
+    message:`Hi {name} 😊, Here are your EMI details for the loan of ₹{amount}:\n\n💰 EMI Amount: ₹{emi}/month\n📅 Tenure: 36 months\n📊 Interest Rate: 12.5% p.a.\n\nPlease review and confirm to proceed. 🙏`
   },
   {
-    id:'disbursement', name:'Disbursement Update', icon:'??', tag:'DISBURSED',
+    id:'disbursement', name:'Disbursement Update', icon:'🎉', tag:'DISBURSED',
     tagColor:'#F59E0B', tagBg:'#FFF7ED',
-    message:`?? Congratulations {name}!\n\nYour loan of ?{amount} has been *DISBURSED* ?\n\nThe amount has been credited to your bank account.\n\nThank you for choosing us! ??`
+    message:`🎉 Congratulations {name}!\n\nYour loan of ₹{amount} has been *DISBURSED* ✅\n\nThe amount has been credited to your bank account.\n\nThank you for choosing us! 🙏`
   },
 ]
 
-// --- MOBILE HOOK ---
+// ─── MOBILE HOOK ───
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   useEffect(() => {
@@ -423,10 +423,10 @@ function AgentDashboard({ userId }) {
     const build=()=>{
       const h=new Date().getHours()
       const name=profile?.full_name?.split(' ')[0]||'there'
-      if(h>=5&&h<12)  return `Good morning, ${name} ??`
-      if(h>=12&&h<17) return `Good afternoon, ${name} ??`
-      if(h>=17&&h<21) return `Good evening, ${name} ??`
-      return `Good night, ${name} ??`
+      if(h>=5&&h<12)  return `Good morning, ${name} 👋`
+      if(h>=12&&h<17) return `Good afternoon, ${name} 👋`
+      if(h>=17&&h<21) return `Good evening, ${name} 👋`
+      return `Good night, ${name} 👋`
     }
     setGreeting(build())
     const t=setInterval(()=>setGreeting(build()),60000)
@@ -464,7 +464,7 @@ function AgentDashboard({ userId }) {
     checkRemindersRef.current?.()
     fetchWATemplates()
     fetchCallbackTasksRef.current?.()
-    // 30-second poll � refs always point to the latest function so closures stay fresh
+    // 30-second poll — refs always point to the latest function so closures stay fresh
     const iv=setInterval(()=>{checkRemindersRef.current?.();fetchCallbackTasksRef.current?.()},30000)
     return()=>clearInterval(iv)
   },[userId])
@@ -495,7 +495,7 @@ function AgentDashboard({ userId }) {
     const sub=supabase
       .channel(channelId)
 
-      // -- LEAD UPDATE --
+      // ── LEAD UPDATE ──
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},(payload)=>{
         console.log('[RT] leads UPDATE received:', payload)
         const upd=payload.new
@@ -527,7 +527,7 @@ function AgentDashboard({ userId }) {
         setLastSynced(new Date())
       })
 
-      // -- LEAD INSERT --
+      // ── LEAD INSERT ──
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'leads'},(payload)=>{
         console.log('[RT] leads INSERT received:', payload)
         const inserted=payload.new
@@ -547,7 +547,7 @@ function AgentDashboard({ userId }) {
         setLastSynced(new Date())
       })
 
-      // -- LEAD DELETE --
+      // ── LEAD DELETE ──
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'leads'},(payload)=>{
         console.log('[RT] leads DELETE received:', payload)
         if(!payload.old?.id) return
@@ -559,7 +559,7 @@ function AgentDashboard({ userId }) {
         setLastSynced(new Date())
       })
 
-      // -- OBLIGATIONS --
+      // ── OBLIGATIONS ──
       .on('postgres_changes',{event:'*',schema:'public',table:'loan_obligations'},(payload)=>{
         console.log('[RT] loan_obligations event received:', payload)
         const leadId=payload.new?.lead_id||payload.old?.lead_id
@@ -572,7 +572,7 @@ function AgentDashboard({ userId }) {
         setLastSynced(new Date())
       })
 
-      // -- CALLS INSERT --
+      // ── CALLS INSERT ──
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'calls',filter:'agent_id=eq.'+userId},(payload)=>{
         console.log('[RT] calls INSERT received:', payload)
         const call=payload.new
@@ -580,7 +580,7 @@ function AgentDashboard({ userId }) {
         setMyCalls(prev=>prev.some(c=>c.id===call.id)?[...prev]:[call,...prev])
         setLastSynced(new Date())
       })
-      // -- CALLS UPDATE --
+      // ── CALLS UPDATE ──
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'calls',filter:'agent_id=eq.'+userId},(payload)=>{
         console.log('[RT] calls UPDATE received:', payload)
         const call=payload.new
@@ -588,7 +588,7 @@ function AgentDashboard({ userId }) {
         setMyCalls(prev=>[...prev.map(c=>c.id===call.id?call:c)])
         setLastSynced(new Date())
       })
-      // -- CALLS DELETE --
+      // ── CALLS DELETE ──
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'calls',filter:'agent_id=eq.'+userId},(payload)=>{
         console.log('[RT] calls DELETE received:', payload)
         if(!payload.old?.id) return
@@ -596,7 +596,7 @@ function AgentDashboard({ userId }) {
         setLastSynced(new Date())
       })
 
-      // -- TASKS INSERT --
+      // ── TASKS INSERT ──
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'tasks',filter:'assigned_to=eq.'+userId},(payload)=>{
         console.log('[RT] tasks INSERT received:', payload)
         const task=payload.new
@@ -605,7 +605,7 @@ function AgentDashboard({ userId }) {
         fetchCallbackTasksRef.current?.()
         setLastSynced(new Date())
       })
-      // -- TASKS UPDATE --
+      // ── TASKS UPDATE ──
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'tasks',filter:'assigned_to=eq.'+userId},(payload)=>{
         console.log('[RT] tasks UPDATE received:', payload)
         const task=payload.new
@@ -614,7 +614,7 @@ function AgentDashboard({ userId }) {
         fetchCallbackTasksRef.current?.()
         setLastSynced(new Date())
       })
-      // -- TASKS DELETE --
+      // ── TASKS DELETE ──
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'tasks',filter:'assigned_to=eq.'+userId},(payload)=>{
         console.log('[RT] tasks DELETE received:', payload)
         if(!payload.old?.id) return
@@ -630,7 +630,7 @@ function AgentDashboard({ userId }) {
 
     const onVisible=()=>{
       if(document.visibilityState==='visible'){
-        console.log('[RT] tab visible � re-syncing')
+        console.log('[RT] tab visible — re-syncing')
         fetchAllRef.current?.()
         setLastSynced(new Date())
       }
@@ -667,9 +667,9 @@ function AgentDashboard({ userId }) {
 
   const fetchCallbackTasks=async()=>{
     if(!userId) return
-    // Fetch ALL non-terminal callbacks � no date restriction, so overdue tasks
+    // Fetch ALL non-terminal callbacks — no date restriction, so overdue tasks
     // AND tomorrow's/future callbacks all surface (filtering happens client-side
-    // below, never as a DB-side comparison against the timestamptz column �
+    // below, never as a DB-side comparison against the timestamptz column —
     // see timeUtils.js for why that matters).
     const{data}=await supabase.from('tasks').select('*')
       .eq('assigned_to',userId)
@@ -696,7 +696,7 @@ function AgentDashboard({ userId }) {
     })
 
     // Persistent list: every non-resolved callback whose window has opened
-    // (due_date - 5min has arrived) stays in the list continuously � this is
+    // (due_date - 5min has arrived) stays in the list continuously — this is
     // deliberately broader than the popup trigger below, so callbacks don't
     // disappear from the panel between the every-5-minute popup pulses.
     const displayTasks=allTasks.filter(t=>t.status!=='Attempted'&&isReminderActive(t))
@@ -704,7 +704,7 @@ function AgentDashboard({ userId }) {
 
     // Popup/beep = shouldTriggerReminder (5-min-before window, repeating
     // every SNOOZE_INTERVAL_MIN). last_snooze_at is read from the DB row
-    // first � that's what makes the snooze cadence survive a page refresh �
+    // first — that's what makes the snooze cadence survive a page refresh —
     // and falls back to the in-memory ref only as an optimistic same-tab cache.
     const triggeredTasks=allTasks.filter(t=>
       t.status!=='Attempted'&&shouldTriggerReminder(t, t.last_snooze_at||snoozedTasksRef.current[t.id]||null)
@@ -719,7 +719,7 @@ function AgentDashboard({ userId }) {
       triggeredTasks.forEach(t=>{
         snoozedTasksRef.current[t.id]=now
         supabase.from('tasks').update({last_snooze_at:toDbTimestamp(now)}).eq('id',t.id)
-          .then(({error})=>{ if(error) console.error('[Reminder] last_snooze_at write failed � has the migration been run? See REMINDER_ENGINE_MIGRATION.sql', error) })
+          .then(({error})=>{ if(error) console.error('[Reminder] last_snooze_at write failed — has the migration been run? See REMINDER_ENGINE_MIGRATION.sql', error) })
       })
       setShowCallbackReminder(true)
       if(!alreadyBuzzingRef.current){
@@ -730,10 +730,10 @@ function AgentDashboard({ userId }) {
   }
 
   const markCallbackDone=async(taskId)=>{
-    console.log('[Action] markCallbackDone ? DB write task:', taskId)
+    console.log('[Action] markCallbackDone → DB write task:', taskId)
     const {data,error}=await supabase.from('tasks').update({status:'Completed',last_snooze_at:null}).eq('id',taskId).select()
     if(error){ console.error('[Action] markCallbackDone error:', error); showToast('Could not mark done: '+error.message,'error'); return }
-    if(!data||data.length===0){ console.warn('[Action] markCallbackDone updated 0 rows � RLS blocked or task not found'); showToast('Not saved � permission denied on this task','error'); fetchCallbackTasks(); return }
+    if(!data||data.length===0){ console.warn('[Action] markCallbackDone updated 0 rows — RLS blocked or task not found'); showToast('Not saved — permission denied on this task','error'); fetchCallbackTasks(); return }
     delete snoozedTasksRef.current[taskId]
     setCallbackTasks(prev=>[...prev.filter(t=>t.id!==taskId)])
     setMyTasks(prev=>[...prev.map(t=>t.id===taskId?{...t,status:'Completed'}:t)])
@@ -746,10 +746,10 @@ function AgentDashboard({ userId }) {
   }
 
   const markCallbackAttempted=async(taskId)=>{
-    console.log('[Action] markCallbackAttempted ? DB write task:', taskId)
+    console.log('[Action] markCallbackAttempted → DB write task:', taskId)
     const {data,error}=await supabase.from('tasks').update({status:'Attempted',last_snooze_at:null}).eq('id',taskId).select()
     if(error){ console.error('[Action] markCallbackAttempted error:', error); showToast('Could not mark attempted: '+error.message,'error'); return }
-    if(!data||data.length===0){ console.warn('[Action] markCallbackAttempted updated 0 rows � RLS blocked or task not found'); showToast('Not saved � permission denied on this task','error'); fetchCallbackTasks(); return }
+    if(!data||data.length===0){ console.warn('[Action] markCallbackAttempted updated 0 rows — RLS blocked or task not found'); showToast('Not saved — permission denied on this task','error'); fetchCallbackTasks(); return }
     delete snoozedTasksRef.current[taskId]
     setCallbackTasks(prev=>[...prev.filter(t=>t.id!==taskId)])
     setMyTasks(prev=>[...prev.map(t=>t.id===taskId?{...t,status:'Attempted'}:t)])
@@ -763,7 +763,7 @@ function AgentDashboard({ userId }) {
 
   // Combine the date+time pickers into the canonical IST value, then convert
   // to the absolute instant Postgres needs for the `timestamptz` due_date
-  // column (see timeUtils.js � this conversion is the actual bug fix).
+  // column (see timeUtils.js — this conversion is the actual bug fix).
   const scheduleDueDate=(dateStr,timeStr)=>toDbTimestamp(buildIST(dateStr,timeStr))
 
   // If the composed datetime is already in the past, roll forward by exactly 1 day
@@ -777,7 +777,7 @@ function AgentDashboard({ userId }) {
   const rescheduleCallback=async(taskId)=>{
     if(!rescheduleDate||!rescheduleTime) return
     const iso=scheduleDueDate(rescheduleDate,rescheduleTime)
-    console.log('[Action] rescheduleCallback ? DB write task:', taskId, 'due:', iso)
+    console.log('[Action] rescheduleCallback → DB write task:', taskId, 'due:', iso)
     // Clearing last_snooze_at is what stops the OLD reminder cadence and lets
     // the new due_date start a fresh 5-min-before window.
     const {error}=await supabase.from('tasks').update({due_date:iso,status:'Pending',last_snooze_at:null}).eq('id',taskId)
@@ -792,10 +792,10 @@ function AgentDashboard({ userId }) {
   const scheduleCallback=async()=>{
     if(!callbackLead||!callbackDate||!callbackTime) return
     const iso=safeDueDate(callbackDate,callbackTime)
-    console.log('[Action] scheduleCallback ? DB write lead:', callbackLead.id, 'task due:', iso)
+    console.log('[Action] scheduleCallback → DB write lead:', callbackLead.id, 'task due:', iso)
     const {data:lData,error:lErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
     if(lErr){ console.error('[Action] scheduleCallback lead update error:', lErr); showToast('Could not update stage: '+lErr.message,'error') }
-    else if(!lData||lData.length===0){ console.warn('[Action] scheduleCallback lead update hit 0 rows � RLS blocked or lead not found'); showToast('Stage not saved � permission denied on this lead','error'); fetchAllRef.current?.() }
+    else if(!lData||lData.length===0){ console.warn('[Action] scheduleCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
     else { setMyLeads(prev=>[...prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback'}:l)]); fetchAllRef.current?.() }
     const {error:tErr}=await supabase.from('tasks').insert([{
       title:'Callback: '+callbackLead.full_name,
@@ -809,7 +809,7 @@ function AgentDashboard({ userId }) {
     if(tErr){ console.error('[Action] scheduleCallback task insert error:', tErr) }
     else{
       notifyAdmins({type:'callback_set',lead_id:callbackLead.id,customer_name:callbackLead.full_name,due_at:iso,
-        message:`? ${profile?.full_name||'Agent'} set a callback for ${callbackLead.full_name} on ${formatIST(iso)}`,
+        message:`⏰ ${profile?.full_name||'Agent'} set a callback for ${callbackLead.full_name} on ${formatIST(iso)}`,
       })
     }
     setShowCallbackModal(false)
@@ -822,7 +822,7 @@ function AgentDashboard({ userId }) {
     if(!callbackLead) return
     const {data:skipData,error:skipErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
     if(skipErr){ console.error('[Action] skipCallback lead update error:', skipErr); showToast('Could not update stage: '+skipErr.message,'error') }
-    else if(!skipData||skipData.length===0){ console.warn('[Action] skipCallback lead update hit 0 rows � RLS blocked or lead not found'); showToast('Stage not saved � permission denied on this lead','error'); fetchAllRef.current?.() }
+    else if(!skipData||skipData.length===0){ console.warn('[Action] skipCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
     else { setMyLeads(prev=>prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback'}:l)); showToast('Stage updated to Callback'); fetchAllRef.current?.() }
     setShowCallbackModal(false)
   }
@@ -830,7 +830,7 @@ function AgentDashboard({ userId }) {
   const checkReminders=async()=>{
     if(!userId)return
     // Fetch ALL non-terminal, non-callback tasks for this agent (callbacks are
-    // handled by the dedicated popup above) � no DB-side date filter, so every
+    // handled by the dedicated popup above) — no DB-side date filter, so every
     // comparison happens client-side through the canonical IST module.
     const{data}=await supabase.from('tasks').select('*')
       .eq('assigned_to',userId).in('status',['Pending','In Progress'])
@@ -939,18 +939,18 @@ function AgentDashboard({ userId }) {
       setShowCallbackModal(true)
       return
     }
-    console.log('[Action] updateLeadStatus ? DB write:', leadId, newStatus)
+    console.log('[Action] updateLeadStatus → DB write:', leadId, newStatus)
     const {data,error}=await supabase.from('leads').update({status:newStatus}).eq('id',leadId).select()
     if(error){ console.error('[Action] updateLeadStatus DB error:', error); showToast('Could not update stage: '+error.message,'error'); return }
-    if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows � RLS blocked or lead not found'); showToast('Stage not saved � permission denied on this lead','error'); fetchAllRef.current?.(); return }
-    // Optimistic update � RT subscription will also fire on other devices
+    if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.(); return }
+    // Optimistic update — RT subscription will also fire on other devices
     setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,status:newStatus}:l)])
     showToast('Stage updated to '+newStatus)
     fetchAllRef.current?.()
     if(newStatus==='Lead'){
       const lead=data[0]
       notifyAdmins({type:'lead_saved',lead_id:leadId,customer_name:lead.full_name,amount:lead.loan_amount||null,
-        message:`?? ${profile?.full_name||'Agent'} booked a LEAD � ${lead.full_name}${lead.loan_amount?' � ?'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
+        message:`🎯 ${profile?.full_name||'Agent'} booked a LEAD — ${lead.full_name}${lead.loan_amount?' · ₹'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
       })
     }
   }
@@ -968,10 +968,10 @@ function AgentDashboard({ userId }) {
     const newEntry=`${stamp}: ${noteText.trim()}`
     const existing=noteLead.notes||''
     const updated=existing?(existing+'\n'+newEntry):newEntry
-    console.log('[Action] saveNote ? DB write lead:', noteLead.id)
+    console.log('[Action] saveNote → DB write lead:', noteLead.id)
     const {error}=await supabase.from('leads').update({notes:updated}).eq('id',noteLead.id)
     if(error){ console.error('[Action] saveNote DB error:', error); return }
-    // Optimistic update � RT subscription will also fire on other devices
+    // Optimistic update — RT subscription will also fire on other devices
     setMyLeads(prev=>[...prev.map(l=>l.id===noteLead.id?{...l,notes:updated}:l)])
     setNoteLead(prev=>prev?{...prev,notes:updated}:prev)
     setShowNoteModal(false); setNoteText('')
@@ -1129,14 +1129,14 @@ function AgentDashboard({ userId }) {
     const relaxationLoans=['Personal Loan','Housing Loan','Car Loan','Bike Loan','Consumer Durable Loan']
     if(relaxationLoans.includes(ob.obligation_type)&&remaining<=3)return '< 3 EMIs left'
     const isBT=ob.balance_transfer===true||ob.balance_transfer==='true'||ob.balance_transfer==='Yes'||ob.balance_transfer==='yes'
-    if(isBT&&obligated===0)return 'BT Applied � Not Obligated'
+    if(isBT&&obligated===0)return 'BT Applied — Not Obligated'
     if(ob.obligation_type==='Credit Card'){
       const out=parseFloat(ob.outstanding_amount)||0
-      if(out>0)return `5% of ?${out.toLocaleString('en-IN')} outstanding = ?${Math.round(out*0.05).toLocaleString('en-IN')} obligated`
+      if(out>0)return `5% of ₹${out.toLocaleString('en-IN')} outstanding = ₹${Math.round(out*0.05).toLocaleString('en-IN')} obligated`
       return null
     }
-    if(obligated===0)return '100% � Co-applicant'
-    if(obligated===emi*0.5)return '50% � Joint / Both'
+    if(obligated===0)return '100% — Co-applicant'
+    if(obligated===emi*0.5)return '50% — Joint / Both'
     return null
   }
 
@@ -1194,7 +1194,7 @@ function AgentDashboard({ userId }) {
       if(String(obligation.id).startsWith('tmp-')){
         const {data,error}=await supabase.from('loan_obligations').insert([payload]).select().single()
         if(error) throw error
-        if(!data) throw new Error('Insert succeeded but no data returned � check RLS SELECT policy on loan_obligations')
+        if(!data) throw new Error('Insert succeeded but no data returned — check RLS SELECT policy on loan_obligations')
         console.log('[saveObligationCard] inserted:', data.id)
         const updated=[...(getLeadObligations(leadId)||[]),data]
         updateSavedObligations(leadId,updated)
@@ -1203,12 +1203,12 @@ function AgentDashboard({ userId }) {
         const _cname=selectedLeadForObligations?.full_name||''
         notifyAdmins({type:'obligation_added',lead_id:leadId,customer_name:_cname,
           amount:payload.required_loan_amount||payload.loan_amount||null,
-          message:`?? ${profile?.full_name||'Agent'} added a requirement for ${_cname}${payload.required_loan_amount?' � ?'+Number(payload.required_loan_amount).toLocaleString('en-IN'):''}`,
+          message:`📋 ${profile?.full_name||'Agent'} added a requirement for ${_cname}${payload.required_loan_amount?' · ₹'+Number(payload.required_loan_amount).toLocaleString('en-IN'):''}`,
         })
       } else {
         const {data,error}=await supabase.from('loan_obligations').update(payload).eq('id',obligation.id).select().single()
         if(error) throw error
-        if(!data) throw new Error('Update succeeded but no data returned � check RLS SELECT policy on loan_obligations')
+        if(!data) throw new Error('Update succeeded but no data returned — check RLS SELECT policy on loan_obligations')
         console.log('[saveObligationCard] updated:', data.id)
         const updated=(getLeadObligations(leadId)||[]).map(item=>item.id===data.id?data:item)
         updateSavedObligations(leadId,updated)
@@ -1259,7 +1259,7 @@ function AgentDashboard({ userId }) {
 
   const enrichDraftTitle=(ob)=>{
     const title=ob.obligation_type||'New Obligation'
-    const bank=ob.bank_name?` � ${ob.bank_name}`:''
+    const bank=ob.bank_name?` — ${ob.bank_name}`:''
     return title+bank
   }
 
@@ -1274,7 +1274,7 @@ function AgentDashboard({ userId }) {
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
     const stamp=`[${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} - ${agentName}]`
-    const entry=`${stamp}: WhatsApp sent � "${tpl.name}" template`
+    const entry=`${stamp}: WhatsApp sent — "${tpl.name}" template`
     const updated=(waLead.notes||'')?(waLead.notes+'\n'+entry):entry
     supabase.from('leads').update({notes:updated}).eq('id',waLead.id)
     setMyLeads(prev=>prev.map(l=>l.id===waLead.id?{...l,notes:updated}:l))
@@ -1282,7 +1282,7 @@ function AgentDashboard({ userId }) {
     showToast('WhatsApp opened for '+waLead.full_name)
   }
 
-  // Quick one-click WA send (no modal) � logs note and opens WA directly
+  // Quick one-click WA send (no modal) — logs note and opens WA directly
   const sendWAQuick=(tpl,lead)=>{
     const name=lead.full_name?.split(' ')[0]||'Customer'
     const amount=Number(lead.loan_amount||0).toLocaleString('en-IN')
@@ -1292,7 +1292,7 @@ function AgentDashboard({ userId }) {
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
     const stamp=`[${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} - ${agentName}]`
-    const entry=`${stamp}: WhatsApp sent � "${tpl.name}" template`
+    const entry=`${stamp}: WhatsApp sent — "${tpl.name}" template`
     const updated=(lead.notes||'')?(lead.notes+'\n'+entry):entry
     supabase.from('leads').update({notes:updated}).eq('id',lead.id)
     setMyLeads(prev=>prev.map(l=>l.id===lead.id?{...l,notes:updated}:l))
@@ -1455,7 +1455,7 @@ function AgentDashboard({ userId }) {
     showToast('Report downloaded!')
   }
 
-  // Thin display-formatting aliases over the canonical timeUtils.formatIST �
+  // Thin display-formatting aliases over the canonical timeUtils.formatIST —
   // kept under their original names so the many render call sites below
   // don't all need touching, but the actual date logic now lives in exactly
   // one place (src/utils/timeUtils.js).
@@ -1464,7 +1464,7 @@ function AgentDashboard({ userId }) {
   const fmtIST=(v)=>formatIST(v,'datetime')
   const isISTToday=(v)=>parseIST(v)?.slice(0,10)===istToday()
 
-  // Dynamic stage helpers � fall back to module-level constants when table not yet loaded
+  // Dynamic stage helpers — fall back to module-level constants when table not yet loaded
   const stageNames=leadStages.length>0?leadStages.map(s=>s.name):STATUS_OPTIONS
   const stageStyle=name=>{const s=leadStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return STATUS_STYLE[name]||{bg:'#F3F4F6',color:'#6B7280'}}
 
@@ -1497,7 +1497,7 @@ function AgentDashboard({ userId }) {
   const btCreditCardCount = obligationDrafts.filter(ob => isBTFlag(ob) && ob.obligation_type === 'Credit Card').length
   const amountInHandAfterBT = Math.max(0, (obligationTotals.eligibleLoan||0) - btPosTotal)
 
-  const fmtAmt  =n=>n?'?'+Number(n).toLocaleString('en-IN'):'-'
+  const fmtAmt  =n=>n?'₹'+Number(n).toLocaleString('en-IN'):'-'
   const initials=name=>name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)||'?'
 
   const bg0=darkMode?'#0f172a':'#F8FAFC'
@@ -1575,11 +1575,11 @@ function AgentDashboard({ userId }) {
         />
       )}
 
-      {/* POWER DIALER � QUEUE COMPLETE */}
+      {/* POWER DIALER — QUEUE COMPLETE */}
       {showWorkspace&&queueComplete&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.75)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
           <div style={{background:'white',borderRadius:20,padding:'40px 48px',maxWidth:480,width:'100%',textAlign:'center',boxShadow:'0 24px 80px rgba(0,0,0,0.3)'}}>
-            <div style={{fontSize:56,marginBottom:12}}>??</div>
+            <div style={{fontSize:56,marginBottom:12}}>🎉</div>
             <div style={{fontSize:22,fontWeight:800,color:'#111827',marginBottom:8}}>Queue Completed!</div>
             <div style={{fontSize:14,color:'#6B7280',marginBottom:6}}>
               You've dialled all <strong>{leadQueue.length}</strong> lead{leadQueue.length!==1?'s':''} in this session.
@@ -1605,7 +1605,7 @@ function AgentDashboard({ userId }) {
         </div>
       )}
 
-      {/* WA QUICK SEND POPUP � desktop: fixed near button, mobile: fixed bottom sheet */}
+      {/* WA QUICK SEND POPUP — desktop: fixed near button, mobile: fixed bottom sheet */}
       {showWAQuick&&(
         <>
           {isMobile?(
@@ -1630,7 +1630,7 @@ function AgentDashboard({ userId }) {
                 ))}
                 <button onClick={()=>{ const lead=myLeads.find(l=>l.id===showWAQuick); if(lead){setShowWAQuick(null);setWaLead(lead);setShowWAModal(true)} }}
                   style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'12px 14px',border:'none',background:'#F9FAFB',borderRadius:10,cursor:'pointer',fontSize:14,color:'#6B7280',marginTop:6}}>
-                  ?? Custom message
+                  ✏️ Custom message
                 </button>
               </div>
             </>
@@ -1647,7 +1647,7 @@ function AgentDashboard({ userId }) {
               ))}
               <button onClick={()=>{ const lead=myLeads.find(l=>l.id===showWAQuick); if(lead){setShowWAQuick(null);setWaLead(lead);setShowWAModal(true)} }}
                 style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',border:'none',background:'transparent',borderRadius:8,cursor:'pointer',fontSize:12,color:'#6B7280',borderTop:'1px solid #f3f4f6',marginTop:2,width:'100%'}}>
-                ?? Custom message
+                ✏️ Custom message
               </button>
             </div>
           )}
@@ -1661,7 +1661,7 @@ function AgentDashboard({ userId }) {
           <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:16,boxShadow:'0 24px 60px rgba(0,0,0,0.2)',zIndex:500,width:'92%',maxWidth:400,overflow:'hidden'}}>
             <div style={{background:'linear-gradient(135deg,#854F0B,#C05621)',padding:'16px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <div style={{width:36,height:36,borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>??</div>
+                <div style={{width:36,height:36,borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>🔔</div>
                 <div>
                   <div style={{color:'white',fontWeight:700,fontSize:14}}>Follow-up Reminder!</div>
                   <div style={{color:'rgba(255,255,255,0.7)',fontSize:12}}>Task due very soon</div>
@@ -1675,7 +1675,7 @@ function AgentDashboard({ userId }) {
                 <div style={{fontSize:12,color:'#975A16'}}>Due: {fmtISTDate(reminderPopup.due_date)} {fmtISTTime(reminderPopup.due_date)}</div>
               </div>
               <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>setReminderPopup(null)} style={{flex:1,padding:10,background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>? Got it!</button>
+                <button onClick={()=>setReminderPopup(null)} style={{flex:1,padding:10,background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>✅ Got it!</button>
                 <button onClick={()=>setReminderPopup(null)} style={{padding:'10px 14px',background:'transparent',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,cursor:'pointer',color:'#6B7280'}}>Dismiss</button>
               </div>
             </div>
@@ -1693,7 +1693,7 @@ function AgentDashboard({ userId }) {
             <div style={{background:'linear-gradient(135deg,#9B2C2C,#C05621)',padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div style={{display:'flex',alignItems:'center',gap:12,color:'white'}}>
                 <div className="cb-bell-icon" style={{width:42,height:42,borderRadius:'50%',background:'rgba(255,255,255,0.18)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>
-                  ??
+                  🔔
                 </div>
                 <div>
                   <div style={{fontWeight:800,fontSize:16,letterSpacing:'-0.2px'}}>Callback Reminder!</div>
@@ -1725,25 +1725,25 @@ function AgentDashboard({ userId }) {
                     <div style={{marginBottom:6,display:'flex',alignItems:'flex-start',gap:6,flexWrap:'wrap'}}>
                       {taskOverdue&&(
                         <span style={{background:'#DC2626',color:'white',fontSize:10,fontWeight:800,padding:'2px 8px',borderRadius:20,letterSpacing:'0.04em',flexShrink:0}}>
-                          ?? OVERDUE
+                          ⚠️ OVERDUE
                         </span>
                       )}
                       {isUpcoming&&(
                         <span style={{background:'#F59E0B',color:'white',fontSize:10,fontWeight:800,padding:'2px 8px',borderRadius:20,letterSpacing:'0.04em',flexShrink:0}}>
-                          ?? UPCOMING
+                          🔔 UPCOMING
                         </span>
                       )}
                       <div style={{fontWeight:700,fontSize:15,color:taskOverdue?'#991B1B':'#92400E',width:'100%',marginTop:4}}>
-                        ?? {leadName}
+                        📞 {leadName}
                       </div>
                     </div>
 
                     <div style={{fontSize:12,color:taskOverdue?'#B91C1C':'#B45309',marginBottom:task.notes?4:8}}>
-                      ?? Scheduled: {isToday?'Today ':''}{fmtISTDate(task.due_date)}{' '}{fmtISTTime(task.due_date)}
+                      🕐 Scheduled: {isToday?'Today ':''}{fmtISTDate(task.due_date)}{' '}{fmtISTTime(task.due_date)}
                     </div>
                     {task.notes&&(
                       <div style={{fontSize:12,color:'#6B7280',marginBottom:8,lineHeight:1.4}}>
-                        ?? Notes: {task.notes}
+                        📝 Notes: {task.notes}
                       </div>
                     )}
 
@@ -1819,11 +1819,11 @@ function AgentDashboard({ userId }) {
             <div style={{flex:1,overflowY:'auto',padding:14}}>
               {callbackTasks.length>0&&(
                 <>
-                  <div style={{fontSize:11,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>?? Callbacks Due Today</div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>📞 Callbacks Due Today</div>
                   {callbackTasks.map(task=>(
                     <div key={'cb-'+task.id} style={{background:'#FFF7ED',border:'1px solid #FDE68A',borderRadius:8,padding:10,marginBottom:8,borderLeft:'3px solid #F59E0B'}}>
                       <div style={{fontWeight:600,fontSize:12,color:'#92400E',marginBottom:2}}>{task.title.replace('Callback: ','')}</div>
-                      <div style={{fontSize:11,color:'#B45309'}}>?? {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}</div>
+                      <div style={{fontSize:11,color:'#B45309'}}>🕐 {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}</div>
                       {task.notes&&<div style={{fontSize:11,color:'#B45309',marginTop:2}}>{task.notes}</div>}
                       <button onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead){openCallingWorkspace(lead);setShowNotifPanel(false)}}}
                         style={{marginTop:6,background:'#92400E',color:'white',border:'none',padding:'4px 10px',borderRadius:5,cursor:'pointer',fontSize:11,fontWeight:600}}>Call Now</button>
@@ -1835,14 +1835,14 @@ function AgentDashboard({ userId }) {
               {(notifications.length===0&&callbackTasks.length===0)
                 ?<div style={{textAlign:'center',padding:'40px 20px',color:'#A0AEC0'}}>
                     <IconBell size={32} strokeWidth={1.2} color="#CBD5E0" style={{display:'block',margin:'0 auto 10px'}}/>
-                    <div style={{fontSize:13}}>No pending reminders ??</div>
+                    <div style={{fontSize:13}}>No pending reminders 🎉</div>
                   </div>
                 :notifications.map(task=>{
                     const od=compareIST(task.due_date,nowIST())<0
                     return(
                       <div key={task.id} style={{background:od?'#FFF5F5':'#FFFAF0',border:'1px solid '+(od?'#FED7D7':'#F6E05E'),borderRadius:8,padding:12,marginBottom:8,borderLeft:'3px solid '+(od?'#A32D2D':'#854F0B')}}>
-                        <div style={{fontWeight:600,fontSize:12,color:od?'#A32D2D':'#744210',marginBottom:3}}>{od&&'?? '}{task.title}</div>
-                        <div style={{fontSize:11,color:od?'#A32D2D':'#975A16'}}>?? {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}</div>
+                        <div style={{fontWeight:600,fontSize:12,color:od?'#A32D2D':'#744210',marginBottom:3}}>{od&&'⚠️ '}{task.title}</div>
+                        <div style={{fontSize:11,color:od?'#A32D2D':'#975A16'}}>🕐 {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}</div>
                       </div>
                     )
                   })
@@ -1865,14 +1865,14 @@ function AgentDashboard({ userId }) {
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <IconBrandWhatsapp size={20} color="white"/>
                 <div>
-                  <div style={{color:'white',fontWeight:700,fontSize:14}}>WhatsApp � {waLead.full_name}</div>
+                  <div style={{color:'white',fontWeight:700,fontSize:14}}>WhatsApp — {waLead.full_name}</div>
                   <div style={{color:'rgba(255,255,255,0.75)',fontSize:11}}>+91 {waLead.mobile}</div>
                 </div>
               </div>
               <button onClick={()=>setShowWAModal(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={15}/></button>
             </div>
             <div style={{padding:'16px 18px',overflowY:'auto',flex:1}}>
-              <div style={{fontSize:12,color:'#6B7280',marginBottom:12}}>Tap a template � name and amount auto-fill:</div>
+              <div style={{fontSize:12,color:'#6B7280',marginBottom:12}}>Tap a template — name and amount auto-fill:</div>
               {waTemplates.map(tpl=>(
                 <div key={tpl.id} onClick={()=>sendWATemplate(tpl)}
                   style={{background:tpl.tagBg||'#F9FAFB',border:'1px solid #E5E7EB',borderRadius:10,padding:14,marginBottom:10,cursor:'pointer'}}>
@@ -1881,9 +1881,9 @@ function AgentDashboard({ userId }) {
                     <span style={{background:tpl.tagColor,color:'white',fontSize:10,padding:'2px 8px',borderRadius:20,fontWeight:600}}>{tpl.tag}</span>
                   </div>
                   <div style={{fontSize:12,color:'#4B5563',lineHeight:1.5}}>
-                    {tpl.message.replace(/{name}/g,waLead.full_name?.split(' ')[0]||'Customer').replace(/{amount}/g,Number(waLead.loan_amount||0).toLocaleString('en-IN')).replace(/{emi}/g,Math.round((Number(waLead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')).slice(0,120)+'�'}
+                    {tpl.message.replace(/{name}/g,waLead.full_name?.split(' ')[0]||'Customer').replace(/{amount}/g,Number(waLead.loan_amount||0).toLocaleString('en-IN')).replace(/{emi}/g,Math.round((Number(waLead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')).slice(0,120)+'…'}
                   </div>
-                  <div style={{marginTop:8,fontSize:11,color:tpl.tagColor,fontWeight:600}}>? Opens WhatsApp</div>
+                  <div style={{marginTop:8,fontSize:11,color:tpl.tagColor,fontWeight:600}}>↗ Opens WhatsApp</div>
                 </div>
               ))}
             </div>
@@ -1898,7 +1898,7 @@ function AgentDashboard({ userId }) {
           <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:300}} onClick={()=>setShowNoteModal(false)}/>
           <div style={{position:'fixed',top:isMobile?'auto':'50%',bottom:isMobile?0:'auto',left:isMobile?0:'50%',transform:isMobile?'none':'translate(-50%,-50%)',background:'white',borderRadius:isMobile?'16px 16px 0 0':16,boxShadow:'0 24px 60px rgba(0,0,0,0.18)',zIndex:400,width:isMobile?'100%':'90%',maxWidth:420,overflow:'hidden'}}>
             <div style={{background:'#854F0B',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,color:'white',fontWeight:700,fontSize:14}}><IconNotes size={16}/>Add Note � {noteLead.full_name}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8,color:'white',fontWeight:700,fontSize:14}}><IconNotes size={16}/>Add Note — {noteLead.full_name}</div>
               <button onClick={()=>setShowNoteModal(false)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
             </div>
             <div style={{padding:'16px 18px'}}>
@@ -1933,7 +1933,7 @@ function AgentDashboard({ userId }) {
                 </div>
                 <div>
                   <div style={{fontWeight:700,fontSize:15}}>Schedule Callback</div>
-                  <div style={{fontSize:12,opacity:0.8}}>{callbackLead.full_name} � {callbackLead.mobile}</div>
+                  <div style={{fontSize:12,opacity:0.8}}>{callbackLead.full_name} · {callbackLead.mobile}</div>
                 </div>
               </div>
               <button onClick={()=>setShowCallbackModal(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
@@ -1956,7 +1956,7 @@ function AgentDashboard({ userId }) {
               <div style={{marginBottom:14}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Reason for callback</label>
                 <textarea value={callbackNotes} onChange={e=>setCallbackNotes(e.target.value)}
-                  placeholder="Reason for callback�"
+                  placeholder="Reason for callback…"
                   rows={3}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',color:'#111827'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
@@ -1989,7 +1989,7 @@ function AgentDashboard({ userId }) {
                   <IconPhone size={18}/>
                 </div>
                 <div>
-                  <div style={{fontWeight:700,fontSize:15}}>Log Call � {callLogLead.full_name}</div>
+                  <div style={{fontWeight:700,fontSize:15}}>Log Call — {callLogLead.full_name}</div>
                   <div style={{fontSize:12,opacity:0.82}}>{callLogLead.mobile}</div>
                 </div>
               </div>
@@ -2003,7 +2003,7 @@ function AgentDashboard({ userId }) {
                 <select value={callLogDisposition} onChange={e=>setCallLogDisposition(e.target.value)}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white',color:'#111827',outline:'none',boxSizing:'border-box'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}>
-                  <option value="">� Select Disposition �</option>
+                  <option value="">— Select Disposition —</option>
                   {CALL_DISPOSITIONS.map(d=><option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
@@ -2014,7 +2014,7 @@ function AgentDashboard({ userId }) {
                   <div style={{maxHeight:100,overflowY:'auto',border:'1px solid #e5e7eb',borderRadius:8,padding:'6px 10px'}}>
                     {previousOutcomes.map((o,i)=>(
                       <div key={i} style={{fontSize:12,color:'#374151',padding:'4px 0',borderBottom:i<previousOutcomes.length-1?'1px solid #f3f4f6':'none',display:'flex',justifyContent:'space-between'}}>
-                        <span style={{fontWeight:600}}>{o.call_outcome||'�'}</span>
+                        <span style={{fontWeight:600}}>{o.call_outcome||'—'}</span>
                         <span style={{color:'#9ca3af'}}>{new Date(o.created_at).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'})}</span>
                       </div>
                     ))}
@@ -2023,7 +2023,7 @@ function AgentDashboard({ userId }) {
               ):(
                 <div style={{fontSize:12,color:'#9ca3af',marginBottom:14,fontStyle:'italic'}}>No previous call outcomes for this lead</div>
               )}
-              {/* Lead Stage � separate from disposition */}
+              {/* Lead Stage — separate from disposition */}
               <div style={{marginBottom:12}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.04em'}}>Lead Stage</label>
                 <select value={callLogStage} onChange={e=>setCallLogStage(e.target.value)}
@@ -2056,7 +2056,7 @@ function AgentDashboard({ userId }) {
               <div style={{marginBottom:16}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.04em'}}>Notes</label>
                 <textarea value={callLogNotes} onChange={e=>setCallLogNotes(e.target.value)}
-                  placeholder="Add call notes here�"
+                  placeholder="Add call notes here…"
                   rows={3}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',resize:'vertical',fontFamily:'inherit',boxSizing:'border-box',color:'#111827'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
@@ -2065,7 +2065,7 @@ function AgentDashboard({ userId }) {
               <div style={{display:'flex',gap:8}}>
                 <button onClick={saveCallLog} disabled={savingCallLog}
                   style={{flex:1,padding:'12px',background:savingCallLog?'#93C5FD':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingCallLog?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                  <IconDeviceFloppy size={15}/>{savingCallLog?'Saving�':'Save Call Log'}
+                  <IconDeviceFloppy size={15}/>{savingCallLog?'Saving…':'Save Call Log'}
                 </button>
                 <button onClick={()=>setShowCallLogModal(false)}
                   style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
@@ -2083,12 +2083,12 @@ function AgentDashboard({ userId }) {
         <ErrorBoundary>
         <div style={{position:'fixed',top:0,bottom:0,right:0,left:isMobile?0:'var(--sidebar-width)',background:'#0f172a',zIndex:360,display:'flex',flexDirection:'column',overflow:'hidden'}}>
 
-          {/* -- Header Bar -- */}
+          {/* ── Header Bar ── */}
           <div style={{background:'#111827',borderBottom:'1px solid #1e293b',padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexShrink:0}}>
             <div style={{display:'flex',alignItems:'center',gap:14,minWidth:0}}>
               <button onClick={()=>setShowObligationModal(false)}
                 style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.08)',border:'1px solid #334155',color:'#94a3b8',padding:'7px 12px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,flexShrink:0}}>
-                ? Back
+                ← Back
               </button>
               <div style={{minWidth:0}}>
                 <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
@@ -2096,7 +2096,7 @@ function AgentDashboard({ userId }) {
                   {selectedLeadForObligations.status&&(()=>{const ss=stageStyle(selectedLeadForObligations.status);return<span style={{background:ss.bg,color:ss.color,fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,flexShrink:0}}>{selectedLeadForObligations.status}</span>})()}
                   {obModalReadOnly&&<span style={{background:'#1e40af',color:'#93c5fd',fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:20,letterSpacing:'0.06em',flexShrink:0}}>VIEW ONLY</span>}
                 </div>
-                {selectedLeadForObligations.mobile&&<div style={{fontSize:12,color:'#64748b',marginTop:3}}>{selectedLeadForObligations.mobile}{selectedLeadForObligations.company_name?` � ${selectedLeadForObligations.company_name}`:''}</div>}
+                {selectedLeadForObligations.mobile&&<div style={{fontSize:12,color:'#64748b',marginTop:3}}>{selectedLeadForObligations.mobile}{selectedLeadForObligations.company_name?` · ${selectedLeadForObligations.company_name}`:''}</div>}
               </div>
             </div>
             <div style={{display:'flex',gap:8,flexShrink:0,alignItems:'center'}}>
@@ -2107,7 +2107,7 @@ function AgentDashboard({ userId }) {
                     const leadId=selectedLeadForObligations.id
                     const salaryVal=obModalSalary===''?null:parseFloat(obModalSalary)||null
                     const netTakeHomeVal=obModalNetTakeHome===''?null:parseFloat(obModalNetTakeHome)||null
-                    console.log('[Action] obModal save info ? DB write lead:', leadId)
+                    console.log('[Action] obModal save info → DB write lead:', leadId)
                     const {error}=await supabase.from('leads').update({monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}).eq('id',leadId)
                     if(error){ console.error('[Action] obModal save error:', error); return }
                     setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}:l)])
@@ -2140,18 +2140,18 @@ function AgentDashboard({ userId }) {
             </div>
           </div>
 
-          {/* -- Reassigned Banner -- */}
+          {/* ── Reassigned Banner ── */}
           {leadReassignInfo&&(
             <div style={{background:'#7c2d12',borderBottom:'1px solid #ea580c',padding:'10px 20px',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-              <span style={{fontSize:18}}>??</span>
+              <span style={{fontSize:18}}>🔀</span>
               <span style={{color:'#fed7aa',fontSize:13,fontWeight:600}}>This lead was reassigned to you{leadReassignInfo.previous_agent_name?` from ${leadReassignInfo.previous_agent_name}`:''}</span>
             </div>
           )}
 
-          {/* -- Scrollable Body -- */}
+          {/* ── Scrollable Body ── */}
           <div style={{flex:1,overflowY:'auto',padding:isMobile?'14px':'20px 24px',background:'#0f172a',color:'#e2e8f0'}}>
 
-            {/* -- UPPER ROW: Salary + Company + Notes -- */}
+            {/* ── UPPER ROW: Salary + Company + Notes ── */}
             <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16,marginBottom:20}}>
 
               {/* Left column: Salary + Company */}
@@ -2162,7 +2162,7 @@ function AgentDashboard({ userId }) {
                     <input type="number" placeholder="Enter net take home salary" value={obModalNetTakeHome||''} onChange={e=>setObModalNetTakeHome(e.target.value)}
                       style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
                   ):(
-                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalNetTakeHome?`?${Number(obModalNetTakeHome).toLocaleString('en-IN')}`:'Not entered'}</div>
+                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalNetTakeHome?`₹${Number(obModalNetTakeHome).toLocaleString('en-IN')}`:'Not entered'}</div>
                   )}
                   <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:6}}>Used for FOIR if entered, else falls back to Monthly Salary</div>
                 </div>
@@ -2172,7 +2172,7 @@ function AgentDashboard({ userId }) {
                     <input type="number" placeholder="Enter monthly salary" value={obModalSalary||''} onChange={e=>setObModalSalary(e.target.value)}
                       style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
                   ):(
-                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalSalary?`?${Number(obModalSalary).toLocaleString('en-IN')}`:'Not entered'}</div>
+                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalSalary?`₹${Number(obModalSalary).toLocaleString('en-IN')}`:'Not entered'}</div>
                   )}
                 </div>
                 <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
@@ -2207,7 +2207,7 @@ function AgentDashboard({ userId }) {
                 {isObEditing&&(
                   <div style={{display:'flex',gap:6}}>
                     <textarea rows={3} value={obModalNoteInput} onChange={e=>setObModalNoteInput(e.target.value)}
-                      placeholder="Add a note and press Enter�"
+                      placeholder="Add a note and press Enter…"
                       onKeyDown={e=>{
                         if(e.key==='Enter'&&!e.shiftKey&&obModalNoteInput.trim()){
                           e.preventDefault()
@@ -2230,22 +2230,22 @@ function AgentDashboard({ userId }) {
               </div>
             </div>
 
-              {/* -- Summary cards -- */}
+              {/* ── Summary cards ── */}
               <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:10}}>
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(auto-fit,minmax(110px,1fr))',gap:8,flex:1}}>
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:110,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>Total EMI</div>
-                    <div style={{fontSize:20,fontWeight:600,color:'#60A5FA'}}>?{obligationTotals.totalEMI.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:20,fontWeight:600,color:'#60A5FA'}}>₹{obligationTotals.totalEMI.toLocaleString('en-IN')}</div>
                     <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:4}}>All obligations</div>
                   </div>
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:110,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>Obligated EMI</div>
-                    <div style={{fontSize:20,fontWeight:600,color:'#F59E0B'}}>?{obligationTotals.totalObligatedEMI.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:20,fontWeight:600,color:'#F59E0B'}}>₹{obligationTotals.totalObligatedEMI.toLocaleString('en-IN')}</div>
                     <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:4}}>Used for FOIR</div>
                   </div>
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:110,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>Outstanding</div>
-                    <div style={{fontSize:20,fontWeight:600,color:'#60A5FA'}}>?{obligationTotals.totalOutstanding.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:20,fontWeight:600,color:'#60A5FA'}}>₹{obligationTotals.totalOutstanding.toLocaleString('en-IN')}</div>
                   </div>
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:110,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>FOIR (Obl. EMI)</div>
@@ -2255,23 +2255,23 @@ function AgentDashboard({ userId }) {
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:140,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>Eligible Loan Amt</div>
                     {!(obModalNetTakeHome||obModalSalary)
-                      ? <div style={{fontSize:20,fontWeight:600,color:'#64748b'}}>�</div>
-                      : <div style={{fontSize:18,fontWeight:600,color:obligationTotals.eligibleLoan>0?'#34D399':'#ef4444'}}>?{obligationTotals.eligibleLoan.toLocaleString('en-IN')}</div>
+                      ? <div style={{fontSize:20,fontWeight:600,color:'#64748b'}}>—</div>
+                      : <div style={{fontSize:18,fontWeight:600,color:obligationTotals.eligibleLoan>0?'#34D399':'#ef4444'}}>₹{obligationTotals.eligibleLoan.toLocaleString('en-IN')}</div>
                     }
-                    {(obModalNetTakeHome||obModalSalary)&&<div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:4}}>Avail EMI: ?{Math.round(obligationTotals.availableEMI).toLocaleString('en-IN')}</div>}
+                    {(obModalNetTakeHome||obModalSalary)&&<div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:4}}>Avail EMI: ₹{Math.round(obligationTotals.availableEMI).toLocaleString('en-IN')}</div>}
                     <button onClick={()=>window.open('https://www.axisbank.com/calculators/emi-calculator','_blank')}
                       style={{marginTop:6,display:'flex',alignItems:'center',gap:4,background:'#1e3a5f',border:'1px solid #334155',color:'#7dd3fc',padding:'3px 8px',borderRadius:6,fontSize:10,fontWeight:600,cursor:'pointer',width:'100%',justifyContent:'center'}}>
-                      ?? EMI Calc
+                      🧮 EMI Calc
                     </button>
                   </div>
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:140,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>BT POS (Existing Total)</div>
-                    <div style={{fontSize:20,fontWeight:600,color:'#A78BFA'}}>?{btPosTotal.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:20,fontWeight:600,color:'#A78BFA'}}>₹{btPosTotal.toLocaleString('en-IN')}</div>
                     <div style={{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:4}}>{btPersonalLoanCount} PL + {btCreditCardCount} Card</div>
                   </div>
                   <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px',minWidth:140,flex:1}}>
                     <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>Amount In Hand (After BT)</div>
-                    <div style={{fontSize:20,fontWeight:600,color:'#34D399'}}>?{amountInHandAfterBT.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:20,fontWeight:600,color:'#34D399'}}>₹{amountInHandAfterBT.toLocaleString('en-IN')}</div>
                   </div>
                 </div>
                 {!obModalReadOnly&&(
@@ -2306,12 +2306,12 @@ function AgentDashboard({ userId }) {
                             const out=parseFloat(ob.outstanding_amount)||0
                             const isBT=ob.balance_transfer===true||ob.balance_transfer==='true'||ob.balance_transfer==='Yes'||ob.balance_transfer==='yes'
                             return(<>
-                              {cl>0&&<span>Credit Limit ?{cl.toLocaleString('en-IN')}</span>}
-                              {cl>0&&out>0&&<span style={{color:'#475569'}}>�</span>}
-                              <span>{out>0?`Outstanding ?${out.toLocaleString('en-IN')}`:'Outstanding not set'}</span>
+                              {cl>0&&<span>Credit Limit ₹{cl.toLocaleString('en-IN')}</span>}
+                              {cl>0&&out>0&&<span style={{color:'#475569'}}>·</span>}
+                              <span>{out>0?`Outstanding ₹${out.toLocaleString('en-IN')}`:'Outstanding not set'}</span>
                               {out>0&&(isBT
-                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>BT Applied � Not Obligated</span>
-                                :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ?{Math.round(out*0.05).toLocaleString('en-IN')} (5% of Outstanding)</span>
+                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>BT Applied — Not Obligated</span>
+                                :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ₹{Math.round(out*0.05).toLocaleString('en-IN')} (5% of Outstanding)</span>
                               )}
                             </>)
                           })():(()=>{
@@ -2319,15 +2319,15 @@ function AgentDashboard({ userId }) {
                             const orig=parseFloat(ob.emi_amount)||0
                             const reason=getObligatedReason(ob)
                             return(<>
-                              <span>{orig>0?`EMI ?${orig.toLocaleString('en-IN')}`:'EMI not set'}</span>
+                              <span>{orig>0?`EMI ₹${orig.toLocaleString('en-IN')}`:'EMI not set'}</span>
                               {orig>0&&(obl===0&&reason
-                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Not Obligated � {reason}</span>
+                                ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Not Obligated · {reason}</span>
                                 :obl<orig
-                                  ?<span style={{background:'#1e3a5f',color:'#93c5fd',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ?{obl.toLocaleString('en-IN')} � {reason}</span>
-                                  :<span style={{background:'#1f2937',color:'#64748b',fontSize:10,fontWeight:600,padding:'1px 7px',borderRadius:12}}>Obligated ?{obl.toLocaleString('en-IN')}</span>
+                                  ?<span style={{background:'#1e3a5f',color:'#93c5fd',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ₹{obl.toLocaleString('en-IN')} · {reason}</span>
+                                  :<span style={{background:'#1f2937',color:'#64748b',fontSize:10,fontWeight:600,padding:'1px 7px',borderRadius:12}}>Obligated ₹{obl.toLocaleString('en-IN')}</span>
                               )}
-                              <span style={{color:'#475569'}}>�</span>
-                              <span>{ob.outstanding_amount?`Outstanding ?${Number(ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
+                              <span style={{color:'#475569'}}>·</span>
+                              <span>{ob.outstanding_amount?`Outstanding ₹${Number(ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
                             </>)
                           })()}
                         </div>
@@ -2350,11 +2350,11 @@ function AgentDashboard({ userId }) {
                     {showExpanded&&obModalReadOnly&&(
                       <div style={{marginTop:10,display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8,fontSize:12}}>
                         <div style={{color:'#64748b'}}>Type<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.obligation_type}</div></div>
-                        <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'�'}</div></div>
-                        <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'?'+Number(ob.emi_amount).toLocaleString('en-IN'):'�'}</div></div>
-                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{ob.outstanding_amount?'?'+Number(ob.outstanding_amount).toLocaleString('en-IN'):'�'}</div></div>
-                        <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'?'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'�'}</div></div>
-                        <div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>? Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>
+                        <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'—'}</div></div>
+                        <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'₹'+Number(ob.emi_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{ob.outstanding_amount?'₹'+Number(ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'₹'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        <div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>✓ Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>
                         {ob.tenure_months&&<div style={{color:'#64748b'}}>Tenure<div style={{color:'#e2e8f0',marginTop:2}}>{ob.tenure_months} months</div></div>}
                         {ob.bounce&&ob.bounce!=='No'&&<div style={{color:'#64748b'}}>Bounce<div style={{color:'#f87171',fontWeight:600,marginTop:2}}>{ob.bounce}</div></div>}
                       </div>
@@ -2375,24 +2375,24 @@ function AgentDashboard({ userId }) {
                           <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
                             style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
                             <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                              {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>?</span>}
+                              {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
                             </div>
-                            <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes � BT':'No'}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
                           </div>
                           <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
                         </div>
 
-                        {/* -- PERSONAL LOAN -- */}
+                        {/* ── PERSONAL LOAN ── */}
                         {ob.obligation_type==='Personal Loan'&&(<>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Bank / NBFC Name</label>
                             <input value={ob.bank_name||''} onChange={e=>handleObligationFieldChange(ob.id,'bank_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.overdue_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'overdue_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Required Loan Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Required Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
                             <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Current Outstanding (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Current Outstanding (₹)</label>
                             <input type="number" min="0" value={ob.outstanding_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'outstanding_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>POS (Principal Outstanding)</label>
                             <input type="number" min="0" placeholder="Enter POS amount" value={ob.pos_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'pos_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
@@ -2408,11 +2408,11 @@ function AgentDashboard({ userId }) {
                             </select></div>
                         </>)}
 
-                        {/* -- HOUSING LOAN -- */}
+                        {/* ── HOUSING LOAN ── */}
                         {ob.obligation_type==='Housing Loan'&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
                             <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMIs Remaining</label>
                             <input type="number" min="0" value={ob.remaining_tenure||''} onChange={e=>handleObligationFieldChange(ob.id,'remaining_tenure',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
@@ -2423,7 +2423,7 @@ function AgentDashboard({ userId }) {
                           {ob.joint_type==='Joint'&&(<>
                             <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Relation with Joint Holder</label>
                               <input value={ob.joint_holder_relation||''} onChange={e=>handleObligationFieldChange(ob.id,'joint_holder_relation',e.target.value)} placeholder="e.g. Spouse, Parent" style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                            <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Income of Joint Holder (?)</label>
+                            <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Income of Joint Holder (₹)</label>
                               <input type="number" min="0" value={ob.joint_holder_income||''} onChange={e=>handleObligationFieldChange(ob.id,'joint_holder_income',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                             <div style={{gridColumn:'1 / -1'}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Paid by</label>
                               <select value={ob.joint_holder_name||'Self'} onChange={e=>handleObligationFieldChange(ob.id,'joint_holder_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}>
@@ -2434,18 +2434,18 @@ function AgentDashboard({ userId }) {
                           </>)}
                         </>)}
 
-                        {/* -- CREDIT CARD -- */}
+                        {/* ── CREDIT CARD ── */}
                         {ob.obligation_type==='Credit Card'&&(<>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Bank Name</label>
                             <input value={ob.bank_name||''} onChange={e=>handleObligationFieldChange(ob.id,'bank_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div>
-                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Credit Limit (?)</label>
+                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Credit Limit (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>{handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value);handleObligationFieldChange(ob.id,'credit_limit',e.target.value)}} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
                           </div>
                           <div>
-                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Outstanding Amount (?)</label>
+                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Outstanding Amount (₹)</label>
                             <input type="number" min="0" value={ob.outstanding_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'outstanding_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
-                            {(ob.pos_amount||ob.outstanding_amount)&&!ob.balance_transfer&&<div style={{fontSize:10,color:'#f97316',marginTop:3}}>Obligated: ?{Math.round((parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0)*0.05).toLocaleString('en-IN')} (5% of Outstanding/POS)</div>}
+                            {(ob.pos_amount||ob.outstanding_amount)&&!ob.balance_transfer&&<div style={{fontSize:10,color:'#f97316',marginTop:3}}>Obligated: ₹{Math.round((parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0)*0.05).toLocaleString('en-IN')} (5% of Outstanding/POS)</div>}
                             {(ob.pos_amount||ob.outstanding_amount)&&ob.balance_transfer&&<div style={{fontSize:10,color:'#4ade80',marginTop:3}}>Not Obligated (BT applied)</div>}
                           </div>
                           <div>
@@ -2454,11 +2454,11 @@ function AgentDashboard({ userId }) {
                           </div>
                         </>)}
 
-                        {/* -- EDUCATION LOAN -- */}
+                        {/* ── EDUCATION LOAN ── */}
                         {ob.obligation_type==='Education Loan'&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
                             <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMIs Remaining</label>
                             <input type="number" min="0" value={ob.remaining_tenure||''} onChange={e=>handleObligationFieldChange(ob.id,'remaining_tenure',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
@@ -2469,13 +2469,13 @@ function AgentDashboard({ userId }) {
                             </select></div>
                         </>)}
 
-                        {/* -- CAR LOAN / BIKE LOAN / CONSUMER DURABLE -- */}
+                        {/* ── CAR LOAN / BIKE LOAN / CONSUMER DURABLE ── */}
                         {['Car Loan','Bike Loan','Consumer Durable Loan'].includes(ob.obligation_type)&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMIs Left</label>
                             <input type="number" min="0" value={ob.remaining_tenure||''} onChange={e=>handleObligationFieldChange(ob.id,'remaining_tenure',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
                             <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           {ob.obligation_type==='Car Loan'&&(<>
                             <div style={{gridColumn:'1 / -1'}}><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Individual or Joint Loan?</label>
@@ -2494,11 +2494,11 @@ function AgentDashboard({ userId }) {
                           </>)}
                         </>)}
 
-                        {/* -- GOLD LOAN -- */}
+                        {/* ── GOLD LOAN ── */}
                         {ob.obligation_type==='Gold Loan'&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (?)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>{const v=e.target.value;handleObligationFieldChange(ob.id,'sanctioned_amount',v);if(v)handleObligationFieldChange(ob.id,'emi_amount',String(Math.round(parseFloat(v)*0.01)))}} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (?) <span style={{fontWeight:400,color:'#64748b'}}>= 1% of Loan Amt</span></label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹) <span style={{fontWeight:400,color:'#64748b'}}>= 1% of Loan Amt</span></label>
                             <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>POS (Principal Outstanding)</label>
                             <input type="number" min="0" placeholder="Enter POS amount" value={ob.pos_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'pos_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
@@ -2524,12 +2524,12 @@ function AgentDashboard({ userId }) {
             <div style={{background:'linear-gradient(135deg,#185FA5,#2563EB)',padding:'16px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div>
                 <div style={{color:'white',fontWeight:700,fontSize:15}}>Export Leads Report</div>
-                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Filter by stage or date � download CSV</div>
+                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Filter by stage or date — download CSV</div>
               </div>
               <button onClick={()=>setShowExportModal(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:30,height:30,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={14}/></button>
             </div>
             <div style={{padding:16,overflowY:'auto',flex:1}}>
-              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 1 � Select Stage</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 1 — Select Stage</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:7,marginBottom:16}}>
                 {['',...stageNames].map(s=>{
                   const st=stageStyle(s)||{}
@@ -2537,9 +2537,9 @@ function AgentDashboard({ userId }) {
                   return <div key={s} onClick={()=>setExportStatus(s)} style={{padding:'7px 13px',borderRadius:20,border:'1.5px solid '+(sel?(s?st.color:'#185FA5'):'#E5E7EB'),background:sel?(s?st.bg:'#185FA5'):'white',color:sel?(s?st.color:'white'):'#6B7280',fontSize:12,fontWeight:500,cursor:'pointer'}}>{s||'All Stages'}</div>
                 })}
               </div>
-              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 2 � Select Date</div>
+              <div style={{fontSize:13,fontWeight:600,color:'#374151',marginBottom:8}}>Step 2 — Select Date</div>
               <div style={{display:'flex',gap:7,flexWrap:'wrap',marginBottom:12}}>
-                {[{id:'all',label:'All Time'},{id:'today',label:'Today'},{id:'week',label:'This Week'},{id:'month',label:'This Month'},{id:'custom',label:'?? Custom'}].map(d=>(
+                {[{id:'all',label:'All Time'},{id:'today',label:'Today'},{id:'week',label:'This Week'},{id:'month',label:'This Month'},{id:'custom',label:'📅 Custom'}].map(d=>(
                   <div key={d.id} onClick={()=>setExportDateType(d.id)} style={{padding:'7px 13px',borderRadius:20,border:'1.5px solid '+(exportDateType===d.id?'#185FA5':'#E5E7EB'),background:exportDateType===d.id?'#185FA5':'white',color:exportDateType===d.id?'white':'#6B7280',fontSize:12,fontWeight:500,cursor:'pointer'}}>{d.label}</div>
                 ))}
               </div>
@@ -2552,9 +2552,9 @@ function AgentDashboard({ userId }) {
               <div style={{background:exportCount>0?'#EBF8FF':'#FFF5F5',border:'1px solid '+(exportCount>0?'#BEE3F8':'#FED7D7'),borderRadius:10,padding:'14px 16px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:20,color:exportCount>0?'#185FA5':'#A32D2D'}}>{exportCount} leads ready</div>
-                  <div style={{fontSize:12,color:'#9CA3AF',marginTop:2}}>Stage: <strong>{exportStatus||'All'}</strong> � Period: <strong>{exportDateType}</strong></div>
+                  <div style={{fontSize:12,color:'#9CA3AF',marginTop:2}}>Stage: <strong>{exportStatus||'All'}</strong> · Period: <strong>{exportDateType}</strong></div>
                 </div>
-                <div style={{fontSize:28}}>??</div>
+                <div style={{fontSize:28}}>📊</div>
               </div>
               <div style={{display:'flex',gap:8}}>
                 <button onClick={handleExport} disabled={exportCount===0}
@@ -2568,15 +2568,15 @@ function AgentDashboard({ userId }) {
         </>
       )}
 
-      {/* ---------- TOP BAR ---------- */}
+      {/* ══════════ TOP BAR ══════════ */}
       <div style={{background:'linear-gradient(135deg,#0f3460 0%,#185FA5 100%)',padding:isMobile?'12px 14px':'12px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,position:'sticky',top:0,zIndex:50}}>
         <div style={{minWidth:0,flex:1}}>
-          <div style={{fontSize:isMobile?14:16,fontWeight:700,color:'#ffffff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{greeting||'Welcome back ??'}</div>
-          {!isMobile&&<div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>{lastSynced?`Synced ${lastSynced.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:IST_TZ})} � `:''}Ready to close more loans today? ??</div>}
+          <div style={{fontSize:isMobile?14:16,fontWeight:700,color:'#ffffff',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{greeting||'Welcome back 👋'}</div>
+          {!isMobile&&<div style={{fontSize:12,color:'rgba(255,255,255,0.7)',marginTop:2}}>{lastSynced?`Synced ${lastSynced.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:IST_TZ})} · `:''}Ready to close more loans today? 🚀</div>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
           {!isMobile&&(
-            <button onClick={()=>setDarkMode(!darkMode)} style={{padding:'7px 10px',background:'rgba(255,255,255,0.12)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:8,cursor:'pointer',fontSize:12,color:'#ffffff'}}>{darkMode?'??':'??'}</button>
+            <button onClick={()=>setDarkMode(!darkMode)} style={{padding:'7px 10px',background:'rgba(255,255,255,0.12)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:8,cursor:'pointer',fontSize:12,color:'#ffffff'}}>{darkMode?'☀️':'🌙'}</button>
           )}
           <button onClick={()=>setShowNotifPanel(true)}
             style={{position:'relative',background:callbackTasks.length>0?'#FFF7ED':notifications.length>0?'#FAEEDA':'rgba(255,255,255,0.12)',border:'1px solid '+(callbackTasks.length>0?'#FDE68A':notifications.length>0?'#F6E05E':'rgba(255,255,255,0.25)'),borderRadius:8,padding:'8px 10px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,color:callbackTasks.length>0?'#92400E':notifications.length>0?'#854F0B':'#ffffff',fontSize:12,fontWeight:500}}>
@@ -2585,7 +2585,7 @@ function AgentDashboard({ userId }) {
           </button>
           <div style={{position:'relative'}}>
             <button onClick={()=>setShowAgentDbBell(b=>!b)} style={{position:'relative',background:'rgba(255,255,255,0.12)',border:'1px solid rgba(255,255,255,0.25)',borderRadius:8,padding:'8px 10px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,color:'#ffffff',fontSize:12,fontWeight:500}}>
-              ??
+              📥
               {agentDbUnread>0&&<span style={{position:'absolute',top:-5,right:-5,background:'#DC2626',color:'white',borderRadius:'50%',width:16,height:16,fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>{agentDbUnread}</span>}
             </button>
             {showAgentDbBell&&(
@@ -2636,13 +2636,13 @@ function AgentDashboard({ userId }) {
         </div>
       </div>
 
-      {/* ---------- CONTENT ---------- */}
+      {/* ══════════ CONTENT ══════════ */}
       <div style={{padding:isMobile?'12px 14px':'16px 20px',maxWidth:1400,margin:'0 auto'}}>
 
         {overdueTasks.length>0&&(
           <div style={{background:'#FFF5F5',border:'1px solid #FED7D7',borderRadius:10,padding:'11px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
             <IconAlertTriangle size={16} color="#A32D2D"/>
-            <span style={{fontSize:13,color:'#A32D2D',fontWeight:600,flex:1}}>?? {overdueTasks.length} overdue task{overdueTasks.length>1?'s':''}!</span>
+            <span style={{fontSize:13,color:'#A32D2D',fontWeight:600,flex:1}}>⚠️ {overdueTasks.length} overdue task{overdueTasks.length>1?'s':''}!</span>
             <button onClick={()=>setShowNotifPanel(true)} style={{background:'#A32D2D',color:'white',border:'none',padding:'4px 10px',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:600,flexShrink:0}}>View</button>
           </div>
         )}
@@ -2651,7 +2651,7 @@ function AgentDashboard({ userId }) {
         {callbackTasks.length>0&&(
           <div style={{background:'#FFF7ED',border:'1px solid #FDE68A',borderRadius:10,padding:'12px 14px',marginBottom:14}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:callbackTasks.length>0?8:0}}>
-              <span style={{fontSize:13,fontWeight:700,color:'#92400E'}}>?? You have {callbackTasks.length} callback{callbackTasks.length>1?'s':''} due today!</span>
+              <span style={{fontSize:13,fontWeight:700,color:'#92400E'}}>📞 You have {callbackTasks.length} callback{callbackTasks.length>1?'s':''} due today!</span>
               <button onClick={()=>setCallbackTasks([])} style={{background:'transparent',border:'1px solid #FCD34D',color:'#92400E',padding:'3px 8px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600,flexShrink:0}}>Dismiss All</button>
             </div>
             {callbackTasks.map((task,i)=>(
@@ -2659,9 +2659,9 @@ function AgentDashboard({ userId }) {
                 <div style={{minWidth:0,flex:1}}>
                   <div style={{fontWeight:600,fontSize:12,color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title.replace('Callback: ','')}</div>
                   <div style={{fontSize:11,color:'#B45309',marginTop:1}}>
-                    {compareIST(task.due_date,nowIST())<0?'Overdue � ':'Today � '}
+                    {compareIST(task.due_date,nowIST())<0?'Overdue · ':'Today · '}
                     {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}
-                    {task.notes&&` � ${task.notes}`}
+                    {task.notes&&` · ${task.notes}`}
                   </div>
                 </div>
                 <button onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead)openCallingWorkspace(lead)}}
@@ -2673,9 +2673,9 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* PIPELINE CARDS � 2x2 on mobile */}
+        {/* PIPELINE CARDS — 2x2 on mobile */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>?? Pipeline Overview</div>
+          <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>📊 Pipeline Overview</div>
           <button onClick={()=>setShowPipeline(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
             {showPipeline?'Hide':'Show'}
           </button>
@@ -2693,9 +2693,9 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* STAT CARDS � 2x2 on mobile */}
+        {/* STAT CARDS — 2x2 on mobile */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>?? Today's Stats</div>
+          <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>📈 Today's Stats</div>
           <button onClick={()=>setShowStatCards(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
             {showStatCards?'Hide':'Show'}
           </button>
@@ -2723,7 +2723,7 @@ function AgentDashboard({ userId }) {
         <div style={{background:bg1,borderRadius:10,border:'1px solid '+bdr,marginBottom:10,overflow:'hidden'}}>
           <div style={{padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <span style={{fontSize:13,fontWeight:600,color:txt1}}>?? Export Leads Report</span>
+              <span style={{fontSize:13,fontWeight:600,color:txt1}}>📥 Export Leads Report</span>
             </div>
             <button
               onClick={()=>setShowExportPanel(p=>!p)}
@@ -2757,10 +2757,10 @@ function AgentDashboard({ userId }) {
           ))}
         </div>
 
-        {/* -------- LEADS TAB -------- */}
+        {/* ════════ LEADS TAB ════════ */}
         {activeTab==='leads'&&(
           <div>
-            {/* POWER DIALER BUTTON � heavy physical master switch */}
+            {/* POWER DIALER BUTTON — heavy physical master switch */}
             <div style={{borderRadius:14,padding:'0 0 4px',marginBottom:10,background:'rgba(10,40,40,0.25)',boxShadow:'inset 0 -3px 6px rgba(0,0,0,0.15)'}}>
               <button onClick={startPowerDialer}
                 onMouseEnter={e=>{e.currentTarget.style.boxShadow='0 6px 20px rgba(20,88,88,0.5), 0 3px 8px rgba(20,88,88,0.3), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -3px 6px rgba(0,0,0,0.25)'; e.currentTarget.style.transform='translateY(-1px)'}}
@@ -2768,18 +2768,18 @@ function AgentDashboard({ userId }) {
                 onMouseDown={e=>{e.currentTarget.style.transform='translateY(2px)'; e.currentTarget.style.boxShadow='0 2px 6px rgba(20,88,88,0.4), inset 0 3px 6px rgba(0,0,0,0.3)'}}
                 onMouseUp={e=>{e.currentTarget.style.transform='translateY(-1px)'; e.currentTarget.style.boxShadow='0 6px 20px rgba(20,88,88,0.5), inset 0 1px 0 rgba(255,255,255,0.2)'}}
                 style={{width:'100%',padding:'12px 20px',background:'linear-gradient(135deg,#1e7a7a,#1a6b6b,#145858)',color:'#fff',border:'none',borderRadius:12,fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:10,boxShadow:'0 4px 15px rgba(26,107,107,0.45), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -3px 6px rgba(0,0,0,0.25)',letterSpacing:'0.3px',transition:'all 0.15s ease'}}>
-                <IconBolt size={17}/> ? Start Power Dialer � {filteredLeads.length||myLeads.length} Leads
+                <IconBolt size={17}/> ⚡ Start Power Dialer — {filteredLeads.length||myLeads.length} Leads
               </button>
             </div>
 
-            {/* FILTER BAR � simple clean style */}
+            {/* FILTER BAR — simple clean style */}
             <div style={filterBarWrapStyle}>
               <div style={{flex:'1 1 280px',minWidth:0,position:'relative'}}>
                 <IconSearch size={14} color="#A0AEC0" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}/>
                 <input
                   className="mobile-input"
                   style={{...filterSearchStyle,width:'100%',boxSizing:'border-box'}}
-                  placeholder="Search name, mobile�"
+                  placeholder="Search name, mobile…"
                   value={search} onChange={e=>setSearch(e.target.value)}
                   onFocus={e=>{e.currentTarget.style.borderColor='#185FA5'}}
                   onBlur={e=>{e.currentTarget.style.borderColor='#d1d5db'}}/>
@@ -2787,14 +2787,14 @@ function AgentDashboard({ userId }) {
                   <button
                     onClick={()=>setSearch('')}
                     style={filterClearBtnStyle}>
-                    ?
+                    ✕
                   </button>
                 )}
               </div>
               <div style={{position:'relative',flexShrink:0}}>
                 <button type='button' onClick={()=>setAgentStatusDropOpen(o=>!o)}
                   style={{...filterClayStage,whiteSpace:'nowrap'}}>
-                  {agentStatusSet.length===0?'All Stages':`${agentStatusSet.length} selected`} ?
+                  {agentStatusSet.length===0?'All Stages':`${agentStatusSet.length} selected`} ▾
                 </button>
                 {agentStatusDropOpen&&(
                   <div style={{position:'absolute',top:'110%',left:0,zIndex:50,background:bg1,border:'1px solid '+bdr,borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',padding:8,minWidth:180,maxHeight:280,overflowY:'auto'}}>
@@ -2809,14 +2809,14 @@ function AgentDashboard({ userId }) {
                 <select value={filterLoanAmount} onChange={e=>setFilterLoanAmount(e.target.value)}
                   style={{...filterClayAmount,paddingRight:30,flexShrink:0}}>
                   <option value="">All Amounts</option>
-                  <option value="0-100000">Up to ?1 Lakh</option>
-                  <option value="100000-300000">?1L - ?3L</option>
-                  <option value="300000-500000">?3L - ?5L</option>
-                  <option value="500000-1000000">?5L - ?10L</option>
-                  <option value="1000000-2000000">?10L - ?20L</option>
-                  <option value="2000000-99999999">Above ?20L</option>
+                  <option value="0-100000">Up to ₹1 Lakh</option>
+                  <option value="100000-300000">₹1L - ₹3L</option>
+                  <option value="300000-500000">₹3L - ₹5L</option>
+                  <option value="500000-1000000">₹5L - ₹10L</option>
+                  <option value="1000000-2000000">₹10L - ₹20L</option>
+                  <option value="2000000-99999999">Above ₹20L</option>
                 </select>
-                <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>?</span>
+                <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>▼</span>
               </div>
               <div style={{position:'relative',display:'inline-block'}}>
                 <select value={filterCity} onChange={e=>setFilterCity(e.target.value)}
@@ -2826,7 +2826,7 @@ function AgentDashboard({ userId }) {
                     <option key={city} value={city}>{city}</option>
                   ))}
                 </select>
-                <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>?</span>
+                <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>▼</span>
               </div>
               <input type='date' value={agentDateFrom} onChange={e=>setAgentDateFrom(e.target.value)}
                 style={{...filterClayDate,flexShrink:0}}/>
@@ -2838,7 +2838,7 @@ function AgentDashboard({ userId }) {
             {isMobile?(
               <div>
                 {loading?(
-                  <div style={{padding:30,textAlign:'center',color:txt2}}>Loading�</div>
+                  <div style={{padding:30,textAlign:'center',color:txt2}}>Loading…</div>
                 ):filteredLeads.length===0?(
                   <div style={{padding:30,textAlign:'center',color:txt2,background:bg1,borderRadius:12,border:'1px solid '+bdr}}>
                     <IconUsers size={32} strokeWidth={1.2} color="#CBD5E0" style={{display:'block',margin:'0 auto 8px'}}/>
@@ -2857,15 +2857,15 @@ function AgentDashboard({ userId }) {
                           <div style={{width:36,height:36,borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,color:'#185FA5',fontSize:13,flexShrink:0}}>{initials(lead.full_name)}</div>
                           <div>
                             <div style={{fontWeight:700,fontSize:14,color:txt1}}>{lead.full_name}</div>
-                            <div style={{fontSize:12,color:txt2}}>{lead.mobile}{lead.city?` � ${lead.city}`:''}</div>
+                            <div style={{fontSize:12,color:txt2}}>{lead.mobile}{lead.city?` · ${lead.city}`:''}</div>
                             {lead.application_id&&<div style={{fontSize:10,color:txt2,marginTop:1}}>App# {lead.application_id}</div>}
-                            {lead.sheet_number&&<div style={{fontSize:10,color:txt2,marginTop:1}}>?? {lead.sheet_number}</div>}
+                            {lead.sheet_number&&<div style={{fontSize:10,color:txt2,marginTop:1}}>📄 {lead.sheet_number}</div>}
                             {lead.previous_status&&lead.previous_status!=='New'&&<div style={{display:'inline-block',marginTop:2,fontSize:10,fontWeight:600,color:'#92400E',background:'#FEF3C7',padding:'1px 7px',borderRadius:10}}>was: {lead.previous_status}</div>}
-                            {(()=>{const obs=leadObligations[lead.id]||[];if(!obs.length)return null;const totalObl=obs.reduce((s,o)=>s+calculateObligatedEMI(o),0);const sal=parseFloat(lead.monthly_salary)||0;const foir=sal>0?Math.round((totalObl/sal)*100):null;return(<div style={{fontSize:10,color:'#6366f1',fontWeight:600,marginTop:1}}>?? Obl. EMI: ?{totalObl.toLocaleString('en-IN')}{foir!==null?` | FOIR: ${foir}%`:''}</div>)})()}
-                            {lead.notes&&<div style={{fontSize:10,color:'#059669',fontWeight:600,marginTop:1}}>?? Notes updated</div>}
+                            {(()=>{const obs=leadObligations[lead.id]||[];if(!obs.length)return null;const totalObl=obs.reduce((s,o)=>s+calculateObligatedEMI(o),0);const sal=parseFloat(lead.monthly_salary)||0;const foir=sal>0?Math.round((totalObl/sal)*100):null;return(<div style={{fontSize:10,color:'#6366f1',fontWeight:600,marginTop:1}}>📋 Obl. EMI: ₹{totalObl.toLocaleString('en-IN')}{foir!==null?` | FOIR: ${foir}%`:''}</div>)})()}
+                            {lead.notes&&<div style={{fontSize:10,color:'#059669',fontWeight:600,marginTop:1}}>📝 Notes updated</div>}
                             {leadCallbackMap[lead.id]&&(
                               <div style={{fontSize:10,color:'#92400E',fontWeight:600,marginTop:1}}>
-                                ?? {fmtISTDate(leadCallbackMap[lead.id].due_date)} {fmtISTTime(leadCallbackMap[lead.id].due_date)}
+                                📅 {fmtISTDate(leadCallbackMap[lead.id].due_date)} {fmtISTTime(leadCallbackMap[lead.id].due_date)}
                               </div>
                             )}
                           </div>
@@ -2945,7 +2945,7 @@ function AgentDashboard({ userId }) {
                     </thead>
                     <tbody>
                       {loading?(
-                        <tr><td colSpan={6} style={{padding:40,textAlign:'center',fontSize:13,color:txt2}}>Loading�</td></tr>
+                        <tr><td colSpan={6} style={{padding:40,textAlign:'center',fontSize:13,color:txt2}}>Loading…</td></tr>
                       ):filteredLeads.length===0?(
                         <tr><td colSpan={6} style={{padding:40,textAlign:'center'}}>
                           <IconUsers size={36} strokeWidth={1.2} color="#CBD5E0" style={{display:'block',margin:'0 auto 8px'}}/>
@@ -2966,15 +2966,15 @@ function AgentDashboard({ userId }) {
                                 <div>
                                   <div style={{fontWeight:600,fontSize:13,color:txt1}}>{lead.full_name}</div>
                                   <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:txt2}}>
-                                    <span>{lead.mobile}{lead.city?` � ${lead.city}`:''}</span>
+                                    <span>{lead.mobile}{lead.city?` · ${lead.city}`:''}</span>
                                   </div>
                                   {lead.application_id&&<div style={{fontSize:10,color:'#9CA3AF'}}>App# {lead.application_id}</div>}
-                                  {lead.call_count>0&&<div style={{fontSize:10,color:'#9CA3AF'}}>?? {lead.call_count} calls</div>}
-                                  {(()=>{const obs=leadObligations[lead.id]||[];if(!obs.length)return null;const totalObl=obs.reduce((s,o)=>s+calculateObligatedEMI(o),0);const sal=parseFloat(lead.monthly_salary)||0;const foir=sal>0?Math.round((totalObl/sal)*100):null;return(<div style={{fontSize:10,color:'#6366f1',fontWeight:600,marginTop:1}}>?? Obl. EMI: ?{totalObl.toLocaleString('en-IN')}{foir!==null?` | FOIR: ${foir}%`:''}</div>)})()}
-                                  {lead.notes&&<div style={{fontSize:10,color:'#059669',fontWeight:600,marginTop:1}}>?? Notes updated</div>}
+                                  {lead.call_count>0&&<div style={{fontSize:10,color:'#9CA3AF'}}>📞 {lead.call_count} calls</div>}
+                                  {(()=>{const obs=leadObligations[lead.id]||[];if(!obs.length)return null;const totalObl=obs.reduce((s,o)=>s+calculateObligatedEMI(o),0);const sal=parseFloat(lead.monthly_salary)||0;const foir=sal>0?Math.round((totalObl/sal)*100):null;return(<div style={{fontSize:10,color:'#6366f1',fontWeight:600,marginTop:1}}>📋 Obl. EMI: ₹{totalObl.toLocaleString('en-IN')}{foir!==null?` | FOIR: ${foir}%`:''}</div>)})()}
+                                  {lead.notes&&<div style={{fontSize:10,color:'#059669',fontWeight:600,marginTop:1}}>📝 Notes updated</div>}
                                   {leadCallbackMap[lead.id]&&(
                                     <div style={{fontSize:10,color:'#92400E',fontWeight:600,marginTop:1}}>
-                                      ?? Callback: {fmtISTDate(leadCallbackMap[lead.id].due_date)} {fmtISTTime(leadCallbackMap[lead.id].due_date)}
+                                      📅 Callback: {fmtISTDate(leadCallbackMap[lead.id].due_date)} {fmtISTTime(leadCallbackMap[lead.id].due_date)}
                                     </div>
                                   )}
                                 </div>
@@ -3013,7 +3013,7 @@ function AgentDashboard({ userId }) {
                                   <div key={s} title={s} style={{height:5,width:18,borderRadius:3,background:i<=pIdx?'#185FA5':'#E2E8F0'}}/>
                                 ))}
                               </div>
-                              <div style={{fontSize:10,color:txt2}}>{pIdx>=0&&pIdx<PIPELINE.length-1?`Next: ${PIPELINE[pIdx+1]}`:pIdx===PIPELINE.length-1?'? Final':''}</div>
+                              <div style={{fontSize:10,color:txt2}}>{pIdx>=0&&pIdx<PIPELINE.length-1?`Next: ${PIPELINE[pIdx+1]}`:pIdx===PIPELINE.length-1?'✅ Final':''}</div>
                             </td>
                             <td style={{padding:'8px 14px'}}>
                               <div style={{display:'flex',gap:6}}>
@@ -3069,7 +3069,7 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* -------- CALLS TAB -------- */}
+        {/* ════════ CALLS TAB ════════ */}
         {activeTab==='calls'&&(
           <div style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,overflow:'hidden'}}>
             <div style={{padding:'12px 14px',borderBottom:'1px solid '+bdr}}>
@@ -3092,12 +3092,12 @@ function AgentDashboard({ userId }) {
                             <div style={{display:'flex',alignItems:'center',gap:8}}>
                             <span>{lead?.mobile||'-'}</span>
                           </div>
-                            <span>�</span>
+                            <span>·</span>
                             <span>{call.duration||'-'}</span>
-                            <span>�</span>
+                            <span>·</span>
                             <span>{new Date(call.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ})}</span>
                             {lead && getLeadObligations(lead.id).length>0&&(
-                              <span style={{background:'#EFF6FF',color:'#1D4ED8',padding:'3px 8px',borderRadius:20,fontSize:11,fontWeight:600}}>?? {getLeadObligations(lead.id).length} obligations</span>
+                              <span style={{background:'#EFF6FF',color:'#1D4ED8',padding:'3px 8px',borderRadius:20,fontSize:11,fontWeight:600}}>🧾 {getLeadObligations(lead.id).length} obligations</span>
                             )}
                           </div>
                           {call.call_outcome&&<span style={{background:'#FAEEDA',color:'#854F0B',padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:500,marginTop:4,display:'inline-block'}}>{call.call_outcome}</span>}
@@ -3127,7 +3127,7 @@ function AgentDashboard({ userId }) {
                               <td style={{padding:'11px 14px',fontWeight:600,fontSize:13,color:txt1}}>
                                 {lead?.full_name||'Unknown'}
                                 {lead&&getLeadObligations(lead.id).length>0&&(
-                                  <div style={{marginTop:4,fontSize:11,color:'#1D4ED8',fontWeight:600}}>?? {getLeadObligations(lead.id).length} obligations</div>
+                                  <div style={{marginTop:4,fontSize:11,color:'#1D4ED8',fontWeight:600}}>🧾 {getLeadObligations(lead.id).length} obligations</div>
                                 )}
                               </td>
                               <td style={{padding:'11px 14px',fontSize:13,color:txt2}}>
@@ -3150,13 +3150,13 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* -------- TASKS TAB -------- */}
+        {/* ════════ TASKS TAB ════════ */}
         {activeTab==='tasks'&&(
           <div>
-            <div style={{marginBottom:10,fontSize:13,color:txt2}}>{pendingTasks.length} pending � {overdueTasks.length} overdue</div>
+            <div style={{marginBottom:10,fontSize:13,color:txt2}}>{pendingTasks.length} pending · {overdueTasks.length} overdue</div>
             {pendingTasks.length===0
               ?<div style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:40,textAlign:'center'}}>
-                  <div style={{fontSize:28,marginBottom:8}}>?</div>
+                  <div style={{fontSize:28,marginBottom:8}}>✅</div>
                   <div style={{fontWeight:600,fontSize:14,color:txt1,marginBottom:4}}>All tasks completed!</div>
                   <div style={{fontSize:13,color:txt2}}>Great work!</div>
                 </div>
@@ -3167,9 +3167,9 @@ function AgentDashboard({ userId }) {
                     <div key={task.id} style={{background:bg1,border:'1px solid '+(od?'#FCA5A5':bdr),borderRadius:10,padding:'13px 14px',marginBottom:8,borderLeft:'3px solid '+(od?'#EF4444':task.priority==='High'?'#EF4444':task.priority==='Medium'?'#F59E0B':'#22C55E')}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                         <div style={{flex:1,minWidth:0,marginRight:8}}>
-                          <div style={{fontWeight:600,fontSize:13,color:od?'#DC2626':txt1,marginBottom:3}}>{od&&'?? '}{task.title}</div>
-                          {task.notes&&<div style={{fontSize:12,color:txt2,marginBottom:3}}>?? {task.notes}</div>}
-                          <div style={{fontSize:11,color:od?'#DC2626':txt2,fontWeight:od?600:400}}>?? {fmtIST(task.due_date)}</div>
+                          <div style={{fontWeight:600,fontSize:13,color:od?'#DC2626':txt1,marginBottom:3}}>{od&&'⚠️ '}{task.title}</div>
+                          {task.notes&&<div style={{fontSize:12,color:txt2,marginBottom:3}}>📝 {task.notes}</div>}
+                          <div style={{fontSize:11,color:od?'#DC2626':txt2,fontWeight:od?600:400}}>🕐 {fmtIST(task.due_date)}</div>
                         </div>
                         <span style={{...prC,padding:'3px 8px',borderRadius:20,fontSize:11,fontWeight:500,flexShrink:0}}>{task.priority}</span>
                       </div>
@@ -3182,7 +3182,7 @@ function AgentDashboard({ userId }) {
 
       </div>
 
-      {/* -------- VIEW LEAD MODAL -------- */}
+      {/* ════════ VIEW LEAD MODAL ════════ */}
       {viewLead&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setViewLead(null)}>
           <div style={{background:bg1,borderRadius:16,padding:24,maxWidth:440,width:'100%',boxShadow:'0 16px 48px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
@@ -3191,18 +3191,18 @@ function AgentDashboard({ userId }) {
                 <div style={{fontWeight:700,fontSize:16,color:txt1}}>{viewLead.full_name}</div>
                 <div style={{fontSize:13,color:txt2}}>{viewLead.mobile}</div>
               </div>
-              <button onClick={()=>setViewLead(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:22,color:txt2,lineHeight:1}}>�</button>
+              <button onClick={()=>setViewLead(null)} style={{background:'none',border:'none',cursor:'pointer',fontSize:22,color:txt2,lineHeight:1}}>×</button>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
               {[
-                ['Current Status',viewLead.status||'�'],
-                ['Previous Status',viewLead.previous_status||'�'],
-                ['Previous Agent',viewLead.previous_agent_name||'�'],
-                ['Sheet No.',viewLead.sheet_number||'�'],
-                ['City',viewLead.city||'�'],
+                ['Current Status',viewLead.status||'—'],
+                ['Previous Status',viewLead.previous_status||'—'],
+                ['Previous Agent',viewLead.previous_agent_name||'—'],
+                ['Sheet No.',viewLead.sheet_number||'—'],
+                ['City',viewLead.city||'—'],
                 ['Loan Amount',fmtAmt(viewLead.loan_amount)],
-                ['Company',viewLead.company||'�'],
-                ['App ID',viewLead.application_id||'�'],
+                ['Company',viewLead.company||'—'],
+                ['App ID',viewLead.application_id||'—'],
               ].map(([label,val])=>(
                 <div key={label} style={{background:bg0,borderRadius:8,padding:'10px 12px'}}>
                   <div style={{fontSize:11,color:txt2,marginBottom:3}}>{label}</div>
@@ -3216,8 +3216,8 @@ function AgentDashboard({ userId }) {
                 <div style={{fontSize:13,color:txt1,lineHeight:1.5}}>{viewLead.notes}</div>
               </div>
             )}
-            {(leadObligations[viewLead.id]||[]).length>0&&(<div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:11,color:txt2,marginBottom:6,fontWeight:600}}>Obligations</div>{(leadObligations[viewLead.id]||[]).map((ob,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt1,padding:'3px 0',borderBottom:'1px solid rgba(0,0,0,0.05)'}}><span>{ob.bank_name||'Bank '+(i+1)}</span><span style={{fontWeight:600}}>EMI: ?{Number(ob.emi_amount||0).toLocaleString('en-IN')}</span></div>))}<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#6366f1'}}>Total EMI: ?{(leadObligations[viewLead.id]||[]).reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0).toLocaleString('en-IN')}</div></div>)}
-            {(leadObligations[viewLead.id]||[]).length>0&&(<div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:11,color:txt2,marginBottom:6,fontWeight:600}}>Obligations</div>{(leadObligations[viewLead.id]||[]).map((ob,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt1,padding:'3px 0',borderBottom:'1px solid rgba(0,0,0,0.05)'}}><span>{ob.bank_name||'Bank '+(i+1)}</span><span style={{fontWeight:600}}>EMI: ?{Number(ob.emi_amount||0).toLocaleString('en-IN')}</span></div>))}<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#6366f1'}}>Total EMI: ?{(leadObligations[viewLead.id]||[]).reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0).toLocaleString('en-IN')}</div></div>)}
+            {(leadObligations[viewLead.id]||[]).length>0&&(<div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:11,color:txt2,marginBottom:6,fontWeight:600}}>Obligations</div>{(leadObligations[viewLead.id]||[]).map((ob,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt1,padding:'3px 0',borderBottom:'1px solid rgba(0,0,0,0.05)'}}><span>{ob.bank_name||'Bank '+(i+1)}</span><span style={{fontWeight:600}}>EMI: ₹{Number(ob.emi_amount||0).toLocaleString('en-IN')}</span></div>))}<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#6366f1'}}>Total EMI: ₹{(leadObligations[viewLead.id]||[]).reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0).toLocaleString('en-IN')}</div></div>)}
+            {(leadObligations[viewLead.id]||[]).length>0&&(<div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:11,color:txt2,marginBottom:6,fontWeight:600}}>Obligations</div>{(leadObligations[viewLead.id]||[]).map((ob,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt1,padding:'3px 0',borderBottom:'1px solid rgba(0,0,0,0.05)'}}><span>{ob.bank_name||'Bank '+(i+1)}</span><span style={{fontWeight:600}}>EMI: ₹{Number(ob.emi_amount||0).toLocaleString('en-IN')}</span></div>))}<div style={{marginTop:6,fontSize:12,fontWeight:700,color:'#6366f1'}}>Total EMI: ₹{(leadObligations[viewLead.id]||[]).reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0).toLocaleString('en-IN')}</div></div>)}
           </div>
         </div>
       )}
@@ -3265,12 +3265,12 @@ function WATemplateEditor() {
     <div>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:8}}>
         <div>
-          <div style={{fontWeight:600,fontSize:15,color:'#111827',marginBottom:2}}>?? WhatsApp Templates</div>
+          <div style={{fontWeight:600,fontSize:15,color:'#111827',marginBottom:2}}>📱 WhatsApp Templates</div>
           <div style={{fontSize:12,color:'#6B7280'}}>Use <strong>{'{name}'}</strong>, <strong>{'{amount}'}</strong>, <strong>{'{emi}'}</strong> as placeholders.</div>
         </div>
         <button onClick={saveTemplates} disabled={loading}
           style={{display:'flex',alignItems:'center',gap:7,background:saved?'#EAF3DE':'#185FA5',color:saved?'#27500A':'white',border:'none',padding:'9px 18px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>
-          <IconDeviceFloppy size={15}/>{loading?'Saving�':saved?'? Saved!':'Save Templates'}
+          <IconDeviceFloppy size={15}/>{loading?'Saving…':saved?'✅ Saved!':'Save Templates'}
         </button>
       </div>
       {templates.map((tpl,idx)=>(
@@ -3291,7 +3291,7 @@ function WATemplateEditor() {
             </div>
           </div>
           <div>
-            <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Message � {'{name}'} {'{amount}'} {'{emi}'}</label>
+            <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Message · {'{name}'} {'{amount}'} {'{emi}'}</label>
             <textarea value={tpl.message} onChange={e=>updateTpl(tpl.id,'message',e.target.value)} style={{width:'100%',padding:'10px',border:'1px solid #E2E8F0',borderRadius:7,fontSize:12,outline:'none',resize:'vertical',minHeight:90,fontFamily:'inherit',lineHeight:1.6,boxSizing:'border-box',color:'#374151'}} onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
           </div>
           <div style={{marginTop:10,background:'#F0FFF4',border:'1px solid #86EFAC',borderRadius:8,padding:10}}>
@@ -3329,7 +3329,7 @@ function TeamLeaderPanel({ userId }) {
   const checkOverdueTasks=async()=>{
     if(!myAgents.length)return
     const ids=myAgents.map(a=>a.id)
-    // No DB-side due_date filter � tasks.due_date is `timestamptz`, and a
+    // No DB-side due_date filter — tasks.due_date is `timestamptz`, and a
     // naive IST string compared server-side would be evaluated in UTC terms.
     // Fetch broadly and compare through the canonical IST module instead.
     const{data}=await supabase.from('tasks').select('*,profiles!tasks_assigned_to_fkey(full_name)').in('assigned_to',ids).in('status',['Pending','In Progress'])
@@ -3377,7 +3377,7 @@ function TeamLeaderPanel({ userId }) {
               {overdueAlerts.map(t=>(
                 <div key={t.id} style={{padding:12,borderRadius:8,background:'#FFF5F5',border:'1px solid #FED7D7',marginBottom:8}}>
                   <div style={{fontWeight:600,fontSize:13,color:'#A32D2D',marginBottom:4}}>{t.title}</div>
-                  <div style={{fontSize:12,color:'#718096'}}>Agent: {t.profiles?.full_name||'Unknown'} � Due: {fmtIST(t.due_date)}</div>
+                  <div style={{fontSize:12,color:'#718096'}}>Agent: {t.profiles?.full_name||'Unknown'} · Due: {fmtIST(t.due_date)}</div>
                 </div>
               ))}
             </div>
@@ -3440,7 +3440,7 @@ function TeamLeaderPanel({ userId }) {
             <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0',display:'flex',justifyContent:'space-between'}}>
               <span style={{fontWeight:600,fontSize:14}}>Team Performance</span>
             </div>
-            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading�</div>:(
+            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading…</div>:(
               isMobile?(
                 <div style={{padding:'8px 12px'}}>
                   {agentStats.map(a=>(
@@ -3561,7 +3561,7 @@ function ManagerPanel({ userId }) {
       <div className="page-header">
         <div>
           <h1 style={{display:'flex',alignItems:'center',gap:8,fontSize:isMobile?16:18}}><IconChartBar size={isMobile?18:22} strokeWidth={1.6}/>Manager Dashboard</h1>
-          <p>{agents.length} agents � {teamLeaders.length} TLs</p>
+          <p>{agents.length} agents · {teamLeaders.length} TLs</p>
         </div>
         <div style={{display:'flex',gap:6,alignItems:'center'}}>
           {isMobile?(
@@ -3605,7 +3605,7 @@ function ManagerPanel({ userId }) {
             <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0'}}>
               <span style={{fontWeight:600,fontSize:14}}>Agent Performance</span>
             </div>
-            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading�</div>:(
+            {loading?<div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading…</div>:(
               isMobile?(
                 <div style={{padding:'8px 12px'}}>
                   {agentStats.map(a=>(
@@ -3657,7 +3657,7 @@ function ManagerPanel({ userId }) {
               <span style={{fontSize:12,color:'#A0AEC0'}}>{calls.length} records</span>
             </div>
             {loading?
-              <div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading�</div>
+              <div style={{padding:40,textAlign:'center',color:'#A0AEC0'}}>Loading…</div>
             :calls.length===0?
               <div className="empty-state" style={{padding:24}}><h3>No call logs yet</h3></div>
             :isMobile?
@@ -3673,11 +3673,11 @@ function ManagerPanel({ userId }) {
                       </div>
                       <div style={{display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'#718096'}}>
                         <span>{agent?.full_name||'Unknown Agent'}</span>
-                        <span>�</span>
+                        <span>·</span>
                         <span>{call.call_status||'Status'}</span>
-                        <span>�</span>
+                        <span>·</span>
                         <span>{call.call_outcome||'-'}</span>
-                        <span>�</span>
+                        <span>·</span>
                         <span>{new Date(call.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ})}</span>
                       </div>
                     </div>
@@ -3777,7 +3777,7 @@ function ManagerPanel({ userId }) {
   )
 }
 
-// --- BANK STATEMENT ANALYZER -------------------------------------------------
+// ─── BANK STATEMENT ANALYZER ─────────────────────────────────────────────────
 function BankStatementAnalyzer() {
   const BSA_P = '#185FA5'
   const [file, setFile] = useState(null)
@@ -3910,10 +3910,10 @@ Return only the raw JSON. No markdown, no explanation.`
     <div style={{padding:24,background:'#f8fafc',minHeight:'100vh'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
         <div>
-          <h2 style={{fontSize:18,fontWeight:700,color:'#111827',margin:0}}>?? Bank Statement Analyzer</h2>
+          <h2 style={{fontSize:18,fontWeight:700,color:'#111827',margin:0}}>🔍 Bank Statement Analyzer</h2>
           <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>AI-powered credit risk analysis for loan processing</div>
         </div>
-        {result && <Btn onClick={downloadCSV}>? Download CSV</Btn>}
+        {result && <Btn onClick={downloadCSV}>⬇ Download CSV</Btn>}
       </div>
 
       {!result && (
@@ -3925,15 +3925,15 @@ Return only the raw JSON. No markdown, no explanation.`
             style={{border:`2px dashed ${dragOver?BSA_P:'#d1d5db'}`,borderRadius:12,padding:40,cursor:'pointer',background:dragOver?'#eff6ff':'#f9fafb',transition:'all 0.2s'}}
             onClick={()=>document.getElementById('bsa-dash-input').click()}
           >
-            <div style={{fontSize:40,marginBottom:12}}>??</div>
+            <div style={{fontSize:40,marginBottom:12}}>📄</div>
             <div style={{fontWeight:600,color:'#374151',marginBottom:6}}>Drop bank statement PDF here</div>
-            <div style={{fontSize:13,color:'#9ca3af'}}>or click to browse � PDF only</div>
-            {file && <div style={{marginTop:12,color:BSA_P,fontWeight:500,fontSize:13}}>? {file.name}</div>}
+            <div style={{fontSize:13,color:'#9ca3af'}}>or click to browse · PDF only</div>
+            {file && <div style={{marginTop:12,color:BSA_P,fontWeight:500,fontSize:13}}>✓ {file.name}</div>}
           </div>
           <input id="bsa-dash-input" type="file" accept="application/pdf" style={{display:'none'}} onChange={e=>setFile(e.target.files[0])}/>
           {file && (
             <Btn onClick={analyze} disabled={loading} style={{marginTop:20,padding:'10px 32px',fontSize:14}}>
-              {loading?'? Analyzing...':'?? Analyze Statement'}
+              {loading?'⏳ Analyzing...':'🔍 Analyze Statement'}
             </Btn>
           )}
           {error && <div style={{marginTop:16,color:'#dc2626',fontSize:13,background:'#fef2f2',padding:'10px 16px',borderRadius:8}}>{error}</div>}
@@ -3942,7 +3942,7 @@ Return only the raw JSON. No markdown, no explanation.`
 
       {loading && (
         <Card style={{padding:48,textAlign:'center'}}>
-          <div style={{fontSize:32,marginBottom:12}}>?</div>
+          <div style={{fontSize:32,marginBottom:12}}>⏳</div>
           <div style={{fontWeight:600,color:'#374151',marginBottom:6}}>Analyzing Bank Statement...</div>
           <div style={{fontSize:13,color:'#9ca3af'}}>Reading transactions, detecting risks, identifying EMIs and funding patterns</div>
         </Card>
@@ -3950,15 +3950,15 @@ Return only the raw JSON. No markdown, no explanation.`
 
       {result && !loading && (
         <div>
-          <Btn outline small onClick={()=>{setResult(null);setFile(null)}} style={{marginBottom:20}}>? Analyze Another</Btn>
+          <Btn outline small onClick={()=>{setResult(null);setFile(null)}} style={{marginBottom:20}}>← Analyze Another</Btn>
 
           {/* Credit Assessment Banner */}
           <Card style={{padding:20,marginBottom:16,borderLeft:`4px solid ${riskColor(result.credit_assessment?.overall_risk)}`}}>
             <div style={{display:'flex',flexWrap:'wrap',gap:24,alignItems:'flex-start'}}>
               <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>OVERALL RISK</div><div style={{fontSize:22,fontWeight:700,color:riskColor(result.credit_assessment?.overall_risk)}}>{result.credit_assessment?.overall_risk}</div></div>
               <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>RECOMMENDATION</div><div style={{fontSize:16,fontWeight:700,color:result.credit_assessment?.recommendation==='PROCEED'?'#16a34a':result.credit_assessment?.recommendation==='CAUTION'?'#d97706':'#dc2626'}}>{result.credit_assessment?.recommendation}</div></div>
-              <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>EST. MONTHLY INCOME</div><div style={{fontSize:16,fontWeight:700,color:'#111827'}}>?{(result.credit_assessment?.estimated_monthly_income||0).toLocaleString('en-IN')}</div></div>
-              <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>TOTAL EMI BURDEN</div><div style={{fontSize:16,fontWeight:700,color:'#d97706'}}>?{(result.credit_assessment?.total_emi_burden||0).toLocaleString('en-IN')}</div></div>
+              <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>EST. MONTHLY INCOME</div><div style={{fontSize:16,fontWeight:700,color:'#111827'}}>₹{(result.credit_assessment?.estimated_monthly_income||0).toLocaleString('en-IN')}</div></div>
+              <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>TOTAL EMI BURDEN</div><div style={{fontSize:16,fontWeight:700,color:'#d97706'}}>₹{(result.credit_assessment?.total_emi_burden||0).toLocaleString('en-IN')}</div></div>
               <div><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>FOIR ESTIMATE</div><div style={{fontSize:16,fontWeight:700,color:'#7c3aed'}}>{result.credit_assessment?.foir_estimate||0}%</div></div>
               <div style={{flex:1,minWidth:200}}><div style={{fontSize:11,color:'#6b7280',fontWeight:600,marginBottom:4}}>ANALYST NOTES</div><div style={{fontSize:13,color:'#374151'}}>{result.credit_assessment?.summary_notes}</div></div>
             </div>
@@ -3967,9 +3967,9 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Summary Cards */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:10,marginBottom:16}}>
             {[
-              {l:'Total Credits',      v:'?'+(result.summary?.total_credits||0).toLocaleString('en-IN'),  c:'#16a34a'},
-              {l:'Total Debits',       v:'?'+(result.summary?.total_debits||0).toLocaleString('en-IN'),   c:'#dc2626'},
-              {l:'Avg Monthly Balance',v:'?'+(result.summary?.average_monthly_balance||0).toLocaleString('en-IN'), c:BSA_P},
+              {l:'Total Credits',      v:'₹'+(result.summary?.total_credits||0).toLocaleString('en-IN'),  c:'#16a34a'},
+              {l:'Total Debits',       v:'₹'+(result.summary?.total_debits||0).toLocaleString('en-IN'),   c:'#dc2626'},
+              {l:'Avg Monthly Balance',v:'₹'+(result.summary?.average_monthly_balance||0).toLocaleString('en-IN'), c:BSA_P},
               {l:'Risk Flags',         v:result.risk_flags?.length||0,          c:'#dc2626'},
               {l:'EMI Obligations',    v:result.emi_obligations?.length||0,     c:'#d97706'},
               {l:'CC Vendor Credits',  v:result.cc_vendor_funding?.length||0,   c:'#7c3aed'},
@@ -3984,7 +3984,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Risk Flags */}
           {result.risk_flags?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#dc2626'}}>?? Risk Flags ({result.risk_flags.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#dc2626'}}>🔴 Risk Flags ({result.risk_flags.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Type','Date','Description','Amount','Severity'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -3992,7 +3992,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:sevColor(f.severity)}}>
                       <td style={TD}><Badge text={f.type} color={sevText(f.severity)}/></td>
                       <td style={TD}>{f.date}</td><td style={TD}>{f.description}</td>
-                      <td style={{...TD,fontWeight:600}}>?{(f.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600}}>₹{(f.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}><Badge text={f.severity} color={sevText(f.severity)}/></td>
                     </tr>
                   ))}</tbody>
@@ -4004,7 +4004,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* CC Vendor Funding */}
           {result.cc_vendor_funding?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#7c3aed'}}>?? Credit Card / Fintech Vendor Funding ({result.cc_vendor_funding.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#7c3aed'}}>💳 Credit Card / Fintech Vendor Funding ({result.cc_vendor_funding.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Vendor','Date','Description','Amount'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -4012,7 +4012,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#faf5ff'}}>
                       <td style={TD}><Badge text={f.vendor} color='#7c3aed'/></td>
                       <td style={TD}>{f.date}</td><td style={TD}>{f.description}</td>
-                      <td style={{...TD,fontWeight:600,color:'#7c3aed'}}>?{(f.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#7c3aed'}}>₹{(f.amount||0).toLocaleString('en-IN')}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -4023,14 +4023,14 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* EMI Obligations */}
           {result.emi_obligations?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#d97706'}}>?? EMI & Recurring Obligations</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#d97706'}}>📋 EMI & Recurring Obligations</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Party / Lender','Amount','Type','Count','First Seen','Last Seen'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
                   <tbody>{result.emi_obligations.map((e,i)=>(
                     <tr key={i} style={{background:'#fffbeb'}}>
                       <td style={{...TD,fontWeight:500}}>{e.party}</td>
-                      <td style={{...TD,fontWeight:700,color:'#d97706'}}>?{(e.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:700,color:'#d97706'}}>₹{(e.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}><Badge text={e.type} color='#d97706'/></td>
                       <td style={TD}>{e.count}x</td>
                       <td style={TD}>{e.first_seen}</td><td style={TD}>{e.last_seen}</td>
@@ -4044,7 +4044,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Watchlist */}
           {result.watchlist?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#d97706'}}>?? Watchlist ({result.watchlist.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#d97706'}}>🟡 Watchlist ({result.watchlist.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Type','Date','Description','Amount'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -4052,7 +4052,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#fffbeb'}}>
                       <td style={TD}><Badge text={w.type} color='#d97706'/></td>
                       <td style={TD}>{w.date}</td><td style={TD}>{w.description}</td>
-                      <td style={{...TD,fontWeight:600}}>?{(w.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600}}>₹{(w.amount||0).toLocaleString('en-IN')}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -4063,7 +4063,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Positive Signals */}
           {result.positive_signals?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#16a34a'}}>?? Positive Signals</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#16a34a'}}>🟢 Positive Signals</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Type','Date','Description','Amount'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -4071,7 +4071,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#f0fdf4'}}>
                       <td style={TD}><Badge text={s.type} color='#16a34a'/></td>
                       <td style={TD}>{s.date}</td><td style={TD}>{s.description}</td>
-                      <td style={{...TD,fontWeight:600,color:'#16a34a'}}>?{(s.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#16a34a'}}>₹{(s.amount||0).toLocaleString('en-IN')}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -4082,15 +4082,15 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Repeat Parties */}
           {result.repeat_parties?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14}}>?? Repeat Transaction Parties</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14}}>👥 Repeat Transaction Parties</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Party','Total Debit','Total Credit','Count','Status'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
                   <tbody>{result.repeat_parties.map((p,i)=>(
                     <tr key={i} style={{background:p.flag==='SUSPICIOUS'?'#fef2f2':'white'}}>
                       <td style={{...TD,fontWeight:500}}>{p.party}</td>
-                      <td style={{...TD,color:'#dc2626'}}>?{(p.total_debit||0).toLocaleString('en-IN')}</td>
-                      <td style={{...TD,color:'#16a34a'}}>?{(p.total_credit||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,color:'#dc2626'}}>₹{(p.total_debit||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,color:'#16a34a'}}>₹{(p.total_credit||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{p.transaction_count}x</td>
                       <td style={TD}><Badge text={p.flag} color={p.flag==='SUSPICIOUS'?'#dc2626':'#16a34a'}/></td>
                     </tr>
@@ -4103,16 +4103,16 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Monthly Cashflow */}
           {result.monthly_cashflow?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14}}>?? Month-wise Cash Flow</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14}}>📈 Month-wise Cash Flow</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Month','Total Credit','Total Debit','Closing Balance','Bounces'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
                   <tbody>{result.monthly_cashflow.map((m,i)=>(
                     <tr key={i} style={{background:m.bounce_count>0?'#fef2f2':'white'}}>
                       <td style={{...TD,fontWeight:500}}>{m.month}</td>
-                      <td style={{...TD,color:'#16a34a',fontWeight:600}}>?{(m.total_credit||0).toLocaleString('en-IN')}</td>
-                      <td style={{...TD,color:'#dc2626',fontWeight:600}}>?{(m.total_debit||0).toLocaleString('en-IN')}</td>
-                      <td style={{...TD,fontWeight:600}}>?{(m.closing_balance||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,color:'#16a34a',fontWeight:600}}>₹{(m.total_credit||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,color:'#dc2626',fontWeight:600}}>₹{(m.total_debit||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600}}>₹{(m.closing_balance||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{m.bounce_count>0?<Badge text={m.bounce_count+' bounce(s)'} color='#dc2626'/>:<Badge text='None' color='#16a34a'/>}</td>
                     </tr>
                   ))}</tbody>
@@ -4124,7 +4124,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* ECS / NACH Returns */}
           {result.ecs_returns?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>?? ECS / NACH Returns ({result.ecs_returns.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>↩️ ECS / NACH Returns ({result.ecs_returns.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Party','Return Type','Return Date','Return Amount','Charge Date','Charge Amount','Charge Description'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -4133,9 +4133,9 @@ Return only the raw JSON. No markdown, no explanation.`
                       <td style={{...TD,fontWeight:500}}>{r.party}</td>
                       <td style={TD}><Badge text={r.return_type} color='#dc2626'/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{r.return_date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>?{(r.return_amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>₹{(r.return_amount||0).toLocaleString('en-IN')}</td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{r.charge_date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#d97706'}}>?{(r.charge_amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#d97706'}}>₹{(r.charge_amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{r.charge_description}</td>
                     </tr>
                   ))}</tbody>
@@ -4144,11 +4144,11 @@ Return only the raw JSON. No markdown, no explanation.`
             </Card>
           )}
 
-          {/* CC Card Rotation � high severity RED */}
+          {/* CC Card Rotation — high severity RED */}
           {result.cc_card_rotation?.detected&&result.cc_card_rotation?.transactions?.length>0&&(
             <Card style={{marginBottom:16,borderLeft:'4px solid #dc2626'}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>
-                ?? CC Card Rotation / Cash Advance ({result.cc_card_rotation.transaction_count} transactions � ?{(result.cc_card_rotation.total_amount||0).toLocaleString('en-IN')} total)
+                🔴 CC Card Rotation / Cash Advance ({result.cc_card_rotation.transaction_count} transactions · ₹{(result.cc_card_rotation.total_amount||0).toLocaleString('en-IN')} total)
               </div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -4157,7 +4157,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#fef2f2'}}>
                       <td style={TD}><Badge text={t.vendor} color='#dc2626'/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{t.date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>?{(t.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>₹{(t.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{t.description}</td>
                     </tr>
                   ))}</tbody>
@@ -4170,7 +4170,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {result.stock_market_activity?.detected&&result.stock_market_activity?.transactions?.length>0&&(
             <Card style={{marginBottom:16}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#7c3aed'}}>
-                ?? Stock Market / Trading Activity ({result.stock_market_activity.transaction_count} txns � Invested ?{(result.stock_market_activity.total_invested||0).toLocaleString('en-IN')} � Withdrawn ?{(result.stock_market_activity.total_withdrawn||0).toLocaleString('en-IN')})
+                📈 Stock Market / Trading Activity ({result.stock_market_activity.transaction_count} txns · Invested ₹{(result.stock_market_activity.total_invested||0).toLocaleString('en-IN')} · Withdrawn ₹{(result.stock_market_activity.total_withdrawn||0).toLocaleString('en-IN')})
               </div>
               {result.stock_market_activity.brokers_seen?.length>0&&(
                 <div style={{padding:'10px 20px',display:'flex',flexWrap:'wrap',gap:6,borderBottom:'1px solid #f3f4f6'}}>
@@ -4184,7 +4184,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#faf5ff'}}>
                       <td style={TD}><Badge text={t.broker} color='#7c3aed'/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{t.date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#7c3aed'}}>?{(t.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#7c3aed'}}>₹{(t.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}><Badge text={t.direction} color={t.direction==='OUT'?'#dc2626':'#16a34a'}/></td>
                       <td style={TD}>{t.description}</td>
                     </tr>
@@ -4199,9 +4199,9 @@ Return only the raw JSON. No markdown, no explanation.`
             <Card style={{marginBottom:16,borderLeft:`4px solid ${result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}`}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                 <span style={{fontWeight:600,fontSize:14,color:result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}}>
-                  ?? Small Loan Disbursals ({result.small_loan_disbursals.disbursal_count} � ?{(result.small_loan_disbursals.total_disbursed||0).toLocaleString('en-IN')} total)
+                  💸 Small Loan Disbursals ({result.small_loan_disbursals.disbursal_count} · ₹{(result.small_loan_disbursals.total_disbursed||0).toLocaleString('en-IN')} total)
                 </span>
-                {result.small_loan_disbursals.frequent&&<Badge text='FREQUENT � HIGH RISK' color='#dc2626'/>}
+                {result.small_loan_disbursals.frequent&&<Badge text='FREQUENT — HIGH RISK' color='#dc2626'/>}
               </div>
               {result.small_loan_disbursals.lenders_seen?.length>0&&(
                 <div style={{padding:'10px 20px',display:'flex',flexWrap:'wrap',gap:6,borderBottom:'1px solid #f3f4f6'}}>
@@ -4215,7 +4215,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:result.small_loan_disbursals.frequent?'#fef2f2':'#fffbeb'}}>
                       <td style={TD}><Badge text={d.lender} color={result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{d.date}</td>
-                      <td style={{...TD,fontWeight:600,color:result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}}>?{(d.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:result.small_loan_disbursals.frequent?'#dc2626':'#d97706'}}>₹{(d.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{d.description}</td>
                     </tr>
                   ))}</tbody>
@@ -4227,7 +4227,7 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Wallet-to-Bank Transfers */}
           {result.wallet_to_bank?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#0891b2'}}>?? Wallet-to-Bank Transfers ({result.wallet_to_bank.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14,color:'#0891b2'}}>👛 Wallet-to-Bank Transfers ({result.wallet_to_bank.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Wallet','Date','Amount','Direction'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -4235,7 +4235,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#ecfeff'}}>
                       <td style={TD}><Badge text={w.wallet} color='#0891b2'/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{w.date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#0891b2'}}>?{(w.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#0891b2'}}>₹{(w.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}><Badge text={w.direction} color={w.direction==='IN'?'#16a34a':'#dc2626'}/></td>
                     </tr>
                   ))}</tbody>
@@ -4247,14 +4247,14 @@ Return only the raw JSON. No markdown, no explanation.`
           {/* Frequent Transfers */}
           {result.frequent_transfers?.length>0&&(
             <Card style={{marginBottom:16}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14}}>?? Frequent Transfers ({result.frequent_transfers.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',fontWeight:600,fontSize:14}}>🔄 Frequent Transfers ({result.frequent_transfers.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Beneficiary','Total Amount','Count','First Transfer','Last Transfer','Type'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
                   <tbody>{result.frequent_transfers.map((t,i)=>(
                     <tr key={i} style={{background:t.is_self?'#eff6ff':'white'}}>
                       <td style={{...TD,fontWeight:500}}>{t.beneficiary}</td>
-                      <td style={{...TD,fontWeight:600}}>?{(t.total_amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600}}>₹{(t.total_amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{t.transfer_count}x</td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{t.first_date}</td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{t.last_date}</td>
@@ -4266,10 +4266,10 @@ Return only the raw JSON. No markdown, no explanation.`
             </Card>
           )}
 
-          {/* Forex / International Trading � high severity RED */}
+          {/* Forex / International Trading — high severity RED */}
           {result.forex_trading?.length>0&&(
             <Card style={{marginBottom:16,borderLeft:'4px solid #dc2626'}}>
-              <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>?? Forex / International Trading ({result.forex_trading.length})</div>
+              <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>🌐 Forex / International Trading ({result.forex_trading.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead><tr>{['Platform','Date','Amount','Direction','Description'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
@@ -4277,7 +4277,7 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:'#fef2f2'}}>
                       <td style={TD}><Badge text={f.platform} color='#dc2626'/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{f.date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>?{(f.amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>₹{(f.amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}><Badge text={f.direction} color={f.direction==='OUT'?'#dc2626':'#d97706'}/></td>
                       <td style={TD}>{f.description}</td>
                     </tr>
@@ -4291,8 +4291,8 @@ Return only the raw JSON. No markdown, no explanation.`
           {result.all_transactions?.length>0&&(
             <Card style={{marginBottom:16}}>
               <div style={{padding:'14px 20px',borderBottom:'1px solid #e5e7eb',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontWeight:600,fontSize:14}}>?? All Transactions ({result.all_transactions.length})</div>
-                <Btn small onClick={downloadCSV}>? CSV</Btn>
+                <div style={{fontWeight:600,fontSize:14}}>📊 All Transactions ({result.all_transactions.length})</div>
+                <Btn small onClick={downloadCSV}>⬇ CSV</Btn>
               </div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
@@ -4301,11 +4301,11 @@ Return only the raw JSON. No markdown, no explanation.`
                     <tr key={i} style={{background:catColor(t.category)}}>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{t.date}</td>
                       <td style={{...TD,maxWidth:280}}>{t.description}</td>
-                      <td style={{...TD,color:'#dc2626',fontWeight:t.debit?600:400}}>{t.debit?'?'+t.debit.toLocaleString('en-IN'):'�'}</td>
-                      <td style={{...TD,color:'#16a34a',fontWeight:t.credit?600:400}}>{t.credit?'?'+t.credit.toLocaleString('en-IN'):'�'}</td>
-                      <td style={TD}>{t.balance?'?'+t.balance.toLocaleString('en-IN'):'�'}</td>
+                      <td style={{...TD,color:'#dc2626',fontWeight:t.debit?600:400}}>{t.debit?'₹'+t.debit.toLocaleString('en-IN'):'—'}</td>
+                      <td style={{...TD,color:'#16a34a',fontWeight:t.credit?600:400}}>{t.credit?'₹'+t.credit.toLocaleString('en-IN'):'—'}</td>
+                      <td style={TD}>{t.balance?'₹'+t.balance.toLocaleString('en-IN'):'—'}</td>
                       <td style={TD}><Badge text={t.category||'OTHER'} color={['BOUNCE','ECS_RETURN','CC_FUNDING','GAMBLING'].includes(t.category)?'#dc2626':['SALARY','GST','INSURANCE'].includes(t.category)?'#16a34a':'#6b7280'}/></td>
-                      <td style={TD}>{t.flag?<Badge text={t.flag} color='#dc2626'/>:'�'}</td>
+                      <td style={TD}>{t.flag?<Badge text={t.flag} color='#dc2626'/>:'—'}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -4343,7 +4343,7 @@ export default function Dashboard({ session }) {
 
   const getProfile=async()=>{
     const userId=session?.user?.id
-    if(!userId){ console.log('[Auth] No session user yet � waiting'); return }
+    if(!userId){ console.log('[Auth] No session user yet — waiting'); return }
     try{
       const{data,error:profileErr}=await supabase.from('profiles').select('*').eq('id',userId).single()
       if(profileErr){ console.error('[Profile] Fetch error:',profileErr) }
@@ -4397,10 +4397,10 @@ export default function Dashboard({ session }) {
     {section:'TOOLS',items:[
       {id:'cibil',             label:'CIBIL.com Analyzer',     icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'cibil-paisabazaar', label:'PaisaBazaar Analyzer',   icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'bsa',               label:'?? Bank Analyzer',        icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
+      {id:'bsa',               label:'🔍 Bank Analyzer',        icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'emi',               label:'EMI Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'cam',               label:'?? CAM Builder',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'call-assist',       label:'?? Call Assist',          icon:'headset',  roles:['agent','team_leader','manager','admin']},
+      {id:'cam',               label:'📋 CAM Builder',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
+      {id:'call-assist',       label:'📞 Call Assist',          icon:'headset',  roles:['agent','team_leader','manager','admin']},
     ]},
     {section:'MANAGE',items:[
       {id:'admin',    label:'Admin Panel', icon:'settings',    roles:['admin']},
@@ -4511,7 +4511,7 @@ export default function Dashboard({ session }) {
     const fetchActivityFull=async()=>{ const{data}=await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500); if(data) setActivityFull(data) }
     const showApToast=(msg,type='success')=>{ setApToast({msg,type}); setTimeout(()=>setApToast(null),3500) }
 
-    // Per-lead reassign � always mirror so the original agent keeps access and the
+    // Per-lead reassign — always mirror so the original agent keeps access and the
     // new agent also gets the lead with full history (prevents agent data loss)
     const doReassignLead=async()=>{
       if(!reassignTo||!reassignTarget)return
@@ -4525,7 +4525,7 @@ export default function Dashboard({ session }) {
         const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,mirror_agent_statuses:newMirrorStatuses,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
-        try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'?? A lead was assigned to you'}]) }catch(e){}
+        try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
         showApToast('Lead reassigned to '+(agent?.full_name||'agent')+'. Original agent retains access.')
         setReassignTarget(null); setReassignTo(''); fetchLeads(); fetchActivityFull()
       }catch(err){ showApToast('Error: '+err.message,'error') }
@@ -4553,7 +4553,7 @@ export default function Dashboard({ session }) {
 
     const doReassignExport=async(leadsToExport)=>{
       if(!leadsToExport||!leadsToExport.length){ showApToast('No leads to export','error'); return }
-      showApToast('Preparing export�')
+      showApToast('Preparing export…')
       try{
         const ids=leadsToExport.map(l=>l.id)
         const[callRes,oblRes,taskRes]=await Promise.all([
@@ -4572,7 +4572,7 @@ export default function Dashboard({ session }) {
           const obls=oblMap[l.id]||[]
           const lastCall=calls[0]
           const agent=users.find(u=>u.id===l.assigned_to)
-          const oblSummary=obls.map(o=>`${o.obligation_type||'Loan'} @ ${o.bank_name||'�'} EMI ?${o.emi_amount||0}`).join(' | ')
+          const oblSummary=obls.map(o=>`${o.obligation_type||'Loan'} @ ${o.bank_name||'—'} EMI ₹${o.emi_amount||0}`).join(' | ')
           const cbTask=taskMap[l.id]
           const cbDate=cbTask&&cbTask.due_date?String(cbTask.due_date).replace('T',' ').slice(0,16):''
           return[
@@ -4601,7 +4601,7 @@ export default function Dashboard({ session }) {
         if(ud.id){
           await supabase.from('profiles').insert([{id:ud.id,full_name:userForm.full_name,email:userForm.email,mobile:userForm.mobile,role:userForm.role,team_leader_id:userForm.team_leader_id||null,manager_id:userForm.manager_id||null,department:userForm.department,status:'active'}])
           setUserForm({full_name:'',email:'',mobile:'',role:'agent',team_leader_id:'',manager_id:'',department:''});setShowUserForm(false);fetchUsers()
-          alert('? User created!\nEmail: '+userForm.email+'\nPassword: Capital@123')
+          alert('✅ User created!\nEmail: '+userForm.email+'\nPassword: Capital@123')
         }else alert('Error: '+JSON.stringify(ud))
       }catch(err){alert('Error: '+err.message)}
       setLoading(false)
@@ -4631,7 +4631,7 @@ export default function Dashboard({ session }) {
         if(!u){alert('User not found');setResetLoading(false);return}
         const res=await fetch('https://pvnzeueldfmxhesmoetc.supabase.co/auth/v1/admin/users/'+u.id,{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SK,'apikey':SK},body:JSON.stringify({password:'Capital@123'})})
         const r=await res.json()
-        if(r.id) alert('? Password reset to Capital@123 for '+resetEmail)
+        if(r.id) alert('✅ Password reset to Capital@123 for '+resetEmail)
         else alert('Error: '+JSON.stringify(r))
       }catch(err){alert('Error: '+err.message)}
       setResetLoading(false)
@@ -4705,14 +4705,14 @@ export default function Dashboard({ session }) {
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10,marginBottom:16}}>
                 {manualStats.map(m=>(<div key={m.key} style={{background:'white',padding:'14px 16px',borderRadius:10,border:'1px solid #E2E8F0'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}><div style={{fontSize:12,color:'#718096',fontWeight:500}}>{m.label}</div><button onClick={()=>{setEditManualKey(m.key);setEditManualVal(settings[m.key]||'')}} style={{background:'none',border:'none',cursor:'pointer',color:'#A0AEC0',fontSize:13,padding:0}}>?</button></div>
-                  {editManualKey===m.key?(<div style={{display:'flex',gap:6}}><input className='form-input' style={{flex:1,padding:'4px 8px',fontSize:13}} value={editManualVal} onChange={e=>setEditManualVal(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveManualSetting(m.key,editManualVal)}}/><button className='btn btn-primary btn-sm' onClick={()=>saveManualSetting(m.key,editManualVal)} disabled={savingManual}>{savingManual?'�':'Save'}</button></div>):(<div style={{fontSize:24,fontWeight:700,color:'#185FA5'}}>{settings[m.key]||'�'}</div>)}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}><div style={{fontSize:12,color:'#718096',fontWeight:500}}>{m.label}</div><button onClick={()=>{setEditManualKey(m.key);setEditManualVal(settings[m.key]||'')}} style={{background:'none',border:'none',cursor:'pointer',color:'#A0AEC0',fontSize:13,padding:0}}>✏</button></div>
+                  {editManualKey===m.key?(<div style={{display:'flex',gap:6}}><input className='form-input' style={{flex:1,padding:'4px 8px',fontSize:13}} value={editManualVal} onChange={e=>setEditManualVal(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter')saveManualSetting(m.key,editManualVal)}}/><button className='btn btn-primary btn-sm' onClick={()=>saveManualSetting(m.key,editManualVal)} disabled={savingManual}>{savingManual?'…':'Save'}</button></div>):(<div style={{fontSize:24,fontWeight:700,color:'#185FA5'}}>{settings[m.key]||'—'}</div>)}
                 </div>))}
               </div>
               <div className='table-container' style={{marginBottom:16}}>
-                <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0',fontWeight:600,fontSize:14}}>Agent Performance � {new Date().toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:IST_TZ})}</div>
+                <div style={{padding:'12px 16px',borderBottom:'1px solid #E2E8F0',fontWeight:600,fontSize:14}}>Agent Performance — {new Date().toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:IST_TZ})}</div>
                 <div style={{overflowX:'auto'}}><table><thead><tr>{['Agent','Calls Today','Total Leads','Leads/Month','Interested','Callback','Disbursed','Last Login'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-                <tbody>{agentRows.length===0?(<tr><td colSpan={8} style={{textAlign:'center',color:'#A0AEC0',padding:24}}>No agents</td></tr>):agentRows.map(r=>(<tr key={r.id}><td><div style={{fontWeight:500}}>{r.full_name}</div></td><td style={{textAlign:'center',fontWeight:700,color:r.callsToday>0?'#15803d':'#718096'}}>{r.callsToday}</td><td style={{textAlign:'center'}}>{r.totalLeads}</td><td style={{textAlign:'center'}}>{r.leadsMonth}</td><td style={{textAlign:'center',color:'#7c3aed'}}>{r.interested}</td><td style={{textAlign:'center',color:'#d97706'}}>{r.callback}</td><td style={{textAlign:'center',color:'#15803d',fontWeight:600}}>{r.disbursed}</td><td style={{fontSize:11,color:'#A0AEC0'}}>{r.lastLogin?new Date(r.lastLogin).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'�'}</td></tr>))}
+                <tbody>{agentRows.length===0?(<tr><td colSpan={8} style={{textAlign:'center',color:'#A0AEC0',padding:24}}>No agents</td></tr>):agentRows.map(r=>(<tr key={r.id}><td><div style={{fontWeight:500}}>{r.full_name}</div></td><td style={{textAlign:'center',fontWeight:700,color:r.callsToday>0?'#15803d':'#718096'}}>{r.callsToday}</td><td style={{textAlign:'center'}}>{r.totalLeads}</td><td style={{textAlign:'center'}}>{r.leadsMonth}</td><td style={{textAlign:'center',color:'#7c3aed'}}>{r.interested}</td><td style={{textAlign:'center',color:'#d97706'}}>{r.callback}</td><td style={{textAlign:'center',color:'#15803d',fontWeight:600}}>{r.disbursed}</td><td style={{fontSize:11,color:'#A0AEC0'}}>{r.lastLogin?new Date(r.lastLogin).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'—'}</td></tr>))}
                 </tbody></table></div>
               </div>
             </div>
@@ -4723,7 +4723,7 @@ export default function Dashboard({ session }) {
 
               {showUserForm&&(
                 <div className="card" style={{marginBottom:16}}>
-                  <div className="card-header"><h3>Add New Member</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowUserForm(false)}>?</button></div>
+                  <div className="card-header"><h3>Add New Member</h3><button className="btn btn-ghost btn-sm" onClick={()=>setShowUserForm(false)}>✕</button></div>
                   <div className="card-body">
                     <form onSubmit={createUser}>
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:10}}>
@@ -4734,7 +4734,7 @@ export default function Dashboard({ session }) {
                         {userForm.role==='agent'&&teamLeaders.length>0&&(<div><label className="form-label">Team Leader</label><select className="form-input" value={userForm.team_leader_id} onChange={e=>setUserForm({...userForm,team_leader_id:e.target.value})}><option value="">Select TL</option>{teamLeaders.map(tl=><option key={tl.id} value={tl.id}>{tl.full_name}</option>)}</select></div>)}
                         {(userForm.role==='agent'||userForm.role==='team_leader')&&managers.length>0&&(<div><label className="form-label">Manager</label><select className="form-input" value={userForm.manager_id} onChange={e=>setUserForm({...userForm,manager_id:e.target.value})}><option value="">Select Manager</option>{managers.map(m=><option key={m.id} value={m.id}>{m.full_name}</option>)}</select></div>)}
                       </div>
-                      <div style={{background:'#FFFAF0',border:'1px solid #F6E05E',borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:13,color:'#744210'}}>?? Default password: <strong>Capital@123</strong></div>
+                      <div style={{background:'#FFFAF0',border:'1px solid #F6E05E',borderRadius:8,padding:'10px 12px',marginBottom:12,fontSize:13,color:'#744210'}}>⚠️ Default password: <strong>Capital@123</strong></div>
                       <button type="submit" className="btn btn-primary" disabled={loading}>{loading?'Creating...':'Create User'}</button>
                     </form>
                   </div>
@@ -4807,7 +4807,7 @@ export default function Dashboard({ session }) {
                               </div>
                             </td>
                             <td><select value={user.role} onChange={e=>updateUserRole(user.id,e.target.value)} style={{background:rc.bg,color:rc.color,border:'none',padding:'4px 10px',borderRadius:20,fontSize:11,fontWeight:600,cursor:'pointer',outline:'none'}}>{['agent','team_leader','manager','admin'].map(r=><option key={r} value={r} style={{background:'white',color:'black'}}>{r.replace('_',' ').toUpperCase()}</option>)}</select></td>
-                            <td style={{fontSize:12,color:'#4A5568'}}>{user.mobile||'�'}</td>
+                            <td style={{fontSize:12,color:'#4A5568'}}>{user.mobile||'—'}</td>
                             <td><select value={user.team_leader_id||''} onChange={e=>assignTeamLeader(user.id,e.target.value)} style={{padding:'4px 8px',border:'1px solid #E2E8F0',borderRadius:6,fontSize:12,background:'white',color:'#4A5568',outline:'none'}}><option value="">No TL</option>{teamLeaders.map(tl=><option key={tl.id} value={tl.id}>{tl.full_name}</option>)}</select></td>
                             <td><span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,fontWeight:500,color:user.status==='active'?'#0F6E56':'#718096'}}><span style={{width:6,height:6,borderRadius:'50%',background:user.status==='active'?'#1D9E75':'#A0AEC0'}}></span>{user.status==='active'?'Active':'Inactive'}</span></td>
                             <td>
@@ -4817,7 +4817,7 @@ export default function Dashboard({ session }) {
                                   :<button onClick={()=>{setEditingUser(user.id);setEditForm({full_name:user.full_name||'',mobile:user.mobile||'',department:user.department||'',role:user.role,team_leader_id:user.team_leader_id||'',manager_id:user.manager_id||''})}} style={{width:28,height:28,borderRadius:6,border:'1px solid #E2E8F0',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#185FA5'}}><IconEdit size={14} strokeWidth={1.5}/></button>
                                 }
                                 <button className="btn btn-ghost btn-sm" onClick={()=>toggleUserStatus(user.id,user.status||'active')}>{user.status==='active'?'Deactivate':'Activate'}</button>
-                                <button onClick={()=>deleteUser(user.id,user.email)} style={{width:28,height:28,borderRadius:6,border:'1px solid #FED7D7',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#FC8181',fontSize:16}}>�</button>
+                                <button onClick={()=>deleteUser(user.id,user.email)} style={{width:28,height:28,borderRadius:6,border:'1px solid #FED7D7',background:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#FC8181',fontSize:16}}>×</button>
                               </div>
                             </td>
                           </tr>
@@ -4841,7 +4841,7 @@ export default function Dashboard({ session }) {
                     <div style={{background:'linear-gradient(135deg,#0C3A6B,#185FA5)',padding:'11px 16px',color:'white',fontWeight:600,fontSize:13,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
                         <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700}}>{gi(tl.full_name)}</div>
-                        {tl.full_name}<span style={{opacity:0.7,fontWeight:400,fontSize:11}}>� Team Leader</span>
+                        {tl.full_name}<span style={{opacity:0.7,fontWeight:400,fontSize:11}}>— Team Leader</span>
                       </div>
                       <span style={{background:'rgba(255,255,255,0.2)',borderRadius:12,padding:'2px 10px',fontSize:11}}>{tlAgents.length} agents</span>
                     </div>
@@ -4873,7 +4873,7 @@ export default function Dashboard({ session }) {
           {activeTab==='leaderboard'&&(
             <div>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-                <h3 style={{fontSize:15,fontWeight:600}}>Leaderboard � Calls This Week</h3>
+                <h3 style={{fontSize:15,fontWeight:600}}>Leaderboard — Calls This Week</h3>
                 <button className="btn btn-outline" style={{fontSize:12}} onClick={fetchLeaderboard}>Refresh</button>
               </div>
               {leaderboard.length===0?(
@@ -4894,8 +4894,8 @@ export default function Dashboard({ session }) {
                           </td>
                           <td style={{fontWeight:700,fontSize:16,color:'#185FA5'}}>{row.count}</td>
                           <td>
-                            {i===0&&<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>?? Top</span>}
-                            {i===1&&<span style={{background:'#F3F4F6',color:'#374151',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>?? 2nd</span>}
+                            {i===0&&<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥇 Top</span>}
+                            {i===1&&<span style={{background:'#F3F4F6',color:'#374151',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥈 2nd</span>}
 
                             {i>2&&<span style={{color:'#A0AEC0',fontSize:12}}>#{i+1}</span>}
                           </td>
@@ -4913,7 +4913,7 @@ export default function Dashboard({ session }) {
               <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
                 <div style={{flex:1,minWidth:180,position:'relative'}}><IconSearch size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'#A0AEC0'}}/><input className='form-input' style={{paddingLeft:32,fontSize:13}} placeholder='Search leads...' value={leadSearch} onChange={e=>setLeadSearch(e.target.value)}/></div>
                 <div style={{position:'relative'}}>
-                  <button type='button' onClick={()=>setStatusDropOpen(o=>!o)} className='form-input' style={{width:'auto',fontSize:13,cursor:'pointer'}}>{leadStatusSet.length===0?'All Status':`${leadStatusSet.length} selected`} ?</button>
+                  <button type='button' onClick={()=>setStatusDropOpen(o=>!o)} className='form-input' style={{width:'auto',fontSize:13,cursor:'pointer'}}>{leadStatusSet.length===0?'All Status':`${leadStatusSet.length} selected`} ▾</button>
                   {statusDropOpen&&(
                     <div style={{position:'absolute',top:'110%',left:0,zIndex:50,background:'white',border:'1px solid #E2E8F0',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',padding:8,minWidth:200,maxHeight:280,overflowY:'auto'}}>
                       <label style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',fontSize:13,cursor:'pointer'}}><input type='checkbox' checked={leadStatusSet.length===0} onChange={()=>setLeadStatusSet([])}/> All Status</label>
@@ -4927,11 +4927,11 @@ export default function Dashboard({ session }) {
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateFrom} onChange={e=>setLeadDateFrom(e.target.value)}/>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateTo} onChange={e=>setLeadDateTo(e.target.value)}/>
                 <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
-                <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>? Export{selected.size>0?' Selected':''} for Reassignment</button>
-                <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>?? Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
+                <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
+                <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
               </div>
               {dupLeadIds.size>0&&(
-                <div style={{fontSize:12,color:'#dc2626',fontWeight:600,marginBottom:10}}>?? {dupLeadIds.size} duplicate lead{dupLeadIds.size>1?'s':''} detected (same mobile assigned to the same agent)</div>
+                <div style={{fontSize:12,color:'#dc2626',fontWeight:600,marginBottom:10}}>⚠️ {dupLeadIds.size} duplicate lead{dupLeadIds.size>1?'s':''} detected (same mobile assigned to the same agent)</div>
               )}
               {selected.size>0&&(
                 <div style={{background:'#185FA5',color:'white',padding:'10px 14px',borderRadius:8,marginBottom:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
@@ -4940,8 +4940,8 @@ export default function Dashboard({ session }) {
                     <option value=''>Reassign to agent...</option>
                     {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
-                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`?? ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning�':'? Reassign'}</button>
-                  <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>?? Delete Selected</button>
+                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`📥 ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
+                  <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>🗑 Delete Selected</button>
                   <button onClick={()=>setSelected(new Set())} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontSize:12}}>Clear</button>
                 </div>
               )}
@@ -4953,7 +4953,7 @@ export default function Dashboard({ session }) {
                       <div style={{width:7,height:7,borderRadius:'50%',background:apRtConnected?'#22c55e':'#d1d5db',boxShadow:apRtConnected?'0 0 4px #22c55e':undefined}}/>
                       {apRtConnected?'Live sync':'Offline'}
                     </div>
-                    <button className='btn btn-ghost btn-sm' style={{fontSize:11}} onClick={fetchLeads}>? Refresh</button>
+                    <button className='btn btn-ghost btn-sm' style={{fontSize:11}} onClick={fetchLeads}>↻ Refresh</button>
                   </div>
                 </div>
                 
@@ -4964,24 +4964,24 @@ export default function Dashboard({ session }) {
 </tr></thead>
                   <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'�'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>?? DUP</span>}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'�'}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{l.status||'New'}</span></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={agent?.full_name||''}>{agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'?'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>�</span>}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'₹'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>—</span>}</td>
 
 
 <td style={{padding:'8px 4px',verticalAlign:'middle',whiteSpace:'nowrap'}}>
   <div style={{display:'flex',alignItems:'center',gap:3}}>
-    <button onClick={()=>setViewLead(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>??</button>
+    <button onClick={()=>setViewLead(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
     <a href={'tel:'+(l.mobile||'')} title='Call' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></a>
     <a href={'https://wa.me/91'+(l.mobile||'')} target='_blank' rel='noreferrer' title='WhatsApp' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #BBF7D0',background:'#F0FDF4',textDecoration:'none'}}><IconBrandWhatsapp size={13} color='#25D366'/></a>
-    <button onClick={()=>{setReassignTarget(l);setReassignTo('')}} title='Reassign (original agent keeps access)' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>?</button>
-    <button onClick={()=>handleUnassignLead(l)} title='Unassign agent' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FFF7ED',border:'1px solid #FED7AA',color:'#C2410C',fontSize:13,cursor:'pointer'}}>?</button>
-    <button onClick={()=>handleDeleteLead(l)} title='Delete lead permanently' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',fontSize:12,cursor:'pointer'}}>??</button>
+    <button onClick={()=>{setReassignTarget(l);setReassignTo('')}} title='Reassign (original agent keeps access)' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>↩</button>
+    <button onClick={()=>handleUnassignLead(l)} title='Unassign agent' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FFF7ED',border:'1px solid #FED7AA',color:'#C2410C',fontSize:13,cursor:'pointer'}}>⊘</button>
+    <button onClick={()=>handleDeleteLead(l)} title='Delete lead permanently' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',fontSize:12,cursor:'pointer'}}>🗑</button>
   </div>
 </td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11,color:'#94A3B8',whiteSpace:'nowrap'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'�'}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11,color:'#94A3B8',whiteSpace:'nowrap'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'}</td>
 </tr>) })}
                   </tbody></table>
                 </div>
@@ -4991,15 +4991,15 @@ export default function Dashboard({ session }) {
                   <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,width:'100%',maxWidth:440,padding:28,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
                     <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Reassign Lead</div>
                     <div style={{fontSize:13,color:'#64748B',marginBottom:16}}><strong>{reassignTarget.full_name}</strong> ({reassignTarget.mobile})<br/>Currently assigned to: <strong>{users.find(u=>u.id===reassignTarget.assigned_to)?.full_name||'Unassigned'}</strong></div>
-                    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1E40AF'}}>? <strong>Safe Reassign:</strong> The original agent keeps access to this lead. The new agent also gets it with full history.</div>
+                    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1E40AF'}}>✅ <strong>Safe Reassign:</strong> The original agent keeps access to this lead. The new agent also gets it with full history.</div>
                     <label className='form-label'>Assign To</label>
                     <select className='form-input' style={{width:'100%',marginBottom:20}} value={reassignTo} onChange={e=>setReassignTo(e.target.value)}>
-                      <option value=''>Select agent�</option>
+                      <option value=''>Select agent…</option>
                       {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                     </select>
                     <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
                       <button onClick={()=>{setReassignTarget(null);setReassignTo('')}} style={{padding:'9px 20px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:13}}>Cancel</button>
-                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Reassigning�':'Reassign Lead'}</button>
+                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Reassigning…':'Reassign Lead'}</button>
                     </div>
                   </div>
                 </div>
@@ -5018,7 +5018,7 @@ export default function Dashboard({ session }) {
               <div className='table-container'>
                 <div style={{overflowX:'auto'}}>
                   <table><thead><tr>{['Date','Lead Name','Action','Assigned To','Assigned By','Previous Agent'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-                  <tbody>{filteredAct.length===0?(<tr><td colSpan={6}><div className='empty-state'><h3>No activity yet</h3><p>Lead assignments will appear here</p></div></td></tr>):filteredAct.map(a=>(<tr key={a.id}><td style={{fontSize:11,color:'#718096',whiteSpace:'nowrap'}}>{a.created_at?new Date(a.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'�'}</td><td style={{fontWeight:500,fontSize:13}}>{a.lead_name||'�'}</td><td><span style={{background:a.action==='Reassigned'?'#FEF3C7':'#E6F1FB',color:a.action==='Reassigned'?'#92400E':'#185FA5',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:500}}>{a.action||'�'}</span></td><td style={{fontSize:12}}>{a.assigned_to_name||users.find(u=>u.id===a.assigned_to)?.full_name||'�'}</td><td style={{fontSize:12,color:'#718096'}}>{a.assigned_by_name||users.find(u=>u.id===a.assigned_by)?.full_name||'�'}</td><td style={{fontSize:12,color:'#A0AEC0'}}>{a.previous_agent_name||'�'}</td></tr>))}
+                  <tbody>{filteredAct.length===0?(<tr><td colSpan={6}><div className='empty-state'><h3>No activity yet</h3><p>Lead assignments will appear here</p></div></td></tr>):filteredAct.map(a=>(<tr key={a.id}><td style={{fontSize:11,color:'#718096',whiteSpace:'nowrap'}}>{a.created_at?new Date(a.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short',timeZone:IST_TZ}):'—'}</td><td style={{fontWeight:500,fontSize:13}}>{a.lead_name||'—'}</td><td><span style={{background:a.action==='Reassigned'?'#FEF3C7':'#E6F1FB',color:a.action==='Reassigned'?'#92400E':'#185FA5',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:500}}>{a.action||'—'}</span></td><td style={{fontSize:12}}>{a.assigned_to_name||users.find(u=>u.id===a.assigned_to)?.full_name||'—'}</td><td style={{fontSize:12,color:'#718096'}}>{a.assigned_by_name||users.find(u=>u.id===a.assigned_by)?.full_name||'—'}</td><td style={{fontSize:12,color:'#A0AEC0'}}>{a.previous_agent_name||'—'}</td></tr>))}
                   </tbody></table>
                 </div>
               </div>
@@ -5040,7 +5040,7 @@ export default function Dashboard({ session }) {
                     <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{width:10,height:10,borderRadius:'50%',background:d.color,flexShrink:0}}/><span style={{fontWeight:500,fontSize:12}}>{d.label}</span></div>
                     <div style={{display:'flex',gap:4}}>
                       <button onClick={()=>toggleDisposition(d.id,d.is_active)} style={{fontSize:10,padding:'2px 6px',border:'1px solid #E2E8F0',borderRadius:4,background:'transparent',cursor:'pointer',color:'#718096'}}>{d.is_active?'Off':'On'}</button>
-                      <button onClick={()=>deleteDisposition(d.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>�</button>
+                      <button onClick={()=>deleteDisposition(d.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>×</button>
                     </div>
                   </div>
                 ))}
@@ -5069,10 +5069,10 @@ export default function Dashboard({ session }) {
                     </label>
                     <span style={{flex:1,fontWeight:500,fontSize:13,color:s.is_active?'#111827':'#9ca3af',textDecoration:s.is_active?'none':'line-through'}}>{s.name}</span>
                     <span style={{fontSize:11,color:'#A0AEC0',minWidth:18,textAlign:'center'}}>{s.order_index}</span>
-                    <button onClick={()=>moveAdminStage(s.id,-1)} disabled={i===0} style={{background:'none',border:'none',cursor:i===0?'default':'pointer',color:i===0?'#E2E8F0':'#718096',fontSize:13,padding:'0 2px',lineHeight:1}}>?</button>
-                    <button onClick={()=>moveAdminStage(s.id,1)} disabled={i===adminStages.length-1} style={{background:'none',border:'none',cursor:i===adminStages.length-1?'default':'pointer',color:i===adminStages.length-1?'#E2E8F0':'#718096',fontSize:13,padding:'0 2px',lineHeight:1}}>?</button>
+                    <button onClick={()=>moveAdminStage(s.id,-1)} disabled={i===0} style={{background:'none',border:'none',cursor:i===0?'default':'pointer',color:i===0?'#E2E8F0':'#718096',fontSize:13,padding:'0 2px',lineHeight:1}}>▲</button>
+                    <button onClick={()=>moveAdminStage(s.id,1)} disabled={i===adminStages.length-1} style={{background:'none',border:'none',cursor:i===adminStages.length-1?'default':'pointer',color:i===adminStages.length-1?'#E2E8F0':'#718096',fontSize:13,padding:'0 2px',lineHeight:1}}>▼</button>
                     <button onClick={()=>toggleAdminStage(s.id,s.is_active)} style={{fontSize:10,padding:'2px 6px',border:'1px solid #E2E8F0',borderRadius:4,background:'transparent',cursor:'pointer',color:'#718096'}}>{s.is_active?'Off':'On'}</button>
-                    <button onClick={()=>deleteAdminStage(s.id,s.name)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>�</button>
+                    <button onClick={()=>deleteAdminStage(s.id,s.name)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>×</button>
                   </div>
                 ))}
                 {adminStages.length===0&&<div style={{color:'#A0AEC0',fontSize:13,padding:12}}>No stages found. Run the SQL setup script in Supabase to create the lead_stages table and insert defaults.</div>}
@@ -5095,7 +5095,7 @@ export default function Dashboard({ session }) {
                     <span style={{fontWeight:500,fontSize:12}}>{s.name}</span>
                     <div style={{display:'flex',gap:4}}>
                       <button onClick={()=>toggleLeadSource(s.id,s.is_active)} style={{fontSize:10,padding:'2px 6px',border:'1px solid #E2E8F0',borderRadius:4,background:'transparent',cursor:'pointer',color:'#718096'}}>{s.is_active?'Off':'On'}</button>
-                      <button onClick={()=>deleteLeadSource(s.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>�</button>
+                      <button onClick={()=>deleteLeadSource(s.id)} style={{width:22,height:22,border:'1px solid #FED7D7',borderRadius:4,background:'transparent',cursor:'pointer',color:'#FC8181',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>×</button>
                     </div>
                   </div>
                 ))}
@@ -5141,7 +5141,7 @@ export default function Dashboard({ session }) {
                     <div style={{padding:16,color:'#A0AEC0',fontSize:13}}>No activity logs found.</div>
                   ):activityLogs.map(log=>(
                     <div key={log.id} style={{padding:'10px 16px',borderBottom:'1px solid #F3F4F6'}}>
-                      <div style={{fontSize:12,fontWeight:500,color:'#2D3748'}}>{log.profiles?.full_name||'Unknown'} � <span style={{color:'#185FA5'}}>{log.action}</span></div>
+                      <div style={{fontSize:12,fontWeight:500,color:'#2D3748'}}>{log.profiles?.full_name||'Unknown'} — <span style={{color:'#185FA5'}}>{log.action}</span></div>
                       {log.details&&<div style={{fontSize:11,color:'#718096',marginTop:2}}>{typeof log.details==='string'?log.details:JSON.stringify(log.details)}</div>}
                       <div style={{fontSize:10,color:'#A0AEC0',marginTop:2}}>{new Date(log.created_at).toLocaleString('en-IN',{timeZone:IST_TZ})}</div>
                     </div>
@@ -5214,7 +5214,7 @@ export default function Dashboard({ session }) {
         const rows=toNotify.map(l=>{
           const agentName=agentMap[l.assigned_to]||'Unassigned'
           return{type:'stale_lead',lead_id:l.id,agent_id:l.assigned_to||null,agent_name:agentName,customer_name:l.full_name,stage:l.status,
-            message:`?? ${agentName}'s lead "${l.full_name}" has been in "${l.status}" for 3+ days with no Login.`}
+            message:`🔴 ${agentName}'s lead "${l.full_name}" has been in "${l.status}" for 3+ days with no Login.`}
         })
         await supabase.from('notifications').insert(rows)
       }catch(e){console.error('[checkStaleLeads]',e)}
@@ -5274,7 +5274,7 @@ export default function Dashboard({ session }) {
           type:'leads_assigned',
           agent_id:agentId,
           agent_name:profile?.full_name||'Admin',
-          message:`?? ${count} new lead${count>1?'s':''} assigned to you`,
+          message:`📥 ${count} new lead${count>1?'s':''} assigned to you`,
         }])
       }catch(e){console.error('[notifyAgentAssigned]',e)}
     }
@@ -5310,7 +5310,7 @@ export default function Dashboard({ session }) {
         })
         const{error,data}=await supabase.from('leads').insert(chunk).select('id')
         if(error){ fail+=chunk.length; if(!firstError)firstError=error.message }
-        else if(!data||data.length===0){ fail+=chunk.length; if(!firstError)firstError='No rows were inserted � likely a Row Level Security (RLS) block on assigning leads to this agent.' }
+        else if(!data||data.length===0){ fail+=chunk.length; if(!firstError)firstError='No rows were inserted — likely a Row Level Security (RLS) block on assigning leads to this agent.' }
         else { ok+=data.length; if(data.length<chunk.length){ fail+=chunk.length-data.length } }
       }
       setImportResult({ok,fail,total:valid.length,error:firstError})
@@ -5324,7 +5324,7 @@ export default function Dashboard({ session }) {
       <div className="page-header">
         <div>
           <h1 style={{display:'flex',alignItems:'center',gap:8,fontSize:isMobile?16:18}}><IconLayoutDashboard size={isMobile?18:22} strokeWidth={1.6}/>Dashboard</h1>
-          <p>Welcome, {profile?.full_name||'Admin'} � {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:IST_TZ})}</p>
+          <p>Welcome, {profile?.full_name||'Admin'} — {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:IST_TZ})}</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           <button onClick={()=>{setShowImport(true);fetchCSVAgents();setRawRows([]);setFileHeaders([]);setColMap({});setCsvError('');setImportResult(null)}}
@@ -5373,20 +5373,20 @@ export default function Dashboard({ session }) {
             <div style={{background:'linear-gradient(135deg,#185FA5,#1e40af)',padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div>
                 <div style={{color:'white',fontWeight:700,fontSize:16,display:'flex',alignItems:'center',gap:8}}><IconDownload size={18}/>Import Leads from Excel / CSV</div>
-                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Upload any Excel or CSV � map columns in the next step</div>
+                <div style={{color:'rgba(255,255,255,0.7)',fontSize:12,marginTop:2}}>Upload any Excel or CSV — map columns in the next step</div>
               </div>
               <button onClick={()=>setShowImport(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:32,height:32,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={16}/></button>
             </div>
             <div style={{padding:20,overflowY:'auto',flex:1}}>
               {/* Step 1: Upload */}
               <div style={{marginBottom:18}}>
-                <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 1 � Upload Excel (.xlsx/.xls) or CSV file</div>
+                <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 1 — Upload Excel (.xlsx/.xls) or CSV file</div>
                 <div style={{background:'#F8FAFC',border:'2px dashed #CBD5E0',borderRadius:10,padding:'20px',textAlign:'center',cursor:'pointer',position:'relative'}}
                   onClick={()=>document.getElementById('csv-file-input').click()}>
                   <input id="csv-file-input" type="file" accept=".xlsx,.xls,.csv,.txt" style={{display:'none'}} onChange={handleFile}/>
                   <IconDownload size={28} color="#94A3B8" style={{display:'block',margin:'0 auto 8px'}}/>
                   <div style={{fontSize:13,fontWeight:600,color:'#374151'}}>Click to upload Excel (.xlsx/.xls) or CSV</div>
-                  <div style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>Upload Excel (.xlsx/.xls) or CSV � any column headers</div>
+                  <div style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>Upload Excel (.xlsx/.xls) or CSV — any column headers</div>
                 </div>
                 {csvError&&<div style={{marginTop:8,color:'#DC2626',fontSize:12,fontWeight:500}}>{csvError}</div>}
               </div>
@@ -5394,7 +5394,7 @@ export default function Dashboard({ session }) {
               {/* Step 2: Column Mapping */}
               {fileHeaders.length>0&&(
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 2 � Map Columns <span style={{fontWeight:400,color:'#6B7280',fontSize:12}}>(* required)</span></div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 2 — Map Columns <span style={{fontWeight:400,color:'#6B7280',fontSize:12}}>(* required)</span></div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
                     {[
                       {field:'full_name',label:'Name *',required:true},
@@ -5411,7 +5411,7 @@ export default function Dashboard({ session }) {
                         <div style={{fontSize:11,fontWeight:600,color:required?'#DC2626':'#6B7280',marginBottom:3}}>{label}</div>
                         <select value={colMap[field]||''} onChange={e=>setColMap(p=>({...p,[field]:e.target.value||null}))}
                           style={{width:'100%',padding:'7px 10px',border:'1.5px solid '+(required&&!colMap[field]?'#FCA5A5':'#E2E8F0'),borderRadius:7,fontSize:12,outline:'none',background:'white'}}>
-                          <option value="">� none �</option>
+                          <option value="">— none —</option>
                           {fileHeaders.map(h=><option key={h} value={h}>{h}</option>)}
                         </select>
                       </div>
@@ -5423,10 +5423,10 @@ export default function Dashboard({ session }) {
               {/* Step 3: Assign */}
               {rawRows.length>0&&(
                 <div style={{marginBottom:18}}>
-                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 3 � Assign to Agent (optional)</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 3 — Assign to Agent (optional)</div>
                   <select value={assignTo} onChange={e=>setAssignTo(e.target.value)}
                     style={{width:'100%',padding:'10px 12px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',background:'white'}}>
-                    <option value="">� Unassigned �</option>
+                    <option value="">— Unassigned —</option>
                     {csvAgents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
                   </select>
                 </div>
@@ -5436,7 +5436,7 @@ export default function Dashboard({ session }) {
               {csvRows.length>0&&(
                 <div style={{marginBottom:18}}>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#111827'}}>Preview � {csvRows.length} rows ({csvRows.filter(r=>r._valid).length} valid)</div>
+                    <div style={{fontSize:13,fontWeight:700,color:'#111827'}}>Preview — {csvRows.length} rows ({csvRows.filter(r=>r._valid).length} valid)</div>
                     {csvRows.filter(r=>!r._valid).length>0&&<span style={{fontSize:11,color:'#DC2626',fontWeight:600}}>{csvRows.filter(r=>!r._valid).length} rows missing Name/Number will be skipped</span>}
                   </div>
                   <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #E2E8F0'}}>
@@ -5450,12 +5450,12 @@ export default function Dashboard({ session }) {
                         {csvRows.slice(0,8).map(r=>(
                           <tr key={r._row} style={{borderTop:'1px solid #F3F4F6',opacity:r._valid?1:0.4}}>
                             <td style={{padding:'7px 12px',color:'#9CA3AF'}}>{r._row}</td>
-                            <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'�'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.mobile||'�'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.loan_amount?'?'+r.loan_amount:'�'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.application_id||'�'}</td>
-                            <td style={{padding:'7px 12px',color:'#374151',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||'�'}</td>
-                            <td style={{padding:'7px 12px'}}>{r._valid?<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>? OK</span>:<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 7px',borderRadius:4,fontWeight:600}}>Skip</span>}</td>
+                            <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.mobile||'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.loan_amount?'₹'+r.loan_amount:'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.application_id||'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||'—'}</td>
+                            <td style={{padding:'7px 12px'}}>{r._valid?<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>✓ OK</span>:<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 7px',borderRadius:4,fontWeight:600}}>Skip</span>}</td>
                           </tr>
                         ))}
                         {csvRows.length>8&&<tr><td colSpan={6} style={{padding:'7px 12px',color:'#9CA3AF',textAlign:'center'}}>...and {csvRows.length-8} more rows</td></tr>}
@@ -5469,7 +5469,7 @@ export default function Dashboard({ session }) {
               {importResult&&(
                 <div style={{background:importResult.fail===0?'#F0FFF4':'#FFFBEB',border:'1px solid '+(importResult.fail===0?'#86EFAC':'#FCD34D'),borderRadius:10,padding:14,marginBottom:16}}>
                   <div style={{fontWeight:700,fontSize:14,color:importResult.fail===0?'#065F46':'#92400E',marginBottom:4}}>Import Complete</div>
-                  <div style={{fontSize:13,color:importResult.fail===0?'#166534':'#78350F'}}>? {importResult.ok} leads imported successfully{importResult.fail>0?` � ?? ${importResult.fail} failed`:''}</div>
+                  <div style={{fontSize:13,color:importResult.fail===0?'#166534':'#78350F'}}>✅ {importResult.ok} leads imported successfully{importResult.fail>0?` · ⚠️ ${importResult.fail} failed`:''}</div>
                   {importResult.error&&<div style={{fontSize:12,color:'#dc2626',marginTop:6}}>Error: {importResult.error}</div>}
                 </div>
               )}
@@ -5479,7 +5479,7 @@ export default function Dashboard({ session }) {
               {rawRows.length>0&&!importResult&&(
                 <button onClick={handleImport} disabled={importing||!colMap.full_name||!colMap.mobile||csvRows.filter(r=>r._valid).length===0}
                   style={{padding:'9px 20px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',opacity:(importing||!colMap.full_name||!colMap.mobile||csvRows.filter(r=>r._valid).length===0)?0.6:1}}>
-                  {importing?'Importing�':`Import ${csvRows.filter(r=>r._valid).length} Leads`}
+                  {importing?'Importing…':`Import ${csvRows.filter(r=>r._valid).length} Leads`}
                 </button>
               )}
               {importResult&&<button onClick={()=>setShowImport(false)} style={{padding:'9px 20px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Done</button>}
@@ -5576,10 +5576,10 @@ export default function Dashboard({ session }) {
   if(roleLoading) return(
     <div className='loading-screen'>
       <div className='spinner spinner-lg'/>
-      <p>Loading�</p>
+      <p>Loading…</p>
     </div>
   )
-  // admin uses main layout � no early return
+  // admin uses main layout — no early return
 
   return(
     <div style={{display:'flex',minHeight:'100vh',background:'var(--bg)'}}>
@@ -5651,22 +5651,22 @@ export default function Dashboard({ session }) {
           <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,width:'100%',maxWidth:520,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 50px rgba(0,0,0,0.25)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'18px 22px',borderBottom:'1px solid #EEF2F6'}}>
               <div>
-                <div style={{fontSize:17,fontWeight:700,color:'#0F172A'}}>{viewLead.full_name||'�'}</div>
-                <div style={{fontSize:13,color:'#64748B'}}>{viewLead.mobile||'�'}</div>
+                <div style={{fontSize:17,fontWeight:700,color:'#0F172A'}}>{viewLead.full_name||'—'}</div>
+                <div style={{fontSize:13,color:'#64748B'}}>{viewLead.mobile||'—'}</div>
               </div>
-              <button onClick={()=>setViewLead(null)} style={{border:'none',background:'#F1F5F9',width:32,height:32,borderRadius:8,cursor:'pointer',fontSize:18,color:'#475569'}}>�</button>
+              <button onClick={()=>setViewLead(null)} style={{border:'none',background:'#F1F5F9',width:32,height:32,borderRadius:8,cursor:'pointer',fontSize:18,color:'#475569'}}>×</button>
             </div>
             <div style={{padding:'18px 22px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px 18px'}}>
               {[
-                ['Status',viewLead.status||'�'],
-                ['Previous Status',viewLead.previous_status||'�'],
-                ['Sheet No.',viewLead.sheet_number||'�'],
-                ['City',viewLead.city||'�'],
-                ['Loan Amount',viewLead.loan_amount?'?'+Number(viewLead.loan_amount).toLocaleString('en-IN'):'�'],
-                ['Monthly Salary',viewLead.monthly_salary?'?'+Number(viewLead.monthly_salary).toLocaleString('en-IN'):'�'],
-                ['Company',viewLead.company_name||'�'],
-                ['Application ID',viewLead.application_id||'�'],
-                ['Date',viewLead.created_at?new Date(viewLead.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'�'],
+                ['Status',viewLead.status||'—'],
+                ['Previous Status',viewLead.previous_status||'—'],
+                ['Sheet No.',viewLead.sheet_number||'—'],
+                ['City',viewLead.city||'—'],
+                ['Loan Amount',viewLead.loan_amount?'₹'+Number(viewLead.loan_amount).toLocaleString('en-IN'):'—'],
+                ['Monthly Salary',viewLead.monthly_salary?'₹'+Number(viewLead.monthly_salary).toLocaleString('en-IN'):'—'],
+                ['Company',viewLead.company_name||'—'],
+                ['Application ID',viewLead.application_id||'—'],
+                ['Date',viewLead.created_at?new Date(viewLead.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'],
               ].map(([k,v])=>(
                 <div key={k}>
                   <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>{k}</div>
@@ -5675,7 +5675,7 @@ export default function Dashboard({ session }) {
               ))}
               <div style={{gridColumn:'1 / -1'}}>
                 <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>Notes</div>
-                <div style={{fontSize:13.5,color:'#334155',whiteSpace:'pre-wrap',lineHeight:1.5}}>{viewLead.notes||'�'}</div>
+                <div style={{fontSize:13.5,color:'#334155',whiteSpace:'pre-wrap',lineHeight:1.5}}>{viewLead.notes||'—'}</div>
               </div>
             </div>
           </div>
