@@ -515,7 +515,7 @@ function AgentDashboard({ userId }) {
             }
             return prev
           }
-          if(upd.assigned_to&&upd.assigned_to!==userId&&!(upd.mirror_agents||[]).includes(userId)){
+          if(false&&upd.assigned_to&&upd.assigned_to!==userId&&!(upd.mirror_agents||[]).includes(userId)){
             const next=[...prev.filter(l=>l.id!==upd.id)]
             computePipelineStats(next)
             return next
@@ -4951,17 +4951,17 @@ export default function Dashboard({ session }) {
                 <div style={{overflowX:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}><thead><tr>
 <th style={{width:32,padding:'8px 6px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>
-{[['Name',130],['Mobile',105],['Status',80],['Agent',100],['Loan Amt',85],['FOIR%',60],['Last Note',160],['Actions',180],['Date',75]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
+{[['Name',130],['Mobile',105],['Status',120],['Agent',110],['Loan Amt',90],['Actions',180],['Date',90]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
 </tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={10}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{l.status||'New'}</span></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={agent?.full_name||''}>{agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'₹'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>—</span>}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle'}}>{foir!==null?<span style={{display:'inline-block',padding:'2px 7px',borderRadius:5,fontSize:11,fontWeight:600,background:foir>50?'#FEF2F2':'#F0FDF4',color:foir>50?'#DC2626':'#16A34A'}}>{foir}%</span>:<span style={{color:'#CBD5E1'}}>—</span>}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11,color:'#64748B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={lastNote}>{lastNote||<span style={{color:'#CBD5E1'}}>—</span>}</td>
+
+
 <td style={{padding:'8px 4px',verticalAlign:'middle',whiteSpace:'nowrap'}}>
   <div style={{display:'flex',alignItems:'center',gap:3}}>
     <button onClick={()=>setViewLead(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
