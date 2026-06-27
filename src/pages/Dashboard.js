@@ -2952,7 +2952,9 @@ function AgentDashboard({ userId }) {
                           <div style={{fontSize:13,color:txt2}}>{search||agentStatusSet.length||agentDateFrom||agentDateTo?'No leads match':'No leads assigned yet'}</div>
                         </td></tr>
                       ):filteredLeads.map(lead=>{
-                        const pIdx=PIPELINE.indexOf(lead.status)
+                        const isMirrorLead=Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
+                        const displayStatus=isMirrorLead?(lead.mirror_agent_statuses?.[userId]||lead.status):lead.status
+                        const pIdx=PIPELINE.indexOf(displayStatus)
                         const tc  =TEMP_COLORS[lead.lead_temperature]||TEMP_COLORS.Cold
                         return(
                           <tr key={lead.id} style={{borderBottom:'1px solid '+bdr,transition:'background 0.1s'}}
