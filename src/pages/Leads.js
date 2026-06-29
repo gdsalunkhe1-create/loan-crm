@@ -50,6 +50,7 @@ export default function Leads({ userRole, userId }) {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterSource, setFilterSource] = useState('')
   const [filterAgent, setFilterAgent] = useState('')
+  const [filterSheet, setFilterSheet] = useState('')
   const [selectedLead, setSelectedLead] = useState(null)
   const [note, setNote] = useState('')
   const [statuses, setStatuses] = useState([])
@@ -153,12 +154,14 @@ export default function Leads({ userRole, userId }) {
 
   const SOURCES = ['Referral','Website','Walk-in','IVR','Social Media','Agent','Other']
 
+  const sheetNumbers = Array.from(new Set(leads.map(l => l.sheet_number).filter(Boolean))).sort()
   const filtered = leads.filter(l => {
     const ms = !search || l.full_name?.toLowerCase().includes(search.toLowerCase()) || l.mobile?.includes(search)
     const mf = !filterStatus || l.status === filterStatus
     const msrc = !filterSource || l.lead_source === filterSource
     const mag = !filterAgent || l.assigned_to === filterAgent
-    return ms && mf && msrc && mag
+    const msheet = !filterSheet || l.sheet_number === filterSheet
+    return ms && mf && msrc && mag && msheet
   })
   // Deduplicate by id to prevent duplicate rows from appearing in the table
   const uniqueFiltered = Array.from(new Map(filtered.map(l => [l.id, l])).values())
@@ -685,6 +688,11 @@ export default function Leads({ userRole, userId }) {
             <option value="">All Sources</option>
             {SOURCES.map(s=><option key={s}>{s}</option>)}
           </select>
+          <select className="form-input" style={{width:'150px'}} value={filterSheet}
+            onChange={e=>setFilterSheet(e.target.value)}>
+            <option value="">All Sheets</option>
+            {sheetNumbers.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
           {isAdminOrManager && (
             <select className="form-input" style={{width:'160px'}} value={filterAgent}
               onChange={e=>setFilterAgent(e.target.value)}>
@@ -692,9 +700,9 @@ export default function Leads({ userRole, userId }) {
               {agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}
             </select>
           )}
-          {(filterStatus||filterSource||search||filterAgent) && (
+          {(filterStatus||filterSource||search||filterAgent||filterSheet) && (
             <button className="btn btn-ghost btn-sm"
-              onClick={()=>{setFilterStatus('');setFilterSource('');setSearch('');setFilterAgent('')}}>
+              onClick={()=>{setFilterStatus('');setFilterSource('');setSearch('');setFilterAgent('');setFilterSheet('')}}>
               Clear
             </button>
           )}
