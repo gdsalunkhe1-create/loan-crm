@@ -4689,6 +4689,7 @@ export default function Dashboard({ session }) {
     const apStageStyle=name=>{const s=adminStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return{bg:'#F7FAFC',color:'#4A5568'}}
 
     return(
+      <>
       <div>
         {apToast&&<div style={{position:'fixed',bottom:24,right:24,zIndex:9999,background:apToast.type==='error'?'#dc2626':'#15803d',color:'white',padding:'12px 20px',borderRadius:10,fontSize:14,fontWeight:500,boxShadow:'0 4px 12px rgba(0,0,0,0.2)',maxWidth:320}}>{apToast.msg}</div>}
         <div className="page-header">
@@ -5587,6 +5588,7 @@ export default function Dashboard({ session }) {
         </div>
       </div>
     </div>
+      </>
     )
   }
 
