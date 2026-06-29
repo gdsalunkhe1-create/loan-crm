@@ -5669,6 +5669,8 @@ export default function Dashboard({ session }) {
               {[
                 ['Status',viewLead.status||'—'],
                 ['Previous Status',viewLead.previous_status||'—'],
+                ['Previous Agent',viewLead.previous_agent_name||'—'],
+                ['Last Action Date',viewLead.assigned_at?new Date(viewLead.assigned_at).toLocaleDateString('en-IN',{timeZone:IST_TZ,day:'2-digit',month:'short',year:'numeric'}):'--'],
                 ['Sheet No.',viewLead.sheet_number||'—'],
                 ['City',viewLead.city||'—'],
                 ['Loan Amount',viewLead.loan_amount?'₹'+Number(viewLead.loan_amount).toLocaleString('en-IN'):'—'],
@@ -5686,6 +5688,17 @@ export default function Dashboard({ session }) {
                 <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>Notes</div>
                 <div style={{fontSize:13.5,color:'#334155',whiteSpace:'pre-wrap',lineHeight:1.5}}>{viewLead.notes||'—'}</div>
               </div>
+              {(adminObligations[viewLead.id]||[]).length>0&&(
+                <div style={{gridColumn:'1 / -1'}}>
+                  <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Obligations</div>
+                  {(adminObligations[viewLead.id]||[]).map((o,i)=>(
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #F1F5F9',fontSize:13,color:'#334155'}}>
+                      <span>{o.bank_name||'—'} {o.loan_type?'('+o.loan_type+')':''}</span>
+                      <span style={{fontWeight:600}}>{Number(o.emi_amount||0).toLocaleString('en-IN')}/mo</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
