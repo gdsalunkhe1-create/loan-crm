@@ -5634,7 +5634,7 @@ export default function Dashboard({ session }) {
         </div>
       </div>
     )}
-    </div>>
+    </div>
     )
   }
 
