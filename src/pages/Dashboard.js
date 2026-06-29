@@ -5588,6 +5588,54 @@ export default function Dashboard({ session }) {
         </div>
       </div>
     </div>
+    {viewLead&&(
+      <div onClick={()=>setViewLead(null)} style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:16}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,width:'100%',maxWidth:520,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 50px rgba(0,0,0,0.25)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'18px 22px',borderBottom:'1px solid #EEF2F6'}}>
+            <div>
+              <div style={{fontSize:17,fontWeight:700,color:'##0F172A'}}>{viewLead.full_name||'—'}</div>
+              <div style={{fontSize:13,color:'#64748B'}}>{viewLead.mobile||'—'}</div>
+            </div>
+            <button onClick={()=>setViewLead(null)} style={{border:'none',background:'#F1F5F9',width:32,height:32,borderRadius:8,cursor:'pointer',fontSize:18,color:'#475569'}}>×</button>
+          </div>
+          <div style={{padding:'18px 22px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px 18px'}}>
+            {[
+              ['Status',viewLead.status||'—'],
+              ['Previous Status',viewLead.previous_status||'—'],
+              ['Previous Agent',viewLead.previous_agent_name||'—'],
+              ['Last Action Date',viewLead.assigned_at?new Date(viewLead.assigned_at).toLocaleDateString('en-IN',{timeZone:IST_TZ,day:'2-digit',month:'short',year:'numeric'}):'--'],
+              ['Sheet No.',viewLead.sheet_number||'—'],
+              ['City',viewLead.city||'—'],
+              ['Loan Amount',viewLead.loan_amount?'₹'+Number(viewLead.loan_amount).toLocaleString('en-IN'):'—'],
+              ['Monthly Salary',viewLead.monthly_salary?'₹'+Number(viewLead.monthly_salary).toLocaleString('en-IN'):'—'],
+              ['Company',viewLead.company_name||'—'],
+              ['Application ID',viewLead.application_id||'—'],
+              ['Date',viewLead.created_at?new Date(viewLead.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'],
+            ].map(([k,v])=>(
+              <div key={k}>
+                <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>{k}</div>
+                <div style={{fontSize:14,color:'#1E293B',fontWeight:500}}>{v}</div>
+              </div>
+            ))}
+            <div style={{gridColumn:'1 / -1'}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:3}}>Notes</div>
+              <div style={{fontSize:13.5,color:'#334155',whiteSpace:'pre-wrap',lineHeight:1.5}}>{viewLead.notes||'—'}</div>
+            </div>
+            {(adminObligations[viewLead.id]||[]).length>0&&(
+              <div style={{gridColumn:'1 / -1'}}>
+                <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Obligations</div>
+                {(adminObligations[viewLead.id]||[]).map((o,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #F1F5F9',fontSize:13,color:'#334155'}}>
+                    <span>{o.bank_name||'—'} {o.loan_type?'('+o.loan_type+')':''}</span>
+                    <span style={{fontWeight:600}}>{Number(o.emi_amount||0).toLocaleString('en-IN')}/mo</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
       </>
     )
   }
