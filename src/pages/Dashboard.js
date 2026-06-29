@@ -4417,7 +4417,6 @@ export default function Dashboard({ session }) {
 
   const AdminPanel=()=>{
     const [activeTab,setActiveTab]         =useState('overview')
-    const [viewLead,setViewLead]           =useState(null)
     const isMobile                         =typeof window!=='undefined'&&window.innerWidth<768
     const [users,setUsers]                 =useState([])
     const [dispositions,setDispositions]   =useState([])
