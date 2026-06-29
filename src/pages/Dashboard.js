@@ -4481,6 +4481,14 @@ export default function Dashboard({ session }) {
       return()=>{ supabase.removeChannel(sub); clearInterval(poll); document.removeEventListener('visibilitychange',onVis) }
     },[])
 
+    useEffect(()=>{
+      if(!viewLead) return
+      if(adminObligations[viewLead.id]) return
+      supabase.from('loan_obligations').select('*').eq('lead_id',viewLead.id).then(({data})=>{
+        if(data) setAdminObligations(prev=>({...prev,[viewLead.id]:data}))
+      })
+    },[viewLead])
+
     const fetchUsers=async()=>{
       const{data}=await supabase.from('profiles').select('*').order('role')
       if(data){
