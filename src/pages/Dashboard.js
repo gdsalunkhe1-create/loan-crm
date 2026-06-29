@@ -3204,6 +3204,7 @@ function AgentDashboard({ userId }) {
                 ['Current Status',viewLead.status||'—'],
                 ['Previous Status',viewLead.previous_status||'—'],
                 ['Previous Agent',viewLead.previous_agent_name||'—'],
+                ['Last Action Date',viewLead.assigned_at?new Date(viewLead.assigned_at).toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric'}):'--'],
                 ['Sheet No.',viewLead.sheet_number||'—'],
                 ['City',viewLead.city||'—'],
                 ['Loan Amount',fmtAmt(viewLead.loan_amount)],
