@@ -4451,6 +4451,7 @@ export default function Dashboard({ session }) {
     const statusDropOpenRef                =useRef(false)
     statusDropOpenRef.current = statusDropOpen
     const [leadAgentF,setLeadAgentF]       =useState('All')
+    const [leadSheetF,setLeadSheetF]       =useState('All')
     const [leadDateFrom,setLeadDateFrom]   =useState('')
     const [leadDateTo,setLeadDateTo]       =useState('')
     const [apToast,setApToast]             =useState(null)
@@ -4681,7 +4682,8 @@ export default function Dashboard({ session }) {
     adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
     const dupLeadIds=new Set()
     adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) dupLeadIds.add(l.id) })
-    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mF&&mT&&mDup })
+    const leadSheets=['All',...Array.from(new Set(adminLeads.map(l=>l.source).filter(Boolean))).sort()]
+    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSheet=leadSheetF==='All'||l.source===leadSheetF; const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSheet&&mF&&mT&&mDup })
     const filteredLeads=leadAgentF==='All'?baseFiltered.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):baseFiltered
     const allLdSel=filteredLeads.length>0&&filteredLeads.every(l=>selected.has(l.id))
     const filteredAct=activityFull.filter(a=>{ const mA=!actFdAgent||a.assigned_to===actFdAgent||a.assigned_by===actFdAgent; const mD=!actFdDate||(a.created_at||'').startsWith(actFdDate); return mA&&mD })
@@ -4940,9 +4942,10 @@ export default function Dashboard({ session }) {
                   )}
                 </div>
                 <select className='form-input' style={{width:'auto',fontSize:13}} value={leadAgentF} onChange={e=>setLeadAgentF(e.target.value)}><option value='All'>All Agents</option>{users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}</select>
+                <select className='form-input' style={{width:'auto',fontSize:13}} value={leadSheetF} onChange={e=>setLeadSheetF(e.target.value)}>{leadSheets.map(s=><option key={s} value={s}>{s==='All'?'All Sheets':s}</option>)}</select>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateFrom} onChange={e=>setLeadDateFrom(e.target.value)}/>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateTo} onChange={e=>setLeadDateTo(e.target.value)}/>
-                <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
+                <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setLeadSheetF('All');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
                 <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
                 <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
               </div>
