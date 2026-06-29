@@ -361,6 +361,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
   const [statusF,setStatusF]     = useState('All')
   const [dispF,setDispF]         = useState('All')
   const [agentF,setAgentF]       = useState('All')
+  const [sheetF,setSheetF]       = useState('All')
   const [dateFrom,setDateFrom]   = useState('')
   const [dateTo,setDateTo]       = useState('')
   const [selected,setSelected]   = useState(new Set())
@@ -379,6 +380,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
   const agents  = users.filter(u=>['agent','team_leader'].includes(u.role))
   const statuses= ['All',...Array.from(new Set(leads.map(l=>l.status).filter(Boolean)))]
   const dispNames = ['All',...(dispositions.map(d=>d.label).filter(Boolean))]
+  const sheets = ['All',...Array.from(new Set(leads.map(l=>l.source).filter(Boolean))).sort()]
 
   const dupLeadIds = new Set()
   const mobileAgentCount = {}
@@ -399,11 +401,12 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     const mS=statusF==='All'||l.status===statusF
     const mD=dispF==='All'||l.disposition===dispF
     const mA=agentF==='All'||l.assigned_to===agentF
+    const mSheet=sheetF==='All'||l.source===sheetF
     const effDate=l.assigned_at||l.created_at
     const inRange=(ts)=> !!ts && (!dateFrom||ts>=dateFrom) && (!dateTo||ts<=dateTo+'T23:59:59')
     const mDate=(!dateFrom&&!dateTo) || inRange(effDate)
     const mDup = !showDupOnly || dupLeadIds.has(l.id)
-    return mQ&&mS&&mD&&mA&&mDate&&mDup
+    return mQ&&mS&&mD&&mA&&mSheet&&mDate&&mDup
   })
 
   const allSel = filtered.length>0&&filtered.every(l=>selected.has(l.id))
@@ -414,7 +417,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     setSelected(next)
   }
   const toggleOne = id => { const next=new Set(selected); next.has(id)?next.delete(id):next.add(id); setSelected(next) }
-  const clearFilters = () => { setSearch('');setStatusF('All');setDispF('All');setAgentF('All');setDateFrom('');setDateTo('') }
+  const clearFilters = () => { setSearch('');setStatusF('All');setDispF('All');setAgentF('All');setSheetF('All');setDateFrom('');setDateTo('') }
 
   const doAssign = async (type) => {
     if(!assignTo||selected.size===0) return
@@ -547,6 +550,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           <div><label style={LBL}>Status</label><select style={SEL} value={statusF} onChange={e=>setStatusF(e.target.value)}>{statuses.map(s=><option key={s}>{s}</option>)}</select></div>
           <div><label style={LBL}>Disposition</label><select style={SEL} value={dispF} onChange={e=>setDispF(e.target.value)}>{dispNames.map(d=><option key={d}>{d}</option>)}</select></div>
           <div><label style={LBL}>Agent</label><select style={SEL} value={agentF} onChange={e=>setAgentF(e.target.value)}><option value="All">All Agents</option>{agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}</select></div>
+          <div><label style={LBL}>Sheet</label><select style={SEL} value={sheetF} onChange={e=>setSheetF(e.target.value)}>{sheets.map(s=><option key={s} value={s}>{s==='All'?'All Sheets':s}</option>)}</select></div>
           <div><label style={LBL}>From</label><input type="date" style={SEL} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
           <div><label style={LBL}>To</label><input type="date" style={SEL} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
           <Btn outline onClick={clearFilters} style={{marginBottom:1}}>Clear</Btn>
