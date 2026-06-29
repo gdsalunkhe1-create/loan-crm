@@ -4689,7 +4689,6 @@ export default function Dashboard({ session }) {
     const apStageStyle=name=>{const s=adminStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return{bg:'#F7FAFC',color:'#4A5568'}}
 
     return(
-      <>
       <div>
         {apToast&&<div style={{position:'fixed',bottom:24,right:24,zIndex:9999,background:apToast.type==='error'?'#dc2626':'#15803d',color:'white',padding:'12px 20px',borderRadius:10,fontSize:14,fontWeight:500,boxShadow:'0 4px 12px rgba(0,0,0,0.2)',maxWidth:320}}>{apToast.msg}</div>}
         <div className="page-header">
@@ -5587,7 +5586,6 @@ export default function Dashboard({ session }) {
           </div>
         </div>
       </div>
-    </div>
     {viewLead&&(
       <div onClick={()=>setViewLead(null)} style={{position:'fixed',inset:0,background:'rgba(15,23,42,0.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:16}}>
         <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:14,width:'100%',maxWidth:520,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 50px rgba(0,0,0,0.25)'}}>
@@ -5636,7 +5634,7 @@ export default function Dashboard({ session }) {
         </div>
       </div>
     )}
-      </>
+    </div>>
     )
   }
 
