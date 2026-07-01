@@ -669,7 +669,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
                 setReassigning(true)
                 const currentMirrors = reassignTarget.mirror_agents||[]
                 const newMirrors = [...new Set([...currentMirrors, reassignTarget.assigned_to, reassignTo].filter(Boolean))]
-                await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror'}).eq('id',reassignTarget.id)
+                await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
                 showToast('Lead reassigned. Original agent retains access.')
                 setShowReassignModal(false);setReassignTarget(null);setReassignTo('');setReassigning(false);reload()
               }} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9ca3af',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600}}>

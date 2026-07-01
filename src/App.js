@@ -18,9 +18,10 @@ function App() {
       setSession(session)
       setLoading(false)
     })
-    supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
+    return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {

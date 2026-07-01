@@ -15,6 +15,7 @@ import Campaigns from './Campaigns'
 import CallingWorkspace from './AgentCallingFlow'
 import CibilParser from './CibilParser'
 import EmiCalculator from './EmiCalculator'
+import TaxCalculator from './TaxCalculator'
 import CamCalculator from './CamCalculator'
 import CallAssist from './CallAssist'
 import {
@@ -501,7 +502,7 @@ function AgentDashboard({ userId }) {
         const upd=payload.new
         if(!upd?.id){
           console.log('[RT] leads UPDATE: empty payload (RLS blocked), falling back to fetchAll')
-          fetchAllRef.current?.()
+          debouncedFetchAll()
           setLastSynced(new Date())
           return
         }
@@ -515,7 +516,7 @@ function AgentDashboard({ userId }) {
             }
             return prev
           }
-          if(upd.assigned_to&&upd.assigned_to!==userId){setTimeout(()=>fetchAllRef.current?.(),50);return prev;}if(false){
+          if(upd.assigned_to&&upd.assigned_to!==userId){debouncedFetchAll();return prev;}if(false){
             const next=[...prev.filter(l=>l.id!==upd.id)]
             computePipelineStats(next)
             return next
@@ -533,7 +534,7 @@ function AgentDashboard({ userId }) {
         const inserted=payload.new
         if(!inserted?.id){
           console.log('[RT] leads INSERT: empty payload, falling back to fetchAll')
-          fetchAllRef.current?.()
+          debouncedFetchAll()
           setLastSynced(new Date())
           return
         }
@@ -876,6 +877,11 @@ function AgentDashboard({ userId }) {
     setLeadObligations(obligationMap)
     computePipelineStats(leads)
     setLoading(false)
+  }
+  const debounceTimerRef = useRef(null)
+  const debouncedFetchAll = () => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+    debounceTimerRef.current = setTimeout(() => { fetchAllRef.current?.() }, 1500)
   }
   // Always keep ref pointing to latest fetchAll (silent=true so background refreshes don't flash the spinner)
   fetchAllRef.current = ()=>fetchAll({silent:true})
@@ -4350,7 +4356,7 @@ export default function Dashboard({ session }) {
 
   const getProfile=async()=>{
     const userId=session?.user?.id
-    if(!userId){ console.log('[Auth] No session user yet — waiting'); return }
+    if(!userId){ setRoleLoading(false); return }
     try{
       const{data,error:profileErr}=await supabase.from('profiles').select('*').eq('id',userId).single()
       if(profileErr){ console.error('[Profile] Fetch error:',profileErr) }
@@ -4406,6 +4412,7 @@ export default function Dashboard({ session }) {
       {id:'cibil-paisabazaar', label:'PaisaBazaar Analyzer',   icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'bsa',               label:'🔍 Bank Analyzer',        icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'emi',               label:'EMI Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
+      {id:'tax',               label:'Tax Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'cam',               label:'📋 CAM Builder',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'call-assist',       label:'📞 Call Assist',          icon:'headset',  roles:['agent','team_leader','manager','admin']},
     ]},
@@ -4536,9 +4543,7 @@ export default function Dashboard({ session }) {
         const originalAgent=reassignTarget.assigned_to
         const currentMirrors=reassignTarget.mirror_agents||[]
         const newMirrors=[...new Set([...currentMirrors,originalAgent].filter(Boolean))]
-        const newMirrorStatuses={...(reassignTarget.mirror_agent_statuses||{})}; if(originalAgent) newMirrorStatuses[originalAgent]=reassignTarget.status
-        const prevAgentName=users.find(u=>u.id===originalAgent)?.full_name||null
-        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,mirror_agent_statuses:newMirrorStatuses,assignment_type:'mirror',status:'New',previous_status:reassignTarget.status,previous_agent_name:prevAgentName,assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
+        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
         try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
@@ -4682,8 +4687,8 @@ export default function Dashboard({ session }) {
     adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
     const dupLeadIds=new Set()
     adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) dupLeadIds.add(l.id) })
-    const leadSheets=['All',...Array.from(new Set(adminLeads.map(l=>l.source).filter(Boolean))).sort()]
-    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSheet=leadSheetF==='All'||l.source===leadSheetF; const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSheet&&mF&&mT&&mDup })
+    const leadSheets=['All',...Array.from(new Set(adminLeads.map(l=>l.sheet_number).filter(Boolean))).sort()]
+    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSheet=leadSheetF==='All'||l.sheet_number===leadSheetF; const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSheet&&mF&&mT&&mDup })
     const filteredLeads=leadAgentF==='All'?baseFiltered.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):baseFiltered
     const allLdSel=filteredLeads.length>0&&filteredLeads.every(l=>selected.has(l.id))
     const filteredAct=activityFull.filter(a=>{ const mA=!actFdAgent||a.assigned_to===actFdAgent||a.assigned_by===actFdAgent; const mD=!actFdDate||(a.created_at||'').startsWith(actFdDate); return mA&&mD })
@@ -4959,7 +4964,7 @@ export default function Dashboard({ session }) {
                     <option value=''>Reassign to agent...</option>
                     {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
-                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; const bulkMirrorStatuses={...(lead.mirror_agent_statuses||{})}; if(lead.assigned_to) bulkMirrorStatuses[lead.assigned_to]=lead.status; const bulkPrevAgent=users.find(u=>u.id===lead.assigned_to)?.full_name||null; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,mirror_agent_statuses:bulkMirrorStatuses,assignment_type:'mirror',status:'New',previous_status:lead.status,previous_agent_name:bulkPrevAgent,assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`📥 ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
+                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`📥 ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
                   <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>🗑 Delete Selected</button>
                   <button onClick={()=>setSelected(new Set())} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontSize:12}}>Clear</button>
                 </div>
@@ -5709,6 +5714,7 @@ export default function Dashboard({ session }) {
         {activePage==='cibil-paisabazaar' &&<ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="paisabazaar" onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>}
         {activePage==='bsa'               &&<ErrorBoundary><BankStatementAnalyzer/></ErrorBoundary>}
         {activePage==='emi'               &&<ErrorBoundary><EmiCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
+        {activePage==='tax'               &&<ErrorBoundary><TaxCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='cam'               &&<ErrorBoundary><CamCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='call-assist'       &&<ErrorBoundary><CallAssist    userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='reports'  &&<ErrorBoundary><Reports   userRole={role} userId={profile?.id}/></ErrorBoundary>}
