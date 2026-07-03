@@ -19,7 +19,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 })
 
-const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2bnpldWVsZGZteGhlc21vZXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzY2MDA0NCwiZXhwIjoyMDkzMjM2MDQ0fQ.J7qjEpXnTlFvRJDM3uHG4JbPmFakaSFnu16mLtCvSdA'
+const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1bGR6cnZoeWp3c3J3dGZwdmFlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzA1ODg0MiwiZXhwIjoyMDk4NjM0ODQyfQ.UXJsk0pNWWn6ItHVVsybv7Bky8hxE18LhGxZ54VWWm8'
 
 export const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
   auth: {

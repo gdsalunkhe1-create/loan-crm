@@ -471,12 +471,6 @@ function AgentDashboard({ userId }) {
     const iv=setInterval(()=>{checkRemindersRef.current?.();fetchCallbackTasksRef.current?.()},30000)
     return()=>clearInterval(iv)
   },[userId])
-  // 8-second lead-list polling fallback (catches updates when RT channel is unreliable)
-  useEffect(()=>{
-    if(!userId) return
-    const leadPoll=setInterval(()=>{ if(!agentStatusDropOpenRef.current) fetchAllRef.current?.() },8000)
-    return()=>clearInterval(leadPoll)
-  },[userId])
   // Keep ref in sync so RT obligation callback can check which lead panel is open
   useEffect(()=>{ selectedLeadObRef.current=selectedLeadForObligations },[selectedLeadForObligations])
   // Keep reminderPopupRef in sync so checkReminders never reads a stale closure value
