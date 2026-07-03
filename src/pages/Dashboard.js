@@ -1,6 +1,8 @@
 ﻿/* eslint-disable */
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
+import { analyzeBankStatement } from '../utils/bankBehaviour'
+import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
 import * as XLSX from 'xlsx'
 import { exportToExcel, parseSpreadsheet, autoMapHeaders } from '../utils/spreadsheet'
 import { IST_TZ, nowIST, parseIST, formatIST, addMinutes, compareIST, buildIST, toDbTimestamp } from '../utils/timeUtils'
@@ -961,9 +963,9 @@ function AgentDashboard({ userId }) {
     fetchAllRef.current?.()
     if(newStatus==='Lead'){
       const lead=data[0]
-      notifyAdmins({type:'lead_saved',lead_id:leadId,customer_name:lead.full_name,amount:lead.loan_amount||null,
-        message:`🎯 ${profile?.full_name||'Agent'} booked a LEAD — ${lead.full_name}${lead.loan_amount?' · ₹'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
-      })
+      // notifyAdmins({type:'lead_saved',lead_id:leadId,customer_name:lead.full_name,amount:lead.loan_amount||null,
+      //   message:`🎯 ${profile?.full_name||'Agent'} booked a LEAD — ${lead.full_name}${lead.loan_amount?' · ₹'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
+      // })
     }
   }
 
@@ -3799,86 +3801,12 @@ function BankStatementAnalyzer() {
   const [error, setError] = useState(null)
   const [dragOver, setDragOver] = useState(false)
 
-  const toBase64 = (f) => new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result.split(',')[1])
-    reader.onerror = reject
-    reader.readAsDataURL(f)
-  })
-
   const analyze = async () => {
     if (!file) return
     setLoading(true); setError(null); setResult(null)
     try {
-      const base64 = await toBase64(file)
-      const prompt = `You are an expert Indian bank statement analyzer for a lending company. Analyze this bank statement PDF thoroughly and return ONLY a valid JSON object (no markdown, no explanation, no backticks) with exactly this structure:
-
-{
-  "summary": {
-    "account_holder": "name if found",
-    "bank_name": "bank name",
-    "account_number": "last 4 digits if visible",
-    "statement_period": "from - to",
-    "total_credits": 0,
-    "total_debits": 0,
-    "average_monthly_balance": 0,
-    "net_cash_flow": 0
-  },
-  "risk_flags": [
-    { "type": "BOUNCE/ECS_RETURN/CC_FUNDING/LOAN_STACKING/GAMBLING/MIN_BAL_CHARGE", "date": "", "description": "", "amount": 0, "severity": "HIGH/MEDIUM/LOW" }
-  ],
-  "watchlist": [
-    { "type": "ROUND_FIGURE/UPI_LARGE/SALARY_ADVANCE/FREQUENT_ATM/INWARD_CHEQUE_RETURN", "date": "", "description": "", "amount": 0 }
-  ],
-  "positive_signals": [
-    { "type": "REGULAR_SALARY/GST_PAYMENT/INSURANCE_PREMIUM/CONSISTENT_BALANCE", "date": "", "description": "", "amount": 0 }
-  ],
-  "emi_obligations": [
-    { "party": "", "amount": 0, "frequency": "MONTHLY", "type": "EMI/ECS/NACH", "first_seen": "", "last_seen": "", "count": 0 }
-  ],
-  "cc_vendor_funding": [
-    { "vendor": "", "date": "", "amount": 0, "description": "" }
-  ],
-  "repeat_parties": [
-    { "party": "", "total_debit": 0, "total_credit": 0, "transaction_count": 0, "flag": "NORMAL/SUSPICIOUS" }
-  ],
-  "monthly_cashflow": [
-    { "month": "", "total_credit": 0, "total_debit": 0, "closing_balance": 0, "bounce_count": 0 }
-  ],
-  "all_transactions": [
-    { "date": "", "description": "", "debit": 0, "credit": 0, "balance": 0, "category": "SALARY/EMI/BOUNCE/ECS_RETURN/CC_FUNDING/UTILITY/ATM/UPI/TRANSFER/INSURANCE/GST/GAMBLING/OTHER", "flag": "" }
-  ],
-  "credit_assessment": {
-    "overall_risk": "LOW/MEDIUM/HIGH",
-    "income_stability": "STABLE/UNSTABLE/IRREGULAR",
-    "estimated_monthly_income": 0,
-    "total_emi_burden": 0,
-    "foir_estimate": 0,
-    "recommendation": "PROCEED/CAUTION/REJECT",
-    "summary_notes": ""
-  }
-}
-
-Known Credit Card / Fintech Vendors to detect (mark as CC_FUNDING): Slice, Kreditbee, KreditBee, Navi, Paytm Postpaid, LazyPay, ZestMoney, MoneyTap, EarlySalary, Early Salary, Kissht, Prefr, Faircent, Lendingkart, FlexSalary, CASHe, PaySense, Fibe, SmartCoin, StashFin, Muthoot, Manappuram, IIFL, Capital Float, Indifi, NeoGrowth, Lendbox, RupeeRedee, mPokket, Credy, AnyTimeLoan, LoanTap, Fullerton, HomeCredit, Home Credit, Bajaj Finserv, HDB Financial, HDFC Sales, Tata Capital, Aditya Birla Finance, L&T Finance, Cholamandalam.
-
-Bounces and ECS Returns: Look for keywords like RETURN, BOUNCE, DISHONOUR, DIShonour, UNPAID, INSUFFICIENT, INWARD RTN, ECS RTN, NACH RTN, ACH RTN, CHQ RTN, CHEQUE RETURN.
-
-Gambling: Dream11, MPL, My11Circle, Paytm First Games, BalleBaazi, Betway, 1xBet, Rummy, PokerBaazi, Adda52.
-
-Return only the raw JSON. No markdown, no explanation.`
-
-      const response = await fetch('/api/analyze-statement', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfBase64: base64 })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Server error')
-      }
-
+      const buf = await file.arrayBuffer()
+      const data = await analyzeBankStatement(buf, '')
       setResult(data)
     } catch (e) {
       setError('Analysis failed. Please ensure the PDF is a valid bank statement and try again. ' + e.message)
@@ -3900,6 +3828,8 @@ Return only the raw JSON. No markdown, no explanation.`
     a.download = `bank_analysis_${Date.now()}.csv`; a.click()
     URL.revokeObjectURL(url)
   }
+
+  const downloadXLSX = () => { if (result) downloadBsaWorkbook(result) }
 
   const riskColor = r => r==='HIGH'?'#dc2626':r==='MEDIUM'?'#d97706':'#16a34a'
   const sevColor  = s => s==='HIGH'?'#fef2f2':s==='MEDIUM'?'#fffbeb':'#f0fdf4'
@@ -3924,9 +3854,9 @@ Return only the raw JSON. No markdown, no explanation.`
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
         <div>
           <h2 style={{fontSize:18,fontWeight:700,color:'#111827',margin:0}}>🔍 Bank Statement Analyzer</h2>
-          <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>AI-powered credit risk analysis for loan processing</div>
+          <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>Local credit risk analysis for loan processing</div>
         </div>
-        {result && <Btn onClick={downloadCSV}>⬇ Download CSV</Btn>}
+        {result && <div style={{display:'flex',gap:8}}><Btn onClick={downloadXLSX}>⬇ Excel Report</Btn><Btn outline onClick={downloadCSV}>⬇ CSV</Btn></div>}
       </div>
 
       {!result && (
@@ -4546,7 +4476,7 @@ export default function Dashboard({ session }) {
         const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
-        try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
+        // try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
         showApToast('Lead reassigned to '+(agent?.full_name||'agent')+'. Original agent retains access.')
         setReassignTarget(null); setReassignTo(''); fetchLeads(); fetchActivityFull()
       }catch(err){ showApToast('Error: '+err.message,'error') }
@@ -5294,12 +5224,12 @@ export default function Dashboard({ session }) {
     const notifyAgentAssigned=async(agentId,count)=>{
       if(!agentId||!count)return
       try{
-        await supabase.from('notifications').insert([{
-          type:'leads_assigned',
-          agent_id:agentId,
-          agent_name:profile?.full_name||'Admin',
-          message:`📥 ${count} new lead${count>1?'s':''} assigned to you`,
-        }])
+        // await supabase.from('notifications').insert([{
+        //   type:'leads_assigned',
+        //   agent_id:agentId,
+        //   agent_name:profile?.full_name||'Admin',
+        //   message:`📥 ${count} new lead${count>1?'s':''} assigned to you`,
+        // }])
       }catch(e){console.error('[notifyAgentAssigned]',e)}
     }
 

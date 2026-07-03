@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
+import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
 
 const IST_TZ = 'Asia/Kolkata'
 
@@ -1617,24 +1618,6 @@ function BankStatementAnalyzer() {
 
   const steps = ['Uploading statement...', 'Analyzing income & risk...', 'Detecting EMIs & patterns...', 'Checking behaviour patterns...', 'Building report...']
 
-  const toBase64 = f => new Promise((res, rej) => {
-    const r = new FileReader()
-    r.onload = () => res(r.result.split(',')[1])
-    r.onerror = rej
-    r.readAsDataURL(f)
-  })
-
-  const callAPI = async (base64, phaseNum) => {
-    const resp = await fetch('/api/analyze-statement', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdfBase64: base64, phase: phaseNum })
-    })
-    const data = await resp.json()
-    if (!resp.ok) throw new Error(data.error || 'Server error')
-    return data
-  }
-
   const analyze = async () => {
     if (!file) return
     setError(null)
@@ -1642,17 +1625,12 @@ function BankStatementAnalyzer() {
     setBehaviour(null)
     setPhase(1)
     try {
-      const base64 = await toBase64(file)
-      setPhase(2)
-      const p1 = await callAPI(base64, 1)
-      setPhase(3)
-      const p2 = await callAPI(base64, 2)
-      setPhase(4)
       const buf = await file.arrayBuffer()
-      const b = await analyzeBankStatement(buf, p1.summary?.account_holder || '')
+      setPhase(3)
+      const b = await analyzeBankStatement(buf, '')
       setPhase(5)
-      await new Promise(r => setTimeout(r, 400))
-      setResult({ ...p1, ...p2, all_transactions: [] })
+      await new Promise(r => setTimeout(r, 300))
+      setResult(b)
       setBehaviour(b)
       setPhase(0)
     } catch (e) {
@@ -1677,6 +1655,8 @@ function BankStatementAnalyzer() {
     a.download = `bsa_${result.summary?.account_holder?.replace(/\s/g,'_') || Date.now()}.csv`
     a.click()
   }
+
+  const downloadXLSX = () => { if (result) downloadBsaWorkbook(result) }
 
   const RC = r => r === 'HIGH' ? '#dc2626' : r === 'MEDIUM' ? '#d97706' : '#16a34a'
   const SC = s => s === 'HIGH' ? { bg: '#fef2f2', tc: '#dc2626' } : s === 'MEDIUM' ? { bg: '#fffbeb', tc: '#d97706' } : { bg: '#f0fdf4', tc: '#16a34a' }
@@ -1736,7 +1716,7 @@ function BankStatementAnalyzer() {
     <div>
       <div style={{ marginBottom:24 }}>
         <h2 style={{ fontSize:20, fontWeight:700, color:'#111827', margin:'0 0 4px' }}>🔍 Bank Statement Analyzer</h2>
-        <p style={{ fontSize:13, color:'#6b7280', margin:0 }}>AI-powered credit risk analysis · Upload any Indian bank statement PDF</p>
+        <p style={{ fontSize:13, color:'#6b7280', margin:0 }}>Local credit risk analysis · Upload any Indian bank statement PDF</p>
       </div>
       <div
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
@@ -1772,7 +1752,7 @@ function BankStatementAnalyzer() {
       <div style={{ marginTop:28, display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:12 }}>
         {[
           { icon:'🏦', label:'All Indian banks', sub:'HDFC, SBI, ICICI, Axis...' },
-          { icon:'⚡', label:'Fast 2-phase AI', sub:'Results in ~20 seconds' },
+          { icon:'⚡', label:'Instant local analysis', sub:'No upload to any server' },
           { icon:'🔒', label:'Secure analysis', sub:'Data not stored' },
           { icon:'📊', label:'Full credit report', sub:'Risk, EMI, FOIR & more' },
         ].map(f => (
@@ -1797,6 +1777,7 @@ function BankStatementAnalyzer() {
           <div style={{ fontSize:12, color:'#9ca3af' }}>{sm.account_holder} · {sm.bank_name} · {sm.statement_period}</div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
+          <Btn small onClick={downloadXLSX}>⬇ Excel Report</Btn>
           <Btn small onClick={downloadCSV}>⬇ CSV</Btn>
           <Btn small outline onClick={reset}>← New Analysis</Btn>
         </div>
