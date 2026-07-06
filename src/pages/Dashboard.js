@@ -2885,7 +2885,7 @@ function AgentDashboard({ userId }) {
                           <div style={{fontWeight:700,color:'#185FA5',fontSize:15}}>{fmtAmt(lead.loan_amount)}</div>
                           {lead.monthly_salary&&<div style={{fontSize:11,color:txt2}}>Sal: {fmtAmt(lead.monthly_salary)}</div>}
                         </div>
-                        <select value={lead.status||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
+                        <select value={displayStatus||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
                           style={{background:st.bg,color:st.color,border:'none',padding:'6px 10px',borderRadius:20,fontSize:12,fontWeight:600,cursor:'pointer',outline:'none',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
                           {stageNames.map(s=><option key={s} value={s} style={{background:'white',color:'black'}}>{s}</option>)}
                         </select>
@@ -2991,10 +2991,10 @@ function AgentDashboard({ userId }) {
                               {lead.monthly_salary&&<div style={{fontSize:10,color:txt2}}>Sal: {fmtAmt(lead.monthly_salary)}</div>}
                             </td>
                             <td style={{padding:'12px 14px'}}>
-                              <select value={lead.status||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
+                              <select value={displayStatus||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
                                 style={{
-                                  background:(stageBadgeStyle[lead.status]||{bg:'#F1EFE8'}).bg,
-                                  color:(stageBadgeStyle[lead.status]||{color:'#5F5E5A'}).color,
+                                  background:(stageBadgeStyle[displayStatus]||{bg:'#F1EFE8'}).bg,
+                                  color:(stageBadgeStyle[displayStatus]||{color:'#5F5E5A'}).color,
                                   border:'none',
                                   padding:'6px 28px 6px 12px',
                                   borderRadius:20,
@@ -3319,7 +3319,8 @@ function TeamLeaderPanel({ userId }) {
   const [calls,setCalls]           =useState([])
   const [agentStats,setAgentStats] =useState([])
   const [dateRange,setDateRange]   =useState('today')
-  const [activeTab,setActiveTab]   =useState('overview')
+  const [activeTab,_setActiveTab]        =useState(_apTab)
+    const setActiveTab=(t)=>{_apTab=t;_setActiveTab(t)}
   const [loading,setLoading]       =useState(true)
   const [overdueAlerts,setOverdueAlerts]=useState([])
   const [showAlerts,setShowAlerts] =useState(false)
@@ -3534,7 +3535,8 @@ function ManagerPanel({ userId }) {
   const [calls,setCalls]           =useState([])
   const [agentStats,setAgentStats] =useState([])
   const [dateRange,setDateRange]   =useState('today')
-  const [activeTab,setActiveTab]   =useState('overview')
+  const [activeTab,_setActiveTab]        =useState(_apTab)
+    const setActiveTab=(t)=>{_apTab=t;_setActiveTab(t)}
   const [loading,setLoading]       =useState(true)
   const isMobile=useIsMobile()
 
@@ -4326,7 +4328,8 @@ Return only the raw JSON. No markdown, no explanation.`
 
 // =============================================
 // MAIN DASHBOARD
-// =============================================
+// ==============================================
+let _apTab='overview'
 export default function Dashboard({ session }) {
   const [activePage,setActivePage]   =useState('dashboard')
   const [profile,setProfile]         =useState(null)
@@ -4349,7 +4352,7 @@ export default function Dashboard({ session }) {
 
   const getProfile=async()=>{
     const userId=session?.user?.id
-    if(!userId){ console.log('[Auth] No session user yet — waiting'); return }
+    if(!userId){ setRoleLoading(false); return }
     try{
       const{data,error:profileErr}=await supabase.from('profiles').select('*').eq('id',userId).single()
       if(profileErr){ console.error('[Profile] Fetch error:',profileErr) }
@@ -4415,7 +4418,8 @@ export default function Dashboard({ session }) {
   ]
 
   const AdminPanel=()=>{
-    const [activeTab,setActiveTab]         =useState('overview')
+    const [activeTab,_setActiveTab]        =useState(_apTab)
+    const setActiveTab=(t)=>{_apTab=t;_setActiveTab(t)}
     const [viewLead,setViewLead]           =useState(null)
     const isMobile                         =typeof window!=='undefined'&&window.innerWidth<768
     const [users,setUsers]                 =useState([])
@@ -4968,11 +4972,11 @@ export default function Dashboard({ session }) {
 <th style={{width:32,padding:'8px 6px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>
 {[['Name',130],['Mobile',105],['Status',120],['Agent',110],['Loan Amt',90],['Actions',180],['Date',90]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
 </tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{l.status||'New'}</span></td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{displayStatus||'New'}</span></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={agent?.full_name||''}>{agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'₹'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>—</span>}</td>
 

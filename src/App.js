@@ -1,4 +1,4 @@
-/* eslint-disable */
+﻿/* eslint-disable */
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
@@ -18,9 +18,10 @@ function App() {
       setSession(session)
       setLoading(false)
     })
-    supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
+    return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
@@ -58,7 +59,7 @@ function App() {
   if (loading) return (
     <div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'100vh',background:'#0D47A1'}}>
       <div style={{textAlign:'center',color:'white'}}>
-        <div style={{fontSize:'48px',marginBottom:'16px'}}>📞</div>
+        <div style={{fontSize:'48px',marginBottom:'16px'}}>ðŸ“ž</div>
         <div style={{fontSize:'20px',fontWeight:'700'}}>CALL-Q PRO CRM</div>
         <div style={{fontSize:'14px',opacity:0.7,marginTop:'8px'}}>Loading...</div>
       </div>

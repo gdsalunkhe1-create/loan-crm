@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+﻿import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = 'https://pvnzeueldfmxhesmoetc.supabase.co'
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2bnpldWVsZGZteGhlc21vZXRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2NjAwNDQsImV4cCI6MjA5MzIzNjA0NH0.XyHJrRleVGuHQBCBxqvu3nmndGy3uIoBE3dBTRx63yI'
@@ -16,7 +16,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
   global: {
     // Force every Supabase fetch to bypass browser HTTP cache and the PWA
-    // service worker cache — prevents stale API responses on first load.
+    // service worker cache â€” prevents stale API responses on first load.
     fetch: (url, options = {}) => fetch(url, { ...options, cache: 'no-store' }),
   },
 })
@@ -25,5 +25,6 @@ export const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false,
+    storageKey: 'sb-admin-auth-token',
   },
 })
