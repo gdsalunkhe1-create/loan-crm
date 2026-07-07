@@ -391,6 +391,7 @@ function AgentDashboard({ userId }) {
   const alreadyBuzzingRef                         = useRef(false)
   const fetchAllRef                              = useRef(null)
   const fetchSeqRef                              = useRef(0)
+  const fetchInFlightRef                         = useRef(false)
   const selectedLeadObRef                        = useRef(null)
   const checkRemindersRef                        = useRef(null)
   const fetchCallbackTasksRef                    = useRef(null)
@@ -864,35 +865,44 @@ function AgentDashboard({ userId }) {
 
   const fetchAll=async(opts={})=>{
     if(!userId) return
-    const mySeq=++fetchSeqRef.current
-    if(!opts.silent) setLoading(true)
-    const now=new Date(); let sd=new Date()
-    if(dateRange==='today') sd.setHours(0,0,0,0)
-    else if(dateRange==='week')  sd.setDate(now.getDate()-7)
-    else if(dateRange==='month') sd.setDate(1)
-    const[lR,mirR,cR,tR,pR]=await Promise.all([
-      supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}),
-      supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}),
-      supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
-      supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
-      supabase.from('profiles').select('*').eq('id',userId).single(),
-    ])
-    const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
-    let obligationMap={}
-    const leadIds=leads.map(l=>l.id).filter(Boolean)
-    const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
-    if(!oErr){
-      obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
-    }
-    if(fetchSeqRef.current!==mySeq){
-      console.log('[fetchAll] discarding stale result — a newer fetchAll has started since')
+    if(fetchInFlightRef.current){
+      console.log('[fetchAll] skip — a fetch is already in flight')
       return
     }
-    setMyLeads(leads); setMyCalls(cR.data||[])
-    setMyTasks(tR.data||[]); setProfile(pR.data)
-    setLeadObligations(obligationMap)
-    computePipelineStats(leads)
-    setLoading(false)
+    fetchInFlightRef.current=true
+    const mySeq=++fetchSeqRef.current
+    try{
+      if(!opts.silent) setLoading(true)
+      const now=new Date(); let sd=new Date()
+      if(dateRange==='today') sd.setHours(0,0,0,0)
+      else if(dateRange==='week')  sd.setDate(now.getDate()-7)
+      else if(dateRange==='month') sd.setDate(1)
+      const[lR,mirR,cR,tR,pR]=await Promise.all([
+        supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}),
+        supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}),
+        supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
+        supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
+        supabase.from('profiles').select('*').eq('id',userId).single(),
+      ])
+      const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
+      let obligationMap={}
+      const leadIds=leads.map(l=>l.id).filter(Boolean)
+      const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
+      if(!oErr){
+        obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
+      }
+      if(fetchSeqRef.current!==mySeq){
+        console.log('[fetchAll] discarding stale result — a newer fetchAll has started since')
+        return
+      }
+      setMyLeads(leads); setMyCalls(cR.data||[])
+      setMyTasks(tR.data||[]); setProfile(pR.data)
+      setLeadObligations(obligationMap)
+      computePipelineStats(leads)
+      setLoading(false)
+    } finally {
+      fetchInFlightRef.current=false
+    }
   }
   // Always keep ref pointing to latest fetchAll (silent=true so background refreshes don't flash the spinner)
   fetchAllRef.current = ()=>fetchAll({silent:true})

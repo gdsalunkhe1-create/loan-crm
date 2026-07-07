@@ -38,8 +38,6 @@ function useIsMobile() {
   return isMobile
 }
 
-const LEAD_STAGES = ['New','Interested','Callback','Login','Approved','Disbursed','Not Interested','DND']
-
 const fmtAmt = n => n ? '₹' + Number(n).toLocaleString('en-IN') : '-'
 export default function Leads({ userRole, userId }) {
   const [leads, setLeads] = useState([])
@@ -678,7 +676,7 @@ export default function Leads({ userRole, userId }) {
           <select className="form-input" style={{width:'160px'}} value={filterStatus}
             onChange={e=>setFilterStatus(e.target.value)}>
             <option value="">All Statuses</option>
-            {LEAD_STAGES.map(s=><option key={s}>{s}</option>)}
+            {statuses.map(s=><option key={s.id} value={s.label}>{s.label}</option>)}
           </select>
           <select className="form-input" style={{width:'150px'}} value={filterSource}
             onChange={e=>setFilterSource(e.target.value)}>
@@ -783,9 +781,9 @@ export default function Leads({ userRole, userId }) {
                           fontSize:'11px',fontWeight:'700',cursor:'pointer',outline:'none',
                           letterSpacing:'0.02em',appearance:'none',WebkitAppearance:'none',
                           minWidth:'100px',textAlign:'center'}}>
-                        {LEAD_STAGES.map(s=>(
-                          <option key={s} value={s}
-                            style={{background:'white',color:'#1E293B'}}>{s}</option>
+                        {statuses.map(s=>(
+                          <option key={s.id} value={s.label}
+                            style={{background:'white',color:'#1E293B'}}>{s.label}</option>
                         ))}
                       </select>
                     </td>
@@ -926,7 +924,7 @@ export default function Leads({ userRole, userId }) {
                     value={pendingStatus}
                     onChange={e=>setPendingStatus(e.target.value)}
                     style={{width:'100%',padding:'8px 12px',border:'1px solid #d1d5db',borderRadius:8,fontSize:14,outline:'none',marginBottom:10,background:'white',color:'#111827'}}>
-                    {LEAD_STAGES.map(s=><option key={s} value={s}>{s}</option>)}
+                    {statuses.map(s=><option key={s.id} value={s.label}>{s.label}</option>)}
                   </select>
                   <button
                     onClick={()=>updateStatus(selectedLead.id, pendingStatus)}
