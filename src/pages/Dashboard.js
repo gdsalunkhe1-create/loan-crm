@@ -1480,7 +1480,7 @@ function AgentDashboard({ userId }) {
   const filteredLeads =myLeads.filter(l=>{
     const ms=!search||l.full_name?.toLowerCase().includes(search.toLowerCase())||l.mobile?.includes(search)||l.city?.toLowerCase().includes(search.toLowerCase())
     const mf=agentStatusSet.length===0||agentStatusSet.includes(l.status)
-    const fd=agentDateFrom?new Date(agentDateFrom):null
+    const fd=agentDateFrom?new Date(agentDateFrom+'T00:00:00'):null
     const td=agentDateTo?new Date(agentDateTo+'T23:59:59'):null
     const inDateRange=(ts)=>{ const d=ts?new Date(ts):null; return(!fd||(d&&d>=fd))&&(!td||(d&&d<=td)) }
     const md=(!fd&&!td)||inDateRange(l.created_at)||inDateRange(l.assigned_at)
