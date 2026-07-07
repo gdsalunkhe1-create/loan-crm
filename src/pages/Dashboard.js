@@ -18,6 +18,7 @@ import EmiCalculator from './EmiCalculator'
 import CamCalculator from './CamCalculator'
 import CallAssist from './CallAssist'
 import DateInput from '../components/DateInput'
+import TimeInput from '../components/TimeInput'
 import {
   IconLayoutDashboard, IconUsers, IconPhoneCall, IconCheckbox,
   IconChartBar, IconSettings, IconAdjustments, IconPhone,
@@ -1788,7 +1789,7 @@ function AgentDashboard({ userId }) {
                           <DateInput min={istToday()} value={rescheduleDate}
                             onChange={e=>setRescheduleDate(e.target.value)}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
-                          <input type="time" value={rescheduleTime} onChange={e=>setRescheduleTime(e.target.value)}
+                          <TimeInput value={rescheduleTime} onChange={e=>setRescheduleTime(e.target.value)}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
                         </div>
                         <div style={{display:'flex',gap:6}}>
@@ -1982,7 +1983,7 @@ function AgentDashboard({ userId }) {
                 </div>
                 <div>
                   <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Time *</label>
-                  <input type="time" value={callbackTime} onChange={e=>setCallbackTime(e.target.value)}
+                  <TimeInput value={callbackTime} onChange={e=>setCallbackTime(e.target.value)}
                     style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                 </div>
               </div>
@@ -2078,7 +2079,7 @@ function AgentDashboard({ userId }) {
                     </div>
                     <div>
                       <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4}}>Time *</label>
-                      <input type="time" value={callLogCallbackTime}
+                      <TimeInput value={callLogCallbackTime}
                         onChange={e=>setCallLogCallbackTime(e.target.value)}
                         style={{width:'100%',padding:'8px 10px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                     </div>
