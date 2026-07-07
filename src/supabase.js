@@ -1,4 +1,4 @@
-﻿import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = 'https://pvnzeueldfmxhesmoetc.supabase.co'
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2bnpldWVsZGZteGhlc21vZXRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2NjAwNDQsImV4cCI6MjA5MzIzNjA0NH0.XyHJrRleVGuHQBCBxqvu3nmndGy3uIoBE3dBTRx63yI'
