@@ -17,6 +17,7 @@ import CibilParser from './CibilParser'
 import EmiCalculator from './EmiCalculator'
 import CamCalculator from './CamCalculator'
 import CallAssist from './CallAssist'
+import DateInput from '../components/DateInput'
 import {
   IconLayoutDashboard, IconUsers, IconPhoneCall, IconCheckbox,
   IconChartBar, IconSettings, IconAdjustments, IconPhone,
@@ -389,6 +390,7 @@ function AgentDashboard({ userId }) {
   const snoozedTasksRef                           = useRef({})
   const alreadyBuzzingRef                         = useRef(false)
   const fetchAllRef                              = useRef(null)
+  const fetchSeqRef                              = useRef(0)
   const selectedLeadObRef                        = useRef(null)
   const checkRemindersRef                        = useRef(null)
   const fetchCallbackTasksRef                    = useRef(null)
@@ -505,14 +507,23 @@ function AgentDashboard({ userId }) {
           setLastSynced(new Date())
           return
         }
+        let applied=false
         setMyLeads(prev=>{
           const idx=prev.findIndex(l=>l.id===upd.id)
           if(idx===-1){
             if(upd.assigned_to===userId){
               const next=[upd,...prev]
               computePipelineStats(next)
+              applied=true
               return next
             }
+            return prev
+          }
+          const existing=prev[idx]
+          const incomingTs=upd.updated_at?new Date(upd.updated_at).getTime():null
+          const existingTs=existing.updated_at?new Date(existing.updated_at).getTime():null
+          if(incomingTs!=null&&existingTs!=null&&incomingTs<existingTs){
+            console.log('[RT] leads UPDATE: discarding stale event for',upd.id,'(incoming',upd.updated_at,'< local',existing.updated_at,')')
             return prev
           }
           if(upd.assigned_to&&upd.assigned_to!==userId){setTimeout(()=>fetchAllRef.current?.(),50);return prev;}if(false){
@@ -522,9 +533,10 @@ function AgentDashboard({ userId }) {
           }
           const next=[...prev.map(l=>l.id===upd.id?{...l,...upd}:l)]
           computePipelineStats(next)
+          applied=true
           return next
         })
-        setLastSynced(new Date())
+        if(applied) setLastSynced(new Date())
       })
 
       // ── LEAD INSERT ──
@@ -852,6 +864,7 @@ function AgentDashboard({ userId }) {
 
   const fetchAll=async(opts={})=>{
     if(!userId) return
+    const mySeq=++fetchSeqRef.current
     if(!opts.silent) setLoading(true)
     const now=new Date(); let sd=new Date()
     if(dateRange==='today') sd.setHours(0,0,0,0)
@@ -870,6 +883,10 @@ function AgentDashboard({ userId }) {
     const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
     if(!oErr){
       obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
+    }
+    if(fetchSeqRef.current!==mySeq){
+      console.log('[fetchAll] discarding stale result — a newer fetchAll has started since')
+      return
     }
     setMyLeads(leads); setMyCalls(cR.data||[])
     setMyTasks(tR.data||[]); setProfile(pR.data)
@@ -1758,7 +1775,7 @@ function AgentDashboard({ userId }) {
                       <div style={{background:'#EFF6FF',border:'1px solid #93C5FD',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
                         <div style={{fontSize:11,fontWeight:700,color:'#1e40af',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.04em'}}>Pick new date & time</div>
                         <div style={{display:'flex',gap:8,marginBottom:8}}>
-                          <input type="date" min={istToday()} value={rescheduleDate}
+                          <DateInput min={istToday()} value={rescheduleDate}
                             onChange={e=>setRescheduleDate(e.target.value)}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
                           <input type="time" value={rescheduleTime} onChange={e=>setRescheduleTime(e.target.value)}
@@ -1948,7 +1965,7 @@ function AgentDashboard({ userId }) {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
                 <div>
                   <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Date *</label>
-                  <input type="date" min={istToday()} value={callbackDate}
+                  <DateInput min={istToday()} value={callbackDate}
                     onChange={e=>setCallbackDate(e.target.value)}
                     style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}
                     onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
@@ -2045,7 +2062,7 @@ function AgentDashboard({ userId }) {
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                     <div>
                       <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4}}>Date *</label>
-                      <input type="date" min={istToday()} value={callLogCallbackDate}
+                      <DateInput min={istToday()} value={callLogCallbackDate}
                         onChange={e=>setCallLogCallbackDate(e.target.value)}
                         style={{width:'100%',padding:'8px 10px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                     </div>
@@ -2551,8 +2568,8 @@ function AgentDashboard({ userId }) {
               </div>
               {exportDateType==='custom'&&(
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,background:'#F9FAFB',padding:14,borderRadius:8,marginBottom:14}}>
-                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>From</div><input type="date" value={exportStartDate} onChange={e=>setExportStartDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
-                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>To</div><input type="date" value={exportEndDate} onChange={e=>setExportEndDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
+                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>From</div><DateInput value={exportStartDate} onChange={e=>setExportStartDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
+                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>To</div><DateInput value={exportEndDate} onChange={e=>setExportEndDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
                 </div>
               )}
               <div style={{background:exportCount>0?'#EBF8FF':'#FFF5F5',border:'1px solid '+(exportCount>0?'#BEE3F8':'#FED7D7'),borderRadius:10,padding:'14px 16px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -2834,9 +2851,9 @@ function AgentDashboard({ userId }) {
                 </select>
                 <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>▼</span>
               </div>
-              <input type='date' value={agentDateFrom} onChange={e=>setAgentDateFrom(e.target.value)}
+              <DateInput value={agentDateFrom} onChange={e=>setAgentDateFrom(e.target.value)}
                 style={{...filterClayDate,flexShrink:0}}/>
-              <input type='date' value={agentDateTo} onChange={e=>setAgentDateTo(e.target.value)}
+              <DateInput value={agentDateTo} onChange={e=>setAgentDateTo(e.target.value)}
                 style={{...filterClayDate,flexShrink:0}}/>
             </div>
 
@@ -4972,7 +4989,7 @@ export default function Dashboard({ session }) {
 <th style={{width:32,padding:'8px 6px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>
 {[['Name',130],['Mobile',105],['Status',120],['Agent',110],['Loan Amt',90],['Actions',180],['Date',90]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
 </tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
