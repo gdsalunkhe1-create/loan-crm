@@ -362,6 +362,7 @@ function AgentDashboard({ userId }) {
   const [obModalSalary,setObModalSalary]     = useState('')
   const [obModalNetTakeHome,setObModalNetTakeHome] = useState('')
   const [obModalCompany,setObModalCompany]   = useState('')
+  const [obModalRequiredLoanAmount,setObModalRequiredLoanAmount] = useState('')
   const [obModalReadOnly,setObModalReadOnly] = useState(false)
   const [obModalNotes,setObModalNotes]       = useState('')
   const [obModalNoteInput,setObModalNoteInput] = useState('')
@@ -1047,6 +1048,7 @@ function AgentDashboard({ userId }) {
     setObModalSalary(lead.monthly_salary||'')
     setObModalNetTakeHome(lead.net_take_home||'')
     setObModalCompany(lead.company_name||'')
+    setObModalRequiredLoanAmount(lead.required_loan_amount||'')
     setObModalReadOnly(readOnly)
     setObModalNotes(lead.notes||'')
     setObModalNoteInput('')
@@ -1266,16 +1268,18 @@ function AgentDashboard({ userId }) {
         setObligationDrafts(prev=>prev.map(item=>item.id===data.id?{...data,editing:false}:item))
         showToast('Obligation updated successfully')
       }
-      // Persist salary, net take home, company, and notes back to the lead record
+      // Persist salary, net take home, company, notes, and required loan amount back to the lead record
       const salaryVal=obModalSalary===''?null:parseFloat(obModalSalary)||null
       const netTakeHomeVal=obModalNetTakeHome===''?null:parseFloat(obModalNetTakeHome)||null
+      const requiredLoanAmountVal=obModalRequiredLoanAmount===''?null:parseFloat(obModalRequiredLoanAmount)||null
       await supabase.from('leads').update({
         monthly_salary:salaryVal,
         net_take_home:netTakeHomeVal,
         company_name:obModalCompany||null,
         notes:obModalNotes||null,
+        required_loan_amount:requiredLoanAmountVal,
       }).eq('id',leadId)
-      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}:l))
+      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null,required_loan_amount:requiredLoanAmountVal}:l))
     }catch(err){
       console.error('[saveObligationCard] error:', err)
       setObligationError('Unable to save obligation: '+err.message)
@@ -2158,11 +2162,12 @@ function AgentDashboard({ userId }) {
                     const leadId=selectedLeadForObligations.id
                     const salaryVal=obModalSalary===''?null:parseFloat(obModalSalary)||null
                     const netTakeHomeVal=obModalNetTakeHome===''?null:parseFloat(obModalNetTakeHome)||null
+                    const requiredLoanAmountVal=obModalRequiredLoanAmount===''?null:parseFloat(obModalRequiredLoanAmount)||null
                     console.log('[Action] obModal save info → DB write lead:', leadId)
-                    const {error}=await supabase.from('leads').update({monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}).eq('id',leadId)
+                    const {error}=await supabase.from('leads').update({monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null,required_loan_amount:requiredLoanAmountVal}).eq('id',leadId)
                     if(error){ console.error('[Action] obModal save error:', error); return }
-                    setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}:l)])
-                    setObSavedSnapshot({salary:obModalSalary,netTakeHome:obModalNetTakeHome,company:obModalCompany,notes:obModalNotes})
+                    setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null,required_loan_amount:requiredLoanAmountVal}:l)])
+                    setObSavedSnapshot({salary:obModalSalary,netTakeHome:obModalNetTakeHome,company:obModalCompany,notes:obModalNotes,requiredLoanAmount:obModalRequiredLoanAmount})
                     setObIsNewLead(false)
                     setIsObEditing(false)
                     showToast('Info saved for '+selectedLeadForObligations.full_name)
@@ -2171,7 +2176,7 @@ function AgentDashboard({ userId }) {
                   </button>
                   {!obIsNewLead&&(
                     <button onClick={()=>{
-                      if(obSavedSnapshot){setObModalSalary(obSavedSnapshot.salary);setObModalNetTakeHome(obSavedSnapshot.netTakeHome||'');setObModalCompany(obSavedSnapshot.company);setObModalNotes(obSavedSnapshot.notes)}
+                      if(obSavedSnapshot){setObModalSalary(obSavedSnapshot.salary);setObModalNetTakeHome(obSavedSnapshot.netTakeHome||'');setObModalCompany(obSavedSnapshot.company);setObModalNotes(obSavedSnapshot.notes);setObModalRequiredLoanAmount(obSavedSnapshot.requiredLoanAmount||'')}
                       setIsObEditing(false)
                     }} style={{padding:'7px 14px',borderRadius:8,background:'transparent',border:'1px solid #334155',color:'#94a3b8',cursor:'pointer',fontSize:13}}>
                       Cancel
@@ -2224,6 +2229,15 @@ function AgentDashboard({ userId }) {
                       style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
                   ):(
                     <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalCompany||'Not entered'}</div>
+                  )}
+                </div>
+                <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
+                  <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Required Loan Amount</div>
+                  {isObEditing?(
+                    <input type="number" placeholder="Enter required loan amount" value={obModalRequiredLoanAmount||''} onChange={e=>setObModalRequiredLoanAmount(e.target.value)}
+                      style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
+                  ):(
+                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'}</div>
                   )}
                 </div>
               </div>
@@ -2395,7 +2409,7 @@ function AgentDashboard({ userId }) {
                         <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'—'}</div></div>
                         <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'₹'+Number(ob.emi_amount).toLocaleString('en-IN'):'—'}</div></div>
                         <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{(ob.pos_amount||ob.outstanding_amount)?'₹'+Number(ob.pos_amount||ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'₹'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        {ob.obligation_type!=='Personal Loan'&&<div style={{color:'#64748b'}}>Loan Amount<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'₹'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>}
                         {['Personal Loan','Credit Card'].includes(ob.obligation_type)&&<div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>✓ Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>}
                         {ob.tenure_months&&<div style={{color:'#64748b'}}>Tenure<div style={{color:'#e2e8f0',marginTop:2}}>{ob.tenure_months} months</div></div>}
                         {ob.bounce&&ob.bounce!=='No'&&<div style={{color:'#64748b'}}>Bounce<div style={{color:'#f87171',fontWeight:600,marginTop:2}}>{ob.bounce}</div></div>}
@@ -2414,8 +2428,6 @@ function AgentDashboard({ userId }) {
 
                         {/* ── PERSONAL LOAN ── */}
                         {ob.obligation_type==='Personal Loan'&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Required Loan Amount (₹)</label>
-                            <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Existing Bank / NBFC Name</label>
                             <input value={ob.bank_name||''} onChange={e=>handleObligationFieldChange(ob.id,'bank_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount Taken</label>
