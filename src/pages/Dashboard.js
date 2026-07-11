@@ -1318,34 +1318,37 @@ function AgentDashboard({ userId }) {
     return title+bank
   }
 
-  const buildObligationShareLine=(ob,i)=>{
-    const parts=[]
-    if(ob.emi_amount) parts.push(`EMI ₹${Number(ob.emi_amount).toLocaleString('en-IN')}`)
-    if(ob.obligation_type==='Credit Card'){
-      const cl=ob.credit_limit||ob.sanctioned_amount
-      if(cl) parts.push(`Credit Limit ₹${Number(cl).toLocaleString('en-IN')}`)
-    } else if(ob.sanctioned_amount&&ob.obligation_type!=='Personal Loan'){
-      parts.push(`Loan Amt ₹${Number(ob.sanctioned_amount).toLocaleString('en-IN')}`)
-    }
-    const pos=ob.pos_amount||ob.outstanding_amount
-    if(pos) parts.push(`POS ₹${Number(pos).toLocaleString('en-IN')}`)
-    if(ob.bank_name) parts.push(ob.bank_name)
-    if(['Personal Loan','Credit Card'].includes(ob.obligation_type)&&ob.balance_transfer) parts.push('BT')
-    return `${i}. ${ob.obligation_type}${parts.length?' - '+parts.join(', '):''}`
+  const buildObligationShareBlock=(ob)=>{
+    const loanAmount=ob.obligation_type==='Personal Loan'?ob.overdue_amount:ob.sanctioned_amount
+    const outstanding=ob.pos_amount||ob.outstanding_amount
+    const fmt=v=>v?`₹${Number(v).toLocaleString('en-IN')}`:'-'
+    return [
+      `Loan Type: ${ob.obligation_type||'-'}`,
+      `Loan Amount: ${fmt(loanAmount)}`,
+      `Outstanding Amount: ${fmt(outstanding)}`,
+      `Emi Amount: ${fmt(ob.emi_amount)}`,
+      `Tenure: ${ob.tenure_months?`${ob.tenure_months} months`:'-'}`,
+      `Emi paid: ${ob.emis_paid||'-'}`,
+    ].join('\n')
   }
 
   const buildObligationShareMessage=()=>{
     const lead=selectedLeadForObligations
     if(!lead) return ''
     const lines=[]
-    lines.push(`*Obligation Summary - ${lead.full_name||'Lead'}*`)
-    if(lead.mobile) lines.push(`📞 ${lead.mobile}`)
-    const nth=obModalNetTakeHome?`₹${Number(obModalNetTakeHome).toLocaleString('en-IN')}`:'Not entered'
-    const rla=obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'
-    lines.push(`💰 Net Take Home: ${nth} | Required Loan: ${rla}`)
+    lines.push(`*${lead.full_name||'Lead'}*`)
+    if(lead.mobile) lines.push(lead.mobile)
+    lines.push('')
+    lines.push(`Salary: ${obModalNetTakeHome?`₹${Number(obModalNetTakeHome).toLocaleString('en-IN')}`:'Not entered'}`)
+    lines.push(`Company: ${obModalCompany||'Not entered'}`)
+    lines.push(`Required amount: ${obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'}`)
+    lines.push('*Obligations:*')
     lines.push('')
     if(obligationDrafts.length){
-      obligationDrafts.forEach((ob,i)=>lines.push(buildObligationShareLine(ob,i+1)))
+      obligationDrafts.forEach((ob,i)=>{
+        lines.push(buildObligationShareBlock(ob))
+        if(i<obligationDrafts.length-1) lines.push('')
+      })
     }else{
       lines.push('No obligations recorded yet.')
     }
