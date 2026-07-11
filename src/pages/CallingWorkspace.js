@@ -285,6 +285,9 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
     setObligationError('')
     const payload={
       lead_id: lead.id,
+      agent_id: userId,
+      last_updated_by: userId,
+      last_updated_at: new Date().toISOString(),
       obligation_type: obligation.obligation_type,
       bank_name: obligation.bank_name,
       emi_amount: Number(obligation.emi_amount||0),

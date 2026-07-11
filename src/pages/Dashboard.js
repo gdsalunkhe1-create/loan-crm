@@ -1060,6 +1060,13 @@ function AgentDashboard({ userId }) {
       const{data:rl}=await supabase.from('activity_log').select('*').eq('lead_id',lead.id).eq('action','Reassigned').eq('assigned_to',userId).order('created_at',{ascending:false}).limit(1)
       setLeadReassignInfo(rl&&rl.length>0?rl[0]:null)
     }
+    // The leadObligations cache can be clobbered by a stale background poll racing
+    // a realtime patch, so always re-fetch fresh from the DB rather than trusting it.
+    const{data:freshObs,error:obErr}=await supabase.from('loan_obligations').select('*').eq('lead_id',lead.id)
+    if(!obErr){
+      updateSavedObligations(lead.id,freshObs||[])
+      if(selectedLeadObRef.current?.id===lead.id) setObligationDrafts(cloneObligations(freshObs||[]))
+    }
   }
 
   const buildEmptyObligation=()=>({
@@ -1221,6 +1228,7 @@ function AgentDashboard({ userId }) {
       joint_holder_relation:obligation.joint_holder_relation||null,
       balance_transfer:obligation.balance_transfer||false,
       obligated_emi:n(obligation.emi_amount),
+      agent_id:userId,
       last_updated_by:userId,
       last_updated_at:new Date().toISOString(),
     }
