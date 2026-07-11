@@ -1318,6 +1318,47 @@ function AgentDashboard({ userId }) {
     return title+bank
   }
 
+  const buildObligationShareLine=(ob,i)=>{
+    const parts=[]
+    if(ob.emi_amount) parts.push(`EMI ₹${Number(ob.emi_amount).toLocaleString('en-IN')}`)
+    if(ob.obligation_type==='Credit Card'){
+      const cl=ob.credit_limit||ob.sanctioned_amount
+      if(cl) parts.push(`Credit Limit ₹${Number(cl).toLocaleString('en-IN')}`)
+    } else if(ob.sanctioned_amount&&ob.obligation_type!=='Personal Loan'){
+      parts.push(`Loan Amt ₹${Number(ob.sanctioned_amount).toLocaleString('en-IN')}`)
+    }
+    const pos=ob.pos_amount||ob.outstanding_amount
+    if(pos) parts.push(`POS ₹${Number(pos).toLocaleString('en-IN')}`)
+    if(ob.bank_name) parts.push(ob.bank_name)
+    if(['Personal Loan','Credit Card'].includes(ob.obligation_type)&&ob.balance_transfer) parts.push('BT')
+    return `${i}. ${ob.obligation_type}${parts.length?' - '+parts.join(', '):''}`
+  }
+
+  const buildObligationShareMessage=()=>{
+    const lead=selectedLeadForObligations
+    if(!lead) return ''
+    const lines=[]
+    lines.push(`*Obligation Summary - ${lead.full_name||'Lead'}*`)
+    if(lead.mobile) lines.push(`📞 ${lead.mobile}`)
+    const nth=obModalNetTakeHome?`₹${Number(obModalNetTakeHome).toLocaleString('en-IN')}`:'Not entered'
+    const rla=obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'
+    lines.push(`💰 Net Take Home: ${nth} | Required Loan: ${rla}`)
+    lines.push('')
+    if(obligationDrafts.length){
+      obligationDrafts.forEach((ob,i)=>lines.push(buildObligationShareLine(ob,i+1)))
+    }else{
+      lines.push('No obligations recorded yet.')
+    }
+    lines.push('')
+    lines.push(`Shared by ${profile?.full_name||'Agent'}`)
+    return lines.join('\n')
+  }
+
+  const shareObligationsOnWhatsApp=()=>{
+    const msg=buildObligationShareMessage()
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank')
+  }
+
   const sendWATemplate=(tpl)=>{
     if(!waLead)return
     const name=waLead.full_name?.split(' ')[0]||'Customer'
@@ -2240,6 +2281,10 @@ function AgentDashboard({ userId }) {
                     <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'}</div>
                   )}
                 </div>
+                <button onClick={shareObligationsOnWhatsApp}
+                  style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 16px',borderRadius:10,border:'1px solid #16a34a',background:'#052e16',color:'#4ade80',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+                  <IconBrandWhatsapp size={16}/> Share via WhatsApp
+                </button>
               </div>
 
               {/* Right column: Call Notes */}
