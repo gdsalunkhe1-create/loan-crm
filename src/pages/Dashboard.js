@@ -1095,7 +1095,16 @@ function AgentDashboard({ userId }) {
   })
 
   const handleObligationFieldChange=(id,field,value)=>{
-    setObligationDrafts(prev=>prev.map(item=>item.id===id?{...item,[field]:value}:item))
+    setObligationDrafts(prev=>prev.map(item=>{
+      if(item.id!==id)return item
+      const next={...item,[field]:value}
+      if(next.obligation_type==='Personal Loan'&&(field==='tenure_months'||field==='emis_paid')){
+        const t=parseInt(next.tenure_months)||0
+        const p=parseInt(next.emis_paid)||0
+        next.remaining_tenure=String(Math.max(t-p,0))
+      }
+      return next
+    }))
   }
 
   const toggleObligationExpand=(id)=>{
@@ -2209,15 +2218,6 @@ function AgentDashboard({ userId }) {
                   <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:6}}>Used for FOIR if entered, else falls back to Monthly Salary</div>
                 </div>
                 <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
-                  <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Monthly Salary</div>
-                  {isObEditing?(
-                    <input type="number" placeholder="Enter monthly salary" value={obModalSalary||''} onChange={e=>setObModalSalary(e.target.value)}
-                      style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
-                  ):(
-                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalSalary?`₹${Number(obModalSalary).toLocaleString('en-IN')}`:'Not entered'}</div>
-                  )}
-                </div>
-                <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
                   <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Company Name</div>
                   {isObEditing?(
                     <input type="text" placeholder="Enter company name" value={obModalCompany||''} onChange={e=>setObModalCompany(e.target.value)}
@@ -2345,15 +2345,15 @@ function AgentDashboard({ userId }) {
                         <div style={{fontSize:11,color:'#94a3b8',marginTop:2,display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}}>
                           {ob.obligation_type==='Credit Card'?(()=>{
                             const cl=parseFloat(ob.credit_limit)||parseFloat(ob.sanctioned_amount)||0
-                            const out=parseFloat(ob.outstanding_amount)||0
+                            const out=parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0
                             const isBT=ob.balance_transfer===true||ob.balance_transfer==='true'||ob.balance_transfer==='Yes'||ob.balance_transfer==='yes'
                             return(<>
                               {cl>0&&<span>Credit Limit ₹{cl.toLocaleString('en-IN')}</span>}
                               {cl>0&&out>0&&<span style={{color:'#475569'}}>·</span>}
-                              <span>{out>0?`Outstanding ₹${out.toLocaleString('en-IN')}`:'Outstanding not set'}</span>
+                              <span>{out>0?`POS ₹${out.toLocaleString('en-IN')}`:'POS not set'}</span>
                               {out>0&&(isBT
                                 ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>BT Applied — Not Obligated</span>
-                                :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ₹{Math.round(out*0.05).toLocaleString('en-IN')} (5% of Outstanding)</span>
+                                :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ₹{Math.round(out*0.05).toLocaleString('en-IN')} (5% of POS)</span>
                               )}
                             </>)
                           })():(()=>{
@@ -2369,7 +2369,7 @@ function AgentDashboard({ userId }) {
                                   :<span style={{background:'#1f2937',color:'#64748b',fontSize:10,fontWeight:600,padding:'1px 7px',borderRadius:12}}>Obligated ₹{obl.toLocaleString('en-IN')}</span>
                               )}
                               <span style={{color:'#475569'}}>·</span>
-                              <span>{ob.outstanding_amount?`Outstanding ₹${Number(ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
+                              <span>{(ob.pos_amount||ob.outstanding_amount)?`Outstanding ₹${Number(ob.pos_amount||ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
                             </>)
                           })()}
                         </div>
@@ -2394,9 +2394,9 @@ function AgentDashboard({ userId }) {
                         <div style={{color:'#64748b'}}>Type<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.obligation_type}</div></div>
                         <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'—'}</div></div>
                         <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'₹'+Number(ob.emi_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{ob.outstanding_amount?'₹'+Number(ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{(ob.pos_amount||ob.outstanding_amount)?'₹'+Number(ob.pos_amount||ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
                         <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'₹'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>✓ Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>
+                        {['Personal Loan','Credit Card'].includes(ob.obligation_type)&&<div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>✓ Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>}
                         {ob.tenure_months&&<div style={{color:'#64748b'}}>Tenure<div style={{color:'#e2e8f0',marginTop:2}}>{ob.tenure_months} months</div></div>}
                         {ob.bounce&&ob.bounce!=='No'&&<div style={{color:'#64748b'}}>Bounce<div style={{color:'#f87171',fontWeight:600,marginTop:2}}>{ob.bounce}</div></div>}
                       </div>
@@ -2411,43 +2411,41 @@ function AgentDashboard({ userId }) {
                             {OBLIGATION_TYPES.map(type=><option key={type} value={type}>{type}</option>)}
                           </select>
                         </div>
-                        {/* BALANCE TRANSFER - applies to every obligation type */}
-                        <div style={{display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
-                          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Balance Transfer (BT)?</label>
-                          <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
-                            style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
-                            <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                              {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
-                            </div>
-                            <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
-                          </div>
-                          <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
-                        </div>
 
                         {/* ── PERSONAL LOAN ── */}
                         {ob.obligation_type==='Personal Loan'&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Bank / NBFC Name</label>
-                            <input value={ob.bank_name||''} onChange={e=>handleObligationFieldChange(ob.id,'bank_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
-                            <input type="number" min="0" value={ob.overdue_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'overdue_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Required Loan Amount (₹)</label>
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
-                            <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Current Outstanding (₹)</label>
-                            <input type="number" min="0" value={ob.outstanding_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'outstanding_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Existing Bank / NBFC Name</label>
+                            <input value={ob.bank_name||''} onChange={e=>handleObligationFieldChange(ob.id,'bank_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount Taken</label>
+                            <input type="number" min="0" value={ob.overdue_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'overdue_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>POS (Principal Outstanding)</label>
                             <input type="number" min="0" placeholder="Enter POS amount" value={ob.pos_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'pos_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Total EMIs Paid</label>
-                            <input type="number" min="0" value={ob.emis_paid||''} onChange={e=>handleObligationFieldChange(ob.id,'emis_paid',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
+                            <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Tenure (months)</label>
                             <input type="number" min="0" value={ob.tenure_months||''} onChange={e=>handleObligationFieldChange(ob.id,'tenure_months',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Total EMIs Paid</label>
+                            <input type="number" min="0" value={ob.emis_paid||''} onChange={e=>handleObligationFieldChange(ob.id,'emis_paid',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMIs Remaining</label>
-                            <input type="number" min="0" value={ob.remaining_tenure||''} onChange={e=>handleObligationFieldChange(ob.id,'remaining_tenure',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                            <div style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#1e293b',color:'#94a3b8',fontSize:13,boxSizing:'border-box'}}>{Math.max((parseInt(ob.tenure_months)||0)-(parseInt(ob.emis_paid)||0),0)}</div>
+                            <div style={{fontSize:10,color:'#64748b',marginTop:4}}>Auto-calculated: Tenure − Total EMIs Paid</div></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Any EMI Bounce?</label>
                             <select value={ob.bounce||'No'} onChange={e=>handleObligationFieldChange(ob.id,'bounce',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}>
                               {YES_NO_OPTIONS.map(opt=><option key={opt} value={opt}>{opt}</option>)}
                             </select></div>
+                          <div style={{display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Balance Transfer (BT)?</label>
+                            <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
+                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
+                              <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+                              </div>
+                              <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
+                            </div>
+                            <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
+                          </div>
                         </>)}
 
                         {/* ── HOUSING LOAN ── */}
@@ -2485,14 +2483,21 @@ function AgentDashboard({ userId }) {
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>{handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value);handleObligationFieldChange(ob.id,'credit_limit',e.target.value)}} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
                           </div>
                           <div>
-                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Outstanding Amount (₹)</label>
-                            <input type="number" min="0" value={ob.outstanding_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'outstanding_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
-                            {(ob.pos_amount||ob.outstanding_amount)&&!ob.balance_transfer&&<div style={{fontSize:10,color:'#f97316',marginTop:3}}>Obligated: ₹{Math.round((parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0)*0.05).toLocaleString('en-IN')} (5% of Outstanding/POS)</div>}
-                            {(ob.pos_amount||ob.outstanding_amount)&&ob.balance_transfer&&<div style={{fontSize:10,color:'#4ade80',marginTop:3}}>Not Obligated (BT applied)</div>}
-                          </div>
-                          <div>
                             <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>POS (Principal Outstanding)</label>
                             <input type="number" min="0" placeholder="Enter POS amount" value={ob.pos_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'pos_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
+                            {(ob.pos_amount||ob.outstanding_amount)&&!ob.balance_transfer&&<div style={{fontSize:10,color:'#f97316',marginTop:3}}>Obligated: ₹{Math.round((parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0)*0.05).toLocaleString('en-IN')} (5% of POS)</div>}
+                            {(ob.pos_amount||ob.outstanding_amount)&&ob.balance_transfer&&<div style={{fontSize:10,color:'#4ade80',marginTop:3}}>Not Obligated (BT applied)</div>}
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Balance Transfer (BT)?</label>
+                            <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
+                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
+                              <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+                              </div>
+                              <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
+                            </div>
+                            <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
                           </div>
                         </>)}
 
