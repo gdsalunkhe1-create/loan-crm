@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://fuldzrvhyjwsrwtfpvae.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1bGR6cnZoeWp3c3J3dGZwdmFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNTg4NDIsImV4cCI6MjA5ODYzNDg0Mn0.v5smXL7APyasPIbZRHk3EnAZrfZKgZTXTRSdSZ1WE6E'
+const supabaseUrl = 'https://pvnzeueldfmxhesmoetc.supabase.co'
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2bnpldWVsZGZteGhlc21vZXRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc2NjAwNDQsImV4cCI6MjA5MzIzNjA0NH0.XyHJrRleVGuHQBCBxqvu3nmndGy3uIoBE3dBTRx63yI'
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   realtime: {
@@ -19,7 +19,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 })
 
-const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1bGR6cnZoeWp3c3J3dGZwdmFlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzA1ODg0MiwiZXhwIjoyMDk4NjM0ODQyfQ.UXJsk0pNWWn6ItHVVsybv7Bky8hxE18LhGxZ54VWWm8'
+const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2bnpldWVsZGZteGhlc21vZXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzY2MDA0NCwiZXhwIjoyMDkzMjM2MDQ0fQ.J7qjEpXnTlFvRJDM3uHG4JbPmFakaSFnu16mLtCvSdA'
 
 export const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
   auth: {
