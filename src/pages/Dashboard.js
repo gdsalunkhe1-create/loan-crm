@@ -20,6 +20,8 @@ import EmiCalculator from './EmiCalculator'
 import TaxCalculator from './TaxCalculator'
 import CamCalculator from './CamCalculator'
 import CallAssist from './CallAssist'
+import DateInput from '../components/DateInput'
+import TimeInput from '../components/TimeInput'
 import {
   IconLayoutDashboard, IconUsers, IconPhoneCall, IconCheckbox,
   IconChartBar, IconSettings, IconAdjustments, IconPhone,
@@ -363,6 +365,7 @@ function AgentDashboard({ userId }) {
   const [obModalSalary,setObModalSalary]     = useState('')
   const [obModalNetTakeHome,setObModalNetTakeHome] = useState('')
   const [obModalCompany,setObModalCompany]   = useState('')
+  const [obModalRequiredLoanAmount,setObModalRequiredLoanAmount] = useState('')
   const [obModalReadOnly,setObModalReadOnly] = useState(false)
   const [obModalNotes,setObModalNotes]       = useState('')
   const [obModalNoteInput,setObModalNoteInput] = useState('')
@@ -392,6 +395,8 @@ function AgentDashboard({ userId }) {
   const snoozedTasksRef                           = useRef({})
   const alreadyBuzzingRef                         = useRef(false)
   const fetchAllRef                              = useRef(null)
+  const fetchSeqRef                              = useRef(0)
+  const fetchInFlightRef                         = useRef(false)
   const selectedLeadObRef                        = useRef(null)
   const checkRemindersRef                        = useRef(null)
   const fetchCallbackTasksRef                    = useRef(null)
@@ -502,14 +507,23 @@ function AgentDashboard({ userId }) {
           setLastSynced(new Date())
           return
         }
+        let applied=false
         setMyLeads(prev=>{
           const idx=prev.findIndex(l=>l.id===upd.id)
           if(idx===-1){
             if(upd.assigned_to===userId){
               const next=[upd,...prev]
               computePipelineStats(next)
+              applied=true
               return next
             }
+            return prev
+          }
+          const existing=prev[idx]
+          const incomingTs=upd.updated_at?new Date(upd.updated_at).getTime():null
+          const existingTs=existing.updated_at?new Date(existing.updated_at).getTime():null
+          if(incomingTs!=null&&existingTs!=null&&incomingTs<existingTs){
+            console.log('[RT] leads UPDATE: discarding stale event for',upd.id,'(incoming',upd.updated_at,'< local',existing.updated_at,')')
             return prev
           }
           if(upd.assigned_to&&upd.assigned_to!==userId){debouncedFetchAll();return prev;}if(false){
@@ -519,9 +533,10 @@ function AgentDashboard({ userId }) {
           }
           const next=[...prev.map(l=>l.id===upd.id?{...l,...upd}:l)]
           computePipelineStats(next)
+          applied=true
           return next
         })
-        setLastSynced(new Date())
+        if(applied) setLastSynced(new Date())
       })
 
       // ── LEAD INSERT ──
@@ -849,30 +864,44 @@ function AgentDashboard({ userId }) {
 
   const fetchAll=async(opts={})=>{
     if(!userId) return
-    if(!opts.silent) setLoading(true)
-    const now=new Date(); let sd=new Date()
-    if(dateRange==='today') sd.setHours(0,0,0,0)
-    else if(dateRange==='week')  sd.setDate(now.getDate()-7)
-    else if(dateRange==='month') sd.setDate(1)
-    const[lR,mirR,cR,tR,pR]=await Promise.all([
-      supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}),
-      supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}),
-      supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
-      supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
-      supabase.from('profiles').select('*').eq('id',userId).single(),
-    ])
-    const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
-    let obligationMap={}
-    const leadIds=leads.map(l=>l.id).filter(Boolean)
-    const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
-    if(!oErr){
-      obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
+    if(fetchInFlightRef.current){
+      console.log('[fetchAll] skip — a fetch is already in flight')
+      return
     }
-    setMyLeads(leads); setMyCalls(cR.data||[])
-    setMyTasks(tR.data||[]); setProfile(pR.data)
-    setLeadObligations(obligationMap)
-    computePipelineStats(leads)
-    setLoading(false)
+    fetchInFlightRef.current=true
+    const mySeq=++fetchSeqRef.current
+    try{
+      if(!opts.silent) setLoading(true)
+      const now=new Date(); let sd=new Date()
+      if(dateRange==='today') sd.setHours(0,0,0,0)
+      else if(dateRange==='week')  sd.setDate(now.getDate()-7)
+      else if(dateRange==='month') sd.setDate(1)
+      const[lR,mirR,cR,tR,pR]=await Promise.all([
+        supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}),
+        supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}),
+        supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
+        supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
+        supabase.from('profiles').select('*').eq('id',userId).single(),
+      ])
+      const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
+      let obligationMap={}
+      const leadIds=leads.map(l=>l.id).filter(Boolean)
+      const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
+      if(!oErr){
+        obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
+      }
+      if(fetchSeqRef.current!==mySeq){
+        console.log('[fetchAll] discarding stale result — a newer fetchAll has started since')
+        return
+      }
+      setMyLeads(leads); setMyCalls(cR.data||[])
+      setMyTasks(tR.data||[]); setProfile(pR.data)
+      setLeadObligations(obligationMap)
+      computePipelineStats(leads)
+      setLoading(false)
+    } finally {
+      fetchInFlightRef.current=false
+    }
   }
   const debounceTimerRef = useRef(null)
   const debouncedFetchAll = () => {
@@ -1021,6 +1050,7 @@ function AgentDashboard({ userId }) {
     setObModalSalary(lead.monthly_salary||'')
     setObModalNetTakeHome(lead.net_take_home||'')
     setObModalCompany(lead.company_name||'')
+    setObModalRequiredLoanAmount(lead.required_loan_amount||'')
     setObModalReadOnly(readOnly)
     setObModalNotes(lead.notes||'')
     setObModalNoteInput('')
@@ -1033,6 +1063,13 @@ function AgentDashboard({ userId }) {
     if(!readOnly&&userId){
       const{data:rl}=await supabase.from('activity_log').select('*').eq('lead_id',lead.id).eq('action','Reassigned').eq('assigned_to',userId).order('created_at',{ascending:false}).limit(1)
       setLeadReassignInfo(rl&&rl.length>0?rl[0]:null)
+    }
+    // The leadObligations cache can be clobbered by a stale background poll racing
+    // a realtime patch, so always re-fetch fresh from the DB rather than trusting it.
+    const{data:freshObs,error:obErr}=await supabase.from('loan_obligations').select('*').eq('lead_id',lead.id)
+    if(!obErr){
+      updateSavedObligations(lead.id,freshObs||[])
+      if(selectedLeadObRef.current?.id===lead.id) setObligationDrafts(cloneObligations(freshObs||[]))
     }
   }
 
@@ -1062,7 +1099,16 @@ function AgentDashboard({ userId }) {
   })
 
   const handleObligationFieldChange=(id,field,value)=>{
-    setObligationDrafts(prev=>prev.map(item=>item.id===id?{...item,[field]:value}:item))
+    setObligationDrafts(prev=>prev.map(item=>{
+      if(item.id!==id)return item
+      const next={...item,[field]:value}
+      if(next.obligation_type==='Personal Loan'&&(field==='tenure_months'||field==='emis_paid')){
+        const t=parseInt(next.tenure_months)||0
+        const p=parseInt(next.emis_paid)||0
+        next.remaining_tenure=String(Math.max(t-p,0))
+      }
+      return next
+    }))
   }
 
   const toggleObligationExpand=(id)=>{
@@ -1195,6 +1241,7 @@ function AgentDashboard({ userId }) {
       joint_holder_relation:obligation.joint_holder_relation||null,
       balance_transfer:obligation.balance_transfer||false,
       obligated_emi:n(obligation.emi_amount),
+      agent_id:userId,
       last_updated_by:userId,
       last_updated_at:new Date().toISOString(),
     }
@@ -1223,16 +1270,18 @@ function AgentDashboard({ userId }) {
         setObligationDrafts(prev=>prev.map(item=>item.id===data.id?{...data,editing:false}:item))
         showToast('Obligation updated successfully')
       }
-      // Persist salary, net take home, company, and notes back to the lead record
+      // Persist salary, net take home, company, notes, and required loan amount back to the lead record
       const salaryVal=obModalSalary===''?null:parseFloat(obModalSalary)||null
       const netTakeHomeVal=obModalNetTakeHome===''?null:parseFloat(obModalNetTakeHome)||null
+      const requiredLoanAmountVal=obModalRequiredLoanAmount===''?null:parseFloat(obModalRequiredLoanAmount)||null
       await supabase.from('leads').update({
         monthly_salary:salaryVal,
         net_take_home:netTakeHomeVal,
         company_name:obModalCompany||null,
         notes:obModalNotes||null,
+        required_loan_amount:requiredLoanAmountVal,
       }).eq('id',leadId)
-      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}:l))
+      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null,required_loan_amount:requiredLoanAmountVal}:l))
     }catch(err){
       console.error('[saveObligationCard] error:', err)
       setObligationError('Unable to save obligation: '+err.message)
@@ -1269,6 +1318,50 @@ function AgentDashboard({ userId }) {
     const title=ob.obligation_type||'New Obligation'
     const bank=ob.bank_name?` — ${ob.bank_name}`:''
     return title+bank
+  }
+
+  const buildObligationShareBlock=(ob)=>{
+    const loanAmount=ob.obligation_type==='Personal Loan'?ob.overdue_amount:ob.sanctioned_amount
+    const outstanding=ob.pos_amount||ob.outstanding_amount
+    const fmt=v=>v?`₹${Number(v).toLocaleString('en-IN')}`:'-'
+    return [
+      `Loan Type: ${ob.obligation_type||'-'}`,
+      `Loan Amount: ${fmt(loanAmount)}`,
+      `Outstanding Amount: ${fmt(outstanding)}`,
+      `Emi Amount: ${fmt(ob.emi_amount)}`,
+      `Tenure: ${ob.tenure_months?`${ob.tenure_months} months`:'-'}`,
+      `Emi paid: ${ob.emis_paid||'-'}`,
+    ].join('\n')
+  }
+
+  const buildObligationShareMessage=()=>{
+    const lead=selectedLeadForObligations
+    if(!lead) return ''
+    const lines=[]
+    lines.push(`*${lead.full_name||'Lead'}*`)
+    if(lead.mobile) lines.push(lead.mobile)
+    lines.push('')
+    lines.push(`Salary: ${obModalNetTakeHome?`₹${Number(obModalNetTakeHome).toLocaleString('en-IN')}`:'Not entered'}`)
+    lines.push(`Company: ${obModalCompany||'Not entered'}`)
+    lines.push(`Required amount: ${obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'}`)
+    lines.push('*Obligations:*')
+    lines.push('')
+    if(obligationDrafts.length){
+      obligationDrafts.forEach((ob,i)=>{
+        lines.push(buildObligationShareBlock(ob))
+        if(i<obligationDrafts.length-1) lines.push('')
+      })
+    }else{
+      lines.push('No obligations recorded yet.')
+    }
+    lines.push('')
+    lines.push(`Shared by ${profile?.full_name||'Agent'}`)
+    return lines.join('\n')
+  }
+
+  const shareObligationsOnWhatsApp=()=>{
+    const msg=buildObligationShareMessage()
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank')
   }
 
   const sendWATemplate=(tpl)=>{
@@ -1482,7 +1575,7 @@ function AgentDashboard({ userId }) {
   const filteredLeads =myLeads.filter(l=>{
     const ms=!search||l.full_name?.toLowerCase().includes(search.toLowerCase())||l.mobile?.includes(search)||l.city?.toLowerCase().includes(search.toLowerCase())
     const mf=agentStatusSet.length===0||agentStatusSet.includes(l.status)
-    const fd=agentDateFrom?new Date(agentDateFrom):null
+    const fd=agentDateFrom?new Date(agentDateFrom+'T00:00:00'):null
     const td=agentDateTo?new Date(agentDateTo+'T23:59:59'):null
     const inDateRange=(ts)=>{ const d=ts?new Date(ts):null; return(!fd||(d&&d>=fd))&&(!td||(d&&d<=td)) }
     const md=(!fd&&!td)||inDateRange(l.created_at)||inDateRange(l.assigned_at)
@@ -1760,10 +1853,10 @@ function AgentDashboard({ userId }) {
                       <div style={{background:'#EFF6FF',border:'1px solid #93C5FD',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
                         <div style={{fontSize:11,fontWeight:700,color:'#1e40af',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.04em'}}>Pick new date & time</div>
                         <div style={{display:'flex',gap:8,marginBottom:8}}>
-                          <input type="date" min={istToday()} value={rescheduleDate}
+                          <DateInput min={istToday()} value={rescheduleDate}
                             onChange={e=>setRescheduleDate(e.target.value)}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
-                          <input type="time" value={rescheduleTime} onChange={e=>setRescheduleTime(e.target.value)}
+                          <TimeInput value={rescheduleTime} onChange={e=>setRescheduleTime(e.target.value)}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
                         </div>
                         <div style={{display:'flex',gap:6}}>
@@ -1950,14 +2043,14 @@ function AgentDashboard({ userId }) {
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
                 <div>
                   <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Date *</label>
-                  <input type="date" min={istToday()} value={callbackDate}
+                  <DateInput min={istToday()} value={callbackDate}
                     onChange={e=>setCallbackDate(e.target.value)}
                     style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}
                     onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
                 </div>
                 <div>
                   <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Time *</label>
-                  <input type="time" value={callbackTime} onChange={e=>setCallbackTime(e.target.value)}
+                  <TimeInput value={callbackTime} onChange={e=>setCallbackTime(e.target.value)}
                     style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                 </div>
               </div>
@@ -2047,13 +2140,13 @@ function AgentDashboard({ userId }) {
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                     <div>
                       <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4}}>Date *</label>
-                      <input type="date" min={istToday()} value={callLogCallbackDate}
+                      <DateInput min={istToday()} value={callLogCallbackDate}
                         onChange={e=>setCallLogCallbackDate(e.target.value)}
                         style={{width:'100%',padding:'8px 10px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                     </div>
                     <div>
                       <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4}}>Time *</label>
-                      <input type="time" value={callLogCallbackTime}
+                      <TimeInput value={callLogCallbackTime}
                         onChange={e=>setCallLogCallbackTime(e.target.value)}
                         style={{width:'100%',padding:'8px 10px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                     </div>
@@ -2115,11 +2208,12 @@ function AgentDashboard({ userId }) {
                     const leadId=selectedLeadForObligations.id
                     const salaryVal=obModalSalary===''?null:parseFloat(obModalSalary)||null
                     const netTakeHomeVal=obModalNetTakeHome===''?null:parseFloat(obModalNetTakeHome)||null
+                    const requiredLoanAmountVal=obModalRequiredLoanAmount===''?null:parseFloat(obModalRequiredLoanAmount)||null
                     console.log('[Action] obModal save info → DB write lead:', leadId)
-                    const {error}=await supabase.from('leads').update({monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}).eq('id',leadId)
+                    const {error}=await supabase.from('leads').update({monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null,required_loan_amount:requiredLoanAmountVal}).eq('id',leadId)
                     if(error){ console.error('[Action] obModal save error:', error); return }
-                    setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null}:l)])
-                    setObSavedSnapshot({salary:obModalSalary,netTakeHome:obModalNetTakeHome,company:obModalCompany,notes:obModalNotes})
+                    setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,monthly_salary:salaryVal,net_take_home:netTakeHomeVal,company_name:obModalCompany||null,notes:obModalNotes||null,required_loan_amount:requiredLoanAmountVal}:l)])
+                    setObSavedSnapshot({salary:obModalSalary,netTakeHome:obModalNetTakeHome,company:obModalCompany,notes:obModalNotes,requiredLoanAmount:obModalRequiredLoanAmount})
                     setObIsNewLead(false)
                     setIsObEditing(false)
                     showToast('Info saved for '+selectedLeadForObligations.full_name)
@@ -2128,7 +2222,7 @@ function AgentDashboard({ userId }) {
                   </button>
                   {!obIsNewLead&&(
                     <button onClick={()=>{
-                      if(obSavedSnapshot){setObModalSalary(obSavedSnapshot.salary);setObModalNetTakeHome(obSavedSnapshot.netTakeHome||'');setObModalCompany(obSavedSnapshot.company);setObModalNotes(obSavedSnapshot.notes)}
+                      if(obSavedSnapshot){setObModalSalary(obSavedSnapshot.salary);setObModalNetTakeHome(obSavedSnapshot.netTakeHome||'');setObModalCompany(obSavedSnapshot.company);setObModalNotes(obSavedSnapshot.notes);setObModalRequiredLoanAmount(obSavedSnapshot.requiredLoanAmount||'')}
                       setIsObEditing(false)
                     }} style={{padding:'7px 14px',borderRadius:8,background:'transparent',border:'1px solid #334155',color:'#94a3b8',cursor:'pointer',fontSize:13}}>
                       Cancel
@@ -2175,15 +2269,6 @@ function AgentDashboard({ userId }) {
                   <div style={{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:6}}>Used for FOIR if entered, else falls back to Monthly Salary</div>
                 </div>
                 <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
-                  <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Monthly Salary</div>
-                  {isObEditing?(
-                    <input type="number" placeholder="Enter monthly salary" value={obModalSalary||''} onChange={e=>setObModalSalary(e.target.value)}
-                      style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
-                  ):(
-                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalSalary?`₹${Number(obModalSalary).toLocaleString('en-IN')}`:'Not entered'}</div>
-                  )}
-                </div>
-                <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
                   <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Company Name</div>
                   {isObEditing?(
                     <input type="text" placeholder="Enter company name" value={obModalCompany||''} onChange={e=>setObModalCompany(e.target.value)}
@@ -2192,6 +2277,19 @@ function AgentDashboard({ userId }) {
                     <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalCompany||'Not entered'}</div>
                   )}
                 </div>
+                <div style={{background:'rgba(255,255,255,0.06)',borderRadius:10,padding:'14px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
+                  <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Required Loan Amount</div>
+                  {isObEditing?(
+                    <input type="number" placeholder="Enter required loan amount" value={obModalRequiredLoanAmount||''} onChange={e=>setObModalRequiredLoanAmount(e.target.value)}
+                      style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid rgba(255,255,255,0.2)',background:'rgba(255,255,255,0.1)',color:'white',fontSize:14,boxSizing:'border-box',outline:'none'}}/>
+                  ):(
+                    <div style={{fontSize:15,color:'#ffffff',fontWeight:500}}>{obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'}</div>
+                  )}
+                </div>
+                <button onClick={shareObligationsOnWhatsApp}
+                  style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 16px',borderRadius:10,border:'1px solid #16a34a',background:'#052e16',color:'#4ade80',fontWeight:700,fontSize:13,cursor:'pointer'}}>
+                  <IconBrandWhatsapp size={16}/> Share via WhatsApp
+                </button>
               </div>
 
               {/* Right column: Call Notes */}
@@ -2311,15 +2409,15 @@ function AgentDashboard({ userId }) {
                         <div style={{fontSize:11,color:'#94a3b8',marginTop:2,display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}}>
                           {ob.obligation_type==='Credit Card'?(()=>{
                             const cl=parseFloat(ob.credit_limit)||parseFloat(ob.sanctioned_amount)||0
-                            const out=parseFloat(ob.outstanding_amount)||0
+                            const out=parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0
                             const isBT=ob.balance_transfer===true||ob.balance_transfer==='true'||ob.balance_transfer==='Yes'||ob.balance_transfer==='yes'
                             return(<>
                               {cl>0&&<span>Credit Limit ₹{cl.toLocaleString('en-IN')}</span>}
                               {cl>0&&out>0&&<span style={{color:'#475569'}}>·</span>}
-                              <span>{out>0?`Outstanding ₹${out.toLocaleString('en-IN')}`:'Outstanding not set'}</span>
+                              <span>{out>0?`POS ₹${out.toLocaleString('en-IN')}`:'POS not set'}</span>
                               {out>0&&(isBT
                                 ?<span style={{background:'#14532d',color:'#4ade80',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>BT Applied — Not Obligated</span>
-                                :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ₹{Math.round(out*0.05).toLocaleString('en-IN')} (5% of Outstanding)</span>
+                                :<span style={{background:'#431407',color:'#fb923c',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:12}}>Obligated ₹{Math.round(out*0.05).toLocaleString('en-IN')} (5% of POS)</span>
                               )}
                             </>)
                           })():(()=>{
@@ -2335,7 +2433,7 @@ function AgentDashboard({ userId }) {
                                   :<span style={{background:'#1f2937',color:'#64748b',fontSize:10,fontWeight:600,padding:'1px 7px',borderRadius:12}}>Obligated ₹{obl.toLocaleString('en-IN')}</span>
                               )}
                               <span style={{color:'#475569'}}>·</span>
-                              <span>{ob.outstanding_amount?`Outstanding ₹${Number(ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
+                              <span>{(ob.pos_amount||ob.outstanding_amount)?`Outstanding ₹${Number(ob.pos_amount||ob.outstanding_amount).toLocaleString('en-IN')}`:'Outstanding not set'}</span>
                             </>)
                           })()}
                         </div>
@@ -2360,9 +2458,9 @@ function AgentDashboard({ userId }) {
                         <div style={{color:'#64748b'}}>Type<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.obligation_type}</div></div>
                         <div style={{color:'#64748b'}}>Bank<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.bank_name||'—'}</div></div>
                         <div style={{color:'#64748b'}}>EMI<div style={{color:'#38bdf8',fontWeight:700,marginTop:2}}>{ob.emi_amount?'₹'+Number(ob.emi_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{ob.outstanding_amount?'₹'+Number(ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Required Loan<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'₹'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>
-                        <div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>✓ Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>
+                        <div style={{color:'#64748b'}}>Outstanding<div style={{color:'#a78bfa',fontWeight:700,marginTop:2}}>{(ob.pos_amount||ob.outstanding_amount)?'₹'+Number(ob.pos_amount||ob.outstanding_amount).toLocaleString('en-IN'):'—'}</div></div>
+                        {ob.obligation_type!=='Personal Loan'&&<div style={{color:'#64748b'}}>Loan Amount<div style={{color:'#e2e8f0',fontWeight:600,marginTop:2}}>{ob.sanctioned_amount?'₹'+Number(ob.sanctioned_amount).toLocaleString('en-IN'):'—'}</div></div>}
+                        {['Personal Loan','Credit Card'].includes(ob.obligation_type)&&<div style={{color:'#64748b'}}>Balance Transfer<div style={{marginTop:2}}>{ob.balance_transfer?<span style={{color:'#4ade80',fontWeight:700}}>✓ Yes</span>:<span style={{color:'#94a3b8'}}>No</span>}</div></div>}
                         {ob.tenure_months&&<div style={{color:'#64748b'}}>Tenure<div style={{color:'#e2e8f0',marginTop:2}}>{ob.tenure_months} months</div></div>}
                         {ob.bounce&&ob.bounce!=='No'&&<div style={{color:'#64748b'}}>Bounce<div style={{color:'#f87171',fontWeight:600,marginTop:2}}>{ob.bounce}</div></div>}
                       </div>
@@ -2377,43 +2475,39 @@ function AgentDashboard({ userId }) {
                             {OBLIGATION_TYPES.map(type=><option key={type} value={type}>{type}</option>)}
                           </select>
                         </div>
-                        {/* BALANCE TRANSFER - applies to every obligation type */}
-                        <div style={{display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
-                          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Balance Transfer (BT)?</label>
-                          <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
-                            style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
-                            <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                              {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
-                            </div>
-                            <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
-                          </div>
-                          <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
-                        </div>
 
                         {/* ── PERSONAL LOAN ── */}
                         {ob.obligation_type==='Personal Loan'&&(<>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Bank / NBFC Name</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Existing Bank / NBFC Name</label>
                             <input value={ob.bank_name||''} onChange={e=>handleObligationFieldChange(ob.id,'bank_name',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount (₹)</label>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Loan Amount Taken</label>
                             <input type="number" min="0" value={ob.overdue_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'overdue_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Required Loan Amount (₹)</label>
-                            <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
-                            <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Current Outstanding (₹)</label>
-                            <input type="number" min="0" value={ob.outstanding_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'outstanding_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>POS (Principal Outstanding)</label>
                             <input type="number" min="0" placeholder="Enter POS amount" value={ob.pos_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'pos_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
-                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Total EMIs Paid</label>
-                            <input type="number" min="0" value={ob.emis_paid||''} onChange={e=>handleObligationFieldChange(ob.id,'emis_paid',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMI Amount (₹)</label>
+                            <input type="number" min="0" value={ob.emi_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'emi_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Tenure (months)</label>
                             <input type="number" min="0" value={ob.tenure_months||''} onChange={e=>handleObligationFieldChange(ob.id,'tenure_months',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                          <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Total EMIs Paid</label>
+                            <input type="number" min="0" value={ob.emis_paid||''} onChange={e=>handleObligationFieldChange(ob.id,'emis_paid',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>EMIs Remaining</label>
-                            <input type="number" min="0" value={ob.remaining_tenure||''} onChange={e=>handleObligationFieldChange(ob.id,'remaining_tenure',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/></div>
+                            <div style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#1e293b',color:'#94a3b8',fontSize:13,boxSizing:'border-box'}}>{Math.max((parseInt(ob.tenure_months)||0)-(parseInt(ob.emis_paid)||0),0)}</div>
+                            <div style={{fontSize:10,color:'#64748b',marginTop:4}}>Auto-calculated: Tenure − Total EMIs Paid</div></div>
                           <div><label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Any EMI Bounce?</label>
                             <select value={ob.bounce||'No'} onChange={e=>handleObligationFieldChange(ob.id,'bounce',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}>
                               {YES_NO_OPTIONS.map(opt=><option key={opt} value={opt}>{opt}</option>)}
                             </select></div>
+                          <div style={{display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Balance Transfer (BT)?</label>
+                            <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
+                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
+                              <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+                              </div>
+                              <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
+                            </div>
+                            <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
+                          </div>
                         </>)}
 
                         {/* ── HOUSING LOAN ── */}
@@ -2451,14 +2545,21 @@ function AgentDashboard({ userId }) {
                             <input type="number" min="0" value={ob.sanctioned_amount||''} onChange={e=>{handleObligationFieldChange(ob.id,'sanctioned_amount',e.target.value);handleObligationFieldChange(ob.id,'credit_limit',e.target.value)}} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
                           </div>
                           <div>
-                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Outstanding Amount (₹)</label>
-                            <input type="number" min="0" value={ob.outstanding_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'outstanding_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
-                            {(ob.pos_amount||ob.outstanding_amount)&&!ob.balance_transfer&&<div style={{fontSize:10,color:'#f97316',marginTop:3}}>Obligated: ₹{Math.round((parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0)*0.05).toLocaleString('en-IN')} (5% of Outstanding/POS)</div>}
-                            {(ob.pos_amount||ob.outstanding_amount)&&ob.balance_transfer&&<div style={{fontSize:10,color:'#4ade80',marginTop:3}}>Not Obligated (BT applied)</div>}
-                          </div>
-                          <div>
                             <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>POS (Principal Outstanding)</label>
                             <input type="number" min="0" placeholder="Enter POS amount" value={ob.pos_amount||''} onChange={e=>handleObligationFieldChange(ob.id,'pos_amount',e.target.value)} style={{width:'100%',padding:'7px 10px',borderRadius:8,border:'1px solid #334155',background:'#0f172a',color:'white',outline:'none',fontSize:13}}/>
+                            {(ob.pos_amount||ob.outstanding_amount)&&!ob.balance_transfer&&<div style={{fontSize:10,color:'#f97316',marginTop:3}}>Obligated: ₹{Math.round((parseFloat(ob.pos_amount)||parseFloat(ob.outstanding_amount)||0)*0.05).toLocaleString('en-IN')} (5% of POS)</div>}
+                            {(ob.pos_amount||ob.outstanding_amount)&&ob.balance_transfer&&<div style={{fontSize:10,color:'#4ade80',marginTop:3}}>Not Obligated (BT applied)</div>}
+                          </div>
+                          <div style={{display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+                            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#94a3b8',marginBottom:4}}>Balance Transfer (BT)?</label>
+                            <div onClick={()=>!obModalReadOnly&&handleObligationFieldChange(ob.id,'balance_transfer',!ob.balance_transfer)}
+                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:8,border:'1px solid '+(ob.balance_transfer?'#16a34a':'#334155'),background:ob.balance_transfer?'#052e16':'#0f172a',cursor:obModalReadOnly?'default':'pointer',userSelect:'none'}}>
+                              <div style={{width:18,height:18,borderRadius:5,background:ob.balance_transfer?'#16a34a':'#334155',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                {ob.balance_transfer&&<span style={{color:'white',fontSize:12,fontWeight:700}}>✓</span>}
+                              </div>
+                              <span style={{fontSize:12,fontWeight:700,color:ob.balance_transfer?'#4ade80':'#94a3b8'}}>{ob.balance_transfer?'Yes — BT':'No'}</span>
+                            </div>
+                            <div style={{fontSize:10,color:'#64748b',marginTop:4}}>BT loans are excluded at 0% in FOIR</div>
                           </div>
                         </>)}
 
@@ -2553,8 +2654,8 @@ function AgentDashboard({ userId }) {
               </div>
               {exportDateType==='custom'&&(
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,background:'#F9FAFB',padding:14,borderRadius:8,marginBottom:14}}>
-                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>From</div><input type="date" value={exportStartDate} onChange={e=>setExportStartDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
-                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>To</div><input type="date" value={exportEndDate} onChange={e=>setExportEndDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
+                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>From</div><DateInput value={exportStartDate} onChange={e=>setExportStartDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
+                  <div><div style={{fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>To</div><DateInput value={exportEndDate} onChange={e=>setExportEndDate(e.target.value)} style={{width:'100%',padding:8,border:'1px solid #E2E8F0',borderRadius:6,fontSize:13}}/></div>
                 </div>
               )}
               <div style={{background:exportCount>0?'#EBF8FF':'#FFF5F5',border:'1px solid '+(exportCount>0?'#BEE3F8':'#FED7D7'),borderRadius:10,padding:'14px 16px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -2836,9 +2937,9 @@ function AgentDashboard({ userId }) {
                 </select>
                 <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>▼</span>
               </div>
-              <input type='date' value={agentDateFrom} onChange={e=>setAgentDateFrom(e.target.value)}
+              <DateInput value={agentDateFrom} onChange={e=>setAgentDateFrom(e.target.value)}
                 style={{...filterClayDate,flexShrink:0}}/>
-              <input type='date' value={agentDateTo} onChange={e=>setAgentDateTo(e.target.value)}
+              <DateInput value={agentDateTo} onChange={e=>setAgentDateTo(e.target.value)}
                 style={{...filterClayDate,flexShrink:0}}/>
             </div>
 
@@ -2887,7 +2988,7 @@ function AgentDashboard({ userId }) {
                           <div style={{fontWeight:700,color:'#185FA5',fontSize:15}}>{fmtAmt(lead.loan_amount)}</div>
                           {lead.monthly_salary&&<div style={{fontSize:11,color:txt2}}>Sal: {fmtAmt(lead.monthly_salary)}</div>}
                         </div>
-                        <select value={lead.status||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
+                        <select value={displayStatus||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
                           style={{background:st.bg,color:st.color,border:'none',padding:'6px 10px',borderRadius:20,fontSize:12,fontWeight:600,cursor:'pointer',outline:'none',boxShadow:'0 1px 3px rgba(0,0,0,0.1)'}}>
                           {stageNames.map(s=><option key={s} value={s} style={{background:'white',color:'black'}}>{s}</option>)}
                         </select>
@@ -2993,10 +3094,10 @@ function AgentDashboard({ userId }) {
                               {lead.monthly_salary&&<div style={{fontSize:10,color:txt2}}>Sal: {fmtAmt(lead.monthly_salary)}</div>}
                             </td>
                             <td style={{padding:'12px 14px'}}>
-                              <select value={lead.status||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
+                              <select value={displayStatus||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
                                 style={{
-                                  background:(stageBadgeStyle[lead.status]||{bg:'#F1EFE8'}).bg,
-                                  color:(stageBadgeStyle[lead.status]||{color:'#5F5E5A'}).color,
+                                  background:(stageBadgeStyle[displayStatus]||{bg:'#F1EFE8'}).bg,
+                                  color:(stageBadgeStyle[displayStatus]||{color:'#5F5E5A'}).color,
                                   border:'none',
                                   padding:'6px 28px 6px 12px',
                                   borderRadius:20,
@@ -3322,7 +3423,8 @@ function TeamLeaderPanel({ userId }) {
   const [calls,setCalls]           =useState([])
   const [agentStats,setAgentStats] =useState([])
   const [dateRange,setDateRange]   =useState('today')
-  const [activeTab,setActiveTab]   =useState('overview')
+  const [activeTab,_setActiveTab]        =useState(_apTab)
+    const setActiveTab=(t)=>{_apTab=t;_setActiveTab(t)}
   const [loading,setLoading]       =useState(true)
   const [overdueAlerts,setOverdueAlerts]=useState([])
   const [showAlerts,setShowAlerts] =useState(false)
@@ -3537,7 +3639,8 @@ function ManagerPanel({ userId }) {
   const [calls,setCalls]           =useState([])
   const [agentStats,setAgentStats] =useState([])
   const [dateRange,setDateRange]   =useState('today')
-  const [activeTab,setActiveTab]   =useState('overview')
+  const [activeTab,_setActiveTab]        =useState(_apTab)
+    const setActiveTab=(t)=>{_apTab=t;_setActiveTab(t)}
   const [loading,setLoading]       =useState(true)
   const isMobile=useIsMobile()
 
@@ -4257,7 +4360,8 @@ function BankStatementAnalyzer() {
 
 // =============================================
 // MAIN DASHBOARD
-// =============================================
+// ==============================================
+let _apTab='overview'
 export default function Dashboard({ session }) {
   const [activePage,setActivePage]   =useState('dashboard')
   const [profile,setProfile]         =useState(null)
@@ -4347,7 +4451,8 @@ export default function Dashboard({ session }) {
   ]
 
   const AdminPanel=()=>{
-    const [activeTab,setActiveTab]         =useState('overview')
+    const [activeTab,_setActiveTab]        =useState(_apTab)
+    const setActiveTab=(t)=>{_apTab=t;_setActiveTab(t)}
     const isMobile                         =typeof window!=='undefined'&&window.innerWidth<768
     const [users,setUsers]                 =useState([])
     const [dispositions,setDispositions]   =useState([])
@@ -5073,11 +5178,11 @@ export default function Dashboard({ session }) {
 <th style={{width:32,padding:'8px 6px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>
 {[['Name',130],['Mobile',105],['Status',120],['Agent',110],['Loan Amt',90],['Actions',180],['Date',90]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
 </tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const ss=apStageStyle(l.status); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id+(l._mirrorAgentId||'')} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id+(l._mirrorAgentId||'')} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{l.status||'New'}</span></td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{displayStatus||'New'}</span></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',whiteSpace:'nowrap'}} title={agent?.full_name||''}><div style={{overflow:'hidden',textOverflow:'ellipsis'}}>{isMirrorRow?(users.find(u=>u.id===(l._mirrorAgentId||leadAgentF))?.full_name||agent?.full_name):(agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>)}</div>{isMirrorRow&&<span style={{display:'inline-block',fontSize:9,background:'#EFF6FF',color:'#1D4ED8',padding:'1px 5px',borderRadius:4,fontWeight:700,marginTop:2}}>MIRROR</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'₹'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>—</span>}</td>
 

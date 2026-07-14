@@ -15,6 +15,8 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     detectSessionInUrl: true,
   },
   global: {
+    // Force every Supabase fetch to bypass browser HTTP cache and the PWA
+    // service worker cache - prevents stale API responses on first load.
     fetch: (url, options = {}) => fetch(url, { ...options, cache: 'no-store' }),
   },
 })

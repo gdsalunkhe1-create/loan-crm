@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
+import DateInput from '../components/DateInput'
 
 const IST_TZ = 'Asia/Kolkata'
 
@@ -552,8 +553,8 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
           <div><label style={LBL}>Disposition</label><select style={SEL} value={dispF} onChange={e=>setDispF(e.target.value)}>{dispNames.map(d=><option key={d}>{d}</option>)}</select></div>
           <div><label style={LBL}>Agent</label><select style={SEL} value={agentF} onChange={e=>setAgentF(e.target.value)}><option value="All">All Agents</option>{agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}</select></div>
           <div><label style={LBL}>Sheet</label><select style={SEL} value={sheetF} onChange={e=>setSheetF(e.target.value)}>{sheets.map(s=><option key={s} value={s}>{s==='All'?'All Sheets':s}</option>)}</select></div>
-          <div><label style={LBL}>From</label><input type="date" style={SEL} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
-          <div><label style={LBL}>To</label><input type="date" style={SEL} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
+          <div><label style={LBL}>From</label><DateInput style={SEL} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
+          <div><label style={LBL}>To</label><DateInput style={SEL} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
           <Btn outline onClick={clearFilters} style={{marginBottom:1}}>Clear</Btn>
           <button
             onClick={()=>setShowDupOnly(!showDupOnly)}
@@ -857,8 +858,8 @@ function ActivityLog({ activityLog, users, reload }) {
       </div>
       <Card style={{padding:14,marginBottom:12}}>
         <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
-          <div><label style={LBL}>From</label><input type="date" style={SEL} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
-          <div><label style={LBL}>To</label><input type="date" style={SEL} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
+          <div><label style={LBL}>From</label><DateInput style={SEL} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
+          <div><label style={LBL}>To</label><DateInput style={SEL} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
           <div><label style={LBL}>Agent</label><select style={SEL} value={agentF} onChange={e=>setAgentF(e.target.value)}><option value="All">All Agents</option>{agents.map(a=><option key={a.id} value={a.id}>{a.full_name}</option>)}</select></div>
         </div>
         <div style={{marginTop:8,fontSize:12,color:'#6b7280'}}>{filtered.length} records</div>
@@ -1416,7 +1417,7 @@ function ExportModal({ leads, users, dispositions, onClose }) {
                 <label key={v} style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer',fontSize:13}}><input type="radio" checked={dateMode===v} onChange={()=>setDateMode(v)}/>{l}</label>
               ))}
             </div>
-            {dateMode==='custom'&&<div style={{display:'flex',gap:10,marginTop:10}}><div style={{flex:1}}><label style={LBL}>Start</label><input type="date" style={INP} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div><div style={{flex:1}}><label style={LBL}>End</label><input type="date" style={INP} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div></div>}
+            {dateMode==='custom'&&<div style={{display:'flex',gap:10,marginTop:10}}><div style={{flex:1}}><label style={LBL}>Start</label><DateInput style={INP} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div><div style={{flex:1}}><label style={LBL}>End</label><DateInput style={INP} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div></div>}
           </div>
           {/* FILTERS */}
           <div style={{marginBottom:18}}>

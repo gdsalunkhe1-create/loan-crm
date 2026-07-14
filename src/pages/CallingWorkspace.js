@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { buildIST, toDbTimestamp, formatIST } from '../utils/timeUtils'
 import CallState from '../plugins/CallState'
+import TimeInput from '../components/TimeInput'
 import {
   IconPhone, IconPhoneOff, IconBrandWhatsapp, IconNotes,
   IconClock, IconX, IconCheck, IconFlame, IconDroplet,
@@ -284,6 +285,9 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
     setObligationError('')
     const payload={
       lead_id: lead.id,
+      agent_id: userId,
+      last_updated_by: userId,
+      last_updated_at: new Date().toISOString(),
       obligation_type: obligation.obligation_type,
       bank_name: obligation.bank_name,
       emi_amount: Number(obligation.emi_amount||0),
@@ -947,7 +951,7 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
                   </div>
                   <div>
                     <label style={{display:'block',fontSize:13,fontWeight:700,color:'#111827',marginBottom:6}}>Time</label>
-                    <input type="time" value={followUpTime} onChange={e=>setFollowUpTime(e.target.value)}
+                    <TimeInput value={followUpTime} onChange={e=>setFollowUpTime(e.target.value)}
                       style={{width:'100%',padding:'10px 12px',border:'2px solid #E2E8F0',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box'}}/>
                   </div>
                 </div>
