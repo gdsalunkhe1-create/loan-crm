@@ -1326,6 +1326,7 @@ function AgentDashboard({ userId }) {
     const fmt=v=>v?`₹${Number(v).toLocaleString('en-IN')}`:'-'
     return [
       `Loan Type: ${ob.obligation_type||'-'}`,
+      `Bank Name: ${ob.bank_name||'-'}`,
       `Loan Amount: ${fmt(loanAmount)}`,
       `Outstanding Amount: ${fmt(outstanding)}`,
       `Emi Amount: ${fmt(ob.emi_amount)}`,
