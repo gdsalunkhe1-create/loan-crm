@@ -4382,7 +4382,10 @@ export default function Dashboard({ session }) {
     const statusDropOpenRef                =useRef(false)
     statusDropOpenRef.current = statusDropOpen
     const [leadAgentF,setLeadAgentF]       =useState('All')
-    const [leadSheetF,setLeadSheetF]       =useState('All')
+    const [selectedSheets,setSelectedSheets]=useState([])
+    const [sheetDropOpen,setSheetDropOpen] =useState(false)
+    const [sheetSearch,setSheetSearch]     =useState('')
+    const sheetDropRef                     =useRef(null)
     const [leadDateFrom,setLeadDateFrom]   =useState('')
     const [leadDateTo,setLeadDateTo]       =useState('')
     const [apToast,setApToast]             =useState(null)
@@ -4399,6 +4402,13 @@ export default function Dashboard({ session }) {
     const fetchLeadsRef                    =useRef(null)
 
     useEffect(()=>{ fetchUsers(); fetchDispositions(); fetchLeadSources(); fetchLeads(); fetchAuthUsers(); fetchSettings(); fetchActivityFull(); fetchAdminStages() },[])
+
+    // Close Sheet No. filter panel when clicking anywhere outside it
+    useEffect(()=>{
+      const onDown=e=>{ if(sheetDropRef.current&&!sheetDropRef.current.contains(e.target)) setSheetDropOpen(false) }
+      if(sheetDropOpen) document.addEventListener('mousedown',onDown)
+      return()=>document.removeEventListener('mousedown',onDown)
+    },[sheetDropOpen])
 
     useEffect(()=>{
       const sub=supabase
@@ -4611,8 +4621,8 @@ export default function Dashboard({ session }) {
     adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
     const dupLeadIds=new Set()
     adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) dupLeadIds.add(l.id) })
-    const leadSheets=['All',...Array.from(new Set(adminLeads.map(l=>l.sheet_number).filter(Boolean))).sort()]
-    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSheet=leadSheetF==='All'||l.sheet_number===leadSheetF; const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSheet&&mF&&mT&&mDup })
+    const distinctSheets=[...new Set(adminLeads.map(l=>l.sheet_number).filter(Boolean))].sort()
+    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSh=selectedSheets.length===0||(l.sheet_number?selectedSheets.includes(l.sheet_number):selectedSheets.includes('__none__')); const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSh&&mF&&mT&&mDup })
     const filteredLeads=leadAgentF==='All'?baseFiltered.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):baseFiltered
     const allLdSel=filteredLeads.length>0&&filteredLeads.every(l=>selected.has(l.id))
     const filteredAct=activityFull.filter(a=>{ const mA=!actFdAgent||a.assigned_to===actFdAgent||a.assigned_by===actFdAgent; const mD=!actFdDate||(a.created_at||'').startsWith(actFdDate); return mA&&mD })
@@ -4871,10 +4881,29 @@ export default function Dashboard({ session }) {
                   )}
                 </div>
                 <select className='form-input' style={{width:'auto',fontSize:13}} value={leadAgentF} onChange={e=>setLeadAgentF(e.target.value)}><option value='All'>All Agents</option>{users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}</select>
-                <select className='form-input' style={{width:'auto',fontSize:13}} value={leadSheetF} onChange={e=>setLeadSheetF(e.target.value)}>{leadSheets.map(s=><option key={s} value={s}>{s==='All'?'All Sheets':s}</option>)}</select>
+                <div style={{position:'relative'}} ref={sheetDropRef}>
+                  <button type='button' onClick={()=>setSheetDropOpen(o=>!o)} className='form-input' style={{width:'auto',fontSize:13,cursor:'pointer',borderColor:sheetDropOpen?'#185FA5':undefined}}>{selectedSheets.length===0?'Sheet No.':`Sheet No. (${selectedSheets.length})`} ▾</button>
+                  {sheetDropOpen&&(
+                    <div style={{position:'absolute',top:'110%',left:0,zIndex:50,background:'white',border:'1px solid #E2E8F0',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',padding:8,minWidth:200,maxHeight:320,display:'flex',flexDirection:'column'}}>
+                      <input autoFocus className='form-input' style={{fontSize:13,marginBottom:6}} placeholder='Search sheet no...' value={sheetSearch} onChange={e=>setSheetSearch(e.target.value)}/>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                        <span style={{fontSize:11,color:'#94A3B8'}}>{distinctSheets.length} sheet{distinctSheets.length===1?'':'s'}</span>
+                        <span onClick={()=>setSelectedSheets([])} style={{fontSize:12,color:'#185FA5',cursor:'pointer',fontWeight:600}}>Clear</span>
+                      </div>
+                      <div style={{overflowY:'auto',maxHeight:220}}>
+                        {'(No Sheet)'.toLowerCase().includes(sheetSearch.toLowerCase())&&(
+                          <label style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',fontSize:13,cursor:'pointer'}}><input type='checkbox' checked={selectedSheets.includes('__none__')} onChange={()=>setSelectedSheets(prev=>prev.includes('__none__')?prev.filter(x=>x!=='__none__'):[...prev,'__none__'])}/> (No Sheet)</label>
+                        )}
+                        {distinctSheets.filter(s=>s.toLowerCase().includes(sheetSearch.toLowerCase())).map(s=>(
+                          <label key={s} style={{display:'flex',alignItems:'center',gap:8,padding:'5px 8px',fontSize:13,cursor:'pointer'}}><input type='checkbox' checked={selectedSheets.includes(s)} onChange={()=>setSelectedSheets(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s])}/> {s}</label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateFrom} onChange={e=>setLeadDateFrom(e.target.value)}/>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateTo} onChange={e=>setLeadDateTo(e.target.value)}/>
-                <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setLeadSheetF('All');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
+                <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setSelectedSheets([]);setSheetDropOpen(false);setSheetSearch('');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
                 <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
                 <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
               </div>
