@@ -5140,6 +5140,7 @@ export default function Dashboard({ session }) {
     const [csvError,setCsvError]         = useState('')
     const [csvAgents,setCsvAgents]       = useState([])
     const [assignTo,setAssignTo]         = useState('')
+    const [existingAgentMobiles,setExistingAgentMobiles] = useState(new Set())
     const [importing,setImporting]       = useState(false)
     const [importResult,setImportResult] = useState(null)
     const [adminNotifs,setAdminNotifs]   = useState([])
@@ -5224,13 +5225,31 @@ export default function Dashboard({ session }) {
       const ld  = colMap.lead_date       ? (row[colMap.lead_date]||'')              : ''
       const sn  = colMap.sheet_number    ? (row[colMap.sheet_number]||'').trim()    : ''
       const an  = colMap.agent_name      ? (row[colMap.agent_name]||'').trim()      : ''
-      return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,_valid:!!(nm&&mb)}
+      const mbNorm = mb.replace(/\D/g,'').slice(-10)
+      const isDupAgent = !!(assignTo && mbNorm && existingAgentMobiles.has(mbNorm))
+      return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,_valid:!!(nm&&mb),_dupAgent:isDupAgent}
     })
+    const missingCount   = csvRows.filter(r=>!r._valid).length
+    const dupAgentCount  = csvRows.filter(r=>r._valid&&r._dupAgent).length
+    const trulyValidRows = csvRows.filter(r=>r._valid&&!r._dupAgent)
+    const selectedAgentName = csvAgents.find(a=>a.id===assignTo)?.full_name||'this agent'
 
     const fetchCSVAgents=async()=>{
       const{data}=await supabase.from('profiles').select('id,full_name').in('role',['agent','team_leader','manager']).order('full_name')
       setCsvAgents(data||[])
     }
+
+    useEffect(()=>{
+      let cancelled=false
+      const run=async()=>{
+        if(!assignTo||!colMap.mobile){ setExistingAgentMobiles(new Set()); return }
+        const{data}=await supabase.from('leads').select('mobile').eq('assigned_to',assignTo)
+        if(cancelled)return
+        setExistingAgentMobiles(new Set((data||[]).map(l=>(l.mobile||'').replace(/\D/g,'').slice(-10)).filter(Boolean)))
+      }
+      run()
+      return()=>{cancelled=true}
+    },[assignTo,colMap.mobile])
 
     const handleFile=async(e)=>{
       const file=e.target.files[0]; if(!file)return
@@ -5258,7 +5277,7 @@ export default function Dashboard({ session }) {
 
     const handleImport=async()=>{
       setImporting(true)
-      const valid=csvRows.filter(r=>r._valid)
+      const valid=trulyValidRows
       let ok=0,fail=0,firstError=''
       for(let i=0;i<valid.length;i+=100){
         const now=new Date().toISOString()
@@ -5412,9 +5431,15 @@ export default function Dashboard({ session }) {
               {/* Preview */}
               {csvRows.length>0&&(
                 <div style={{marginBottom:18}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                    <div style={{fontSize:13,fontWeight:700,color:'#111827'}}>Preview — {csvRows.length} rows ({csvRows.filter(r=>r._valid).length} valid)</div>
-                    {csvRows.filter(r=>!r._valid).length>0&&<span style={{fontSize:11,color:'#DC2626',fontWeight:600}}>{csvRows.filter(r=>!r._valid).length} rows missing Name/Number will be skipped</span>}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8,flexWrap:'wrap',gap:6}}>
+                    <div style={{fontSize:13,fontWeight:700,color:'#111827'}}>Preview — {csvRows.length} rows</div>
+                    <span style={{fontSize:11,color:(missingCount>0||dupAgentCount>0)?'#DC2626':'#059669',fontWeight:600}}>
+                      {[
+                        missingCount>0?`${missingCount} row${missingCount>1?'s':''} missing Name/Number`:null,
+                        dupAgentCount>0?`${dupAgentCount} row${dupAgentCount>1?'s':''} already assigned to this agent`:null,
+                      ].filter(Boolean).join(', ')}
+                      {(missingCount>0||dupAgentCount>0)?' — ':''}{trulyValidRows.length} valid
+                    </span>
                   </div>
                   <div style={{overflowX:'auto',borderRadius:8,border:'1px solid #E2E8F0'}}>
                     <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -5425,14 +5450,23 @@ export default function Dashboard({ session }) {
                       </thead>
                       <tbody>
                         {csvRows.slice(0,8).map(r=>(
-                          <tr key={r._row} style={{borderTop:'1px solid #F3F4F6',opacity:r._valid?1:0.4}}>
+                          <tr key={r._row} style={{borderTop:'1px solid #F3F4F6',opacity:(r._valid&&!r._dupAgent)?1:0.4}}>
                             <td style={{padding:'7px 12px',color:'#9CA3AF'}}>{r._row}</td>
                             <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151'}}>{r.mobile||'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151'}}>{r.loan_amount?'₹'+r.loan_amount:'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151'}}>{r.application_id||'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||'—'}</td>
-                            <td style={{padding:'7px 12px'}}>{r._valid?<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>✓ OK</span>:<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 7px',borderRadius:4,fontWeight:600}}>Skip</span>}</td>
+                            <td style={{padding:'7px 12px'}}>{
+                              !r._valid
+                                ?<span style={{background:'#FEE2E2',color:'#991B1B',padding:'2px 7px',borderRadius:4,fontWeight:600}}>Skip</span>
+                                :r._dupAgent
+                                  ?<div>
+                                    <span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 7px',borderRadius:4,fontWeight:600,whiteSpace:'nowrap'}}>Skip</span>
+                                    <div style={{fontSize:10,color:'#92400E',marginTop:2}}>Already assigned to {selectedAgentName}</div>
+                                  </div>
+                                  :<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>✓ OK</span>
+                            }</td>
                           </tr>
                         ))}
                         {csvRows.length>8&&<tr><td colSpan={6} style={{padding:'7px 12px',color:'#9CA3AF',textAlign:'center'}}>...and {csvRows.length-8} more rows</td></tr>}
@@ -5454,9 +5488,9 @@ export default function Dashboard({ session }) {
             <div style={{padding:'14px 20px',borderTop:'1px solid #E2E8F0',display:'flex',gap:10,justifyContent:'flex-end',flexShrink:0}}>
               <button onClick={()=>setShowImport(false)} style={{padding:'9px 18px',background:'transparent',border:'1px solid #E2E8F0',borderRadius:8,fontSize:13,cursor:'pointer',color:'#6B7280'}}>Close</button>
               {rawRows.length>0&&!importResult&&(
-                <button onClick={handleImport} disabled={importing||!colMap.full_name||!colMap.mobile||csvRows.filter(r=>r._valid).length===0}
-                  style={{padding:'9px 20px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',opacity:(importing||!colMap.full_name||!colMap.mobile||csvRows.filter(r=>r._valid).length===0)?0.6:1}}>
-                  {importing?'Importing…':`Import ${csvRows.filter(r=>r._valid).length} Leads`}
+                <button onClick={handleImport} disabled={importing||!colMap.full_name||!colMap.mobile||trulyValidRows.length===0}
+                  style={{padding:'9px 20px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',opacity:(importing||!colMap.full_name||!colMap.mobile||trulyValidRows.length===0)?0.6:1}}>
+                  {importing?'Importing…':`Import ${trulyValidRows.length} Leads`}
                 </button>
               )}
               {importResult&&<button onClick={()=>setShowImport(false)} style={{padding:'9px 20px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Done</button>}
