@@ -4397,6 +4397,7 @@ export default function Dashboard({ session }) {
     const [apRtConnected,setApRtConnected] =useState(false)
     const [reassignTarget,setReassignTarget]=useState(null)
     const [reassignTo,setReassignTo]       =useState('')
+    const [reassignType,setReassignType]   =useState('transfer')
     const [reassigning,setReassigning]     =useState(false)
     const [showDupOnly,setShowDupOnly]     =useState(false)
     const fetchLeadsRef                    =useRef(null)
@@ -4467,22 +4468,154 @@ export default function Dashboard({ session }) {
     const fetchActivityFull=async()=>{ const{data}=await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500); if(data) setActivityFull(data) }
     const showApToast=(msg,type='success')=>{ setApToast({msg,type}); setTimeout(()=>setApToast(null),3500) }
 
-    // Per-lead reassign — always mirror so the original agent keeps access and the
-    // new agent also gets the lead with full history (prevents agent data loss)
+    // Shared reassignment engine used by both the per-lead modal and the bulk
+    // selection bar. Two independent code paths, chosen explicitly by `type`:
+    //  - 'transfer' (default "Reassign"): the original lead row is left
+    //    completely untouched — the original agent keeps working it with
+    //    zero disruption. A brand new, independent lead row is cloned for
+    //    the new agent instead (fresh "New" status, notes carried over,
+    //    obligations carried over, own id), so the two agents' copies never
+    //    affect each other again.
+    //  - 'mirror' (explicit "Mirror" choice only): original agent keeps
+    //    access AND the new agent also gets it via the same shared row —
+    //    unchanged from before.
+    const reassignLeads=async(leadsArr,targetAgentId,type)=>{
+      if(!targetAgentId||!leadsArr||!leadsArr.length) return {error:null}
+      const agent=users.find(u=>u.id===targetAgentId)
+      const logEntries=[]
+      let obligationsFailed=false
+      for(const lead of leadsArr){
+        const originalAgent=lead.assigned_to
+        if(type==='mirror'){
+          const currentMirrors=lead.mirror_agents||[]
+          const newMirrors=[...new Set([...currentMirrors,originalAgent].filter(Boolean))]
+          const newMirrorStatuses={...(lead.mirror_agent_statuses||{})}; if(originalAgent) newMirrorStatuses[originalAgent]=lead.status
+          const{error}=await supabase.from('leads').update({assigned_to:targetAgentId,mirror_agents:newMirrors,mirror_agent_statuses:newMirrorStatuses,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',lead.id)
+          if(error) return {error}
+          logEntries.push({lead_id:lead.id,lead_name:lead.full_name||'',action:'Mirror Assigned',assigned_to:targetAgentId,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null})
+        } else {
+          const previousAgentName=users.find(u=>u.id===originalAgent)?.full_name||lead.assigned_to_name||null
+          const now=toDbTimestamp(nowIST())
+          const clonedLead={
+            full_name: lead.full_name,
+            mobile: lead.mobile,
+            email: lead.email,
+            city: lead.city,
+            lead_source: lead.lead_source,
+            product_interest: lead.product_interest,
+            budget_range: lead.budget_range,
+            loan_amount: lead.loan_amount,
+            loan_type: lead.loan_type,
+            org_id: lead.org_id,
+            campaign_id: lead.campaign_id,
+            monthly_salary: lead.monthly_salary,
+            company_name: lead.company_name,
+            existing_emi: lead.existing_emi,
+            existing_loan: lead.existing_loan,
+            outstanding_amount: lead.outstanding_amount,
+            housing_loan: lead.housing_loan,
+            joint_loan: lead.joint_loan,
+            lead_temperature: lead.lead_temperature,
+            pan_number: lead.pan_number,
+            aadhaar: lead.aadhaar,
+            dob: lead.dob,
+            employment_type: lead.employment_type,
+            eligible_amount: lead.eligible_amount,
+            roi: lead.roi,
+            tenure: lead.tenure,
+            bank_applied: lead.bank_applied,
+            pincode: lead.pincode,
+            state: lead.state,
+            application_id: lead.application_id,
+            source: lead.source,
+            lead_date: lead.lead_date,
+            sheet_number: lead.sheet_number,
+            team_leader_id: lead.team_leader_id,
+            disposition: lead.disposition,
+            follow_up_date: lead.follow_up_date,
+            follow_up_done: lead.follow_up_done,
+            archived: lead.archived,
+            net_take_home: lead.net_take_home,
+            assigned_to: targetAgentId,
+            assigned_to_name: agent?.full_name||null,
+            status: 'New',
+            notes: lead.notes || null,
+            previous_agent_name: previousAgentName,
+            previous_status: lead.status || null,
+            previous_notes: lead.notes || null,
+            stage_history: [],
+            mirror_agents: [],
+            call_history: [],
+            call_count: 0,
+            documents: [],
+            whatsapp_history: [],
+            mirror_agent_statuses: {},
+            assignment_type: 'transfer',
+            assigned_at: now,
+            created_at: now
+          }
+          const{data:inserted,error}=await supabase.from('leads').insert([clonedLead]).select().single()
+          if(error) return {error}
+          const{data:sourceObligations}=await supabase.from('loan_obligations').select('*').eq('lead_id',lead.id)
+          if(sourceObligations&&sourceObligations.length){
+            const obNow=toDbTimestamp(nowIST())
+            const clonedObligations=sourceObligations.map(ob=>({
+              lead_id: inserted.id,
+              agent_id: targetAgentId,
+              last_updated_by: targetAgentId,
+              obligation_type: ob.obligation_type,
+              bank_name: ob.bank_name,
+              emi_amount: ob.emi_amount,
+              outstanding_amount: ob.outstanding_amount,
+              sanctioned_amount: ob.sanctioned_amount,
+              tenure_months: ob.tenure_months,
+              remaining_tenure: ob.remaining_tenure,
+              emis_paid: ob.emis_paid,
+              bounce: ob.bounce,
+              overdue_amount: ob.overdue_amount,
+              dpd: ob.dpd,
+              address_proof: ob.address_proof,
+              joint_type: ob.joint_type,
+              joint_holder_name: ob.joint_holder_name,
+              joint_holder_income: ob.joint_holder_income,
+              joint_holder_relation: ob.joint_holder_relation,
+              balance_transfer: ob.balance_transfer,
+              loan_amount: ob.loan_amount,
+              required_loan_amount: ob.required_loan_amount,
+              total_emis_paid: ob.total_emis_paid,
+              emis_remaining: ob.emis_remaining,
+              emi_bounce: ob.emi_bounce,
+              obligated_emi: ob.obligated_emi,
+              is_bt: ob.is_bt,
+              pos_amount: ob.pos_amount,
+              org_id: ob.org_id,
+              created_at: obNow,
+              updated_at: obNow,
+              last_updated_at: obNow
+            }))
+            const{error:obError}=await supabase.from('loan_obligations').insert(clonedObligations)
+            if(obError){ console.warn('[reassignLeads] Failed to copy obligations for lead',lead.id,'-> new lead',inserted.id,obError); obligationsFailed=true }
+          }
+          logEntries.push({lead_id:inserted.id,lead_name:inserted.full_name||'',action:'Reassigned',assigned_to:targetAgentId,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:previousAgentName})
+        }
+      }
+      await supabase.from('activity_log').insert(logEntries)
+      return {error:null,obligationsFailed}
+    }
+
     const doReassignLead=async()=>{
       if(!reassignTo||!reassignTarget)return
       setReassigning(true)
       try{
-        const agent=users.find(u=>u.id===reassignTo)
-        const originalAgent=reassignTarget.assigned_to
-        const currentMirrors=reassignTarget.mirror_agents||[]
-        const newMirrors=[...new Set([...currentMirrors,originalAgent].filter(Boolean))]
-        const{error}=await supabase.from('leads').update({assigned_to:reassignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:new Date().toISOString()}).eq('id',reassignTarget.id)
+        const{error,obligationsFailed}=await reassignLeads([reassignTarget],reassignTo,reassignType)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
-        await supabase.from('activity_log').insert([{lead_id:reassignTarget.id,lead_name:reassignTarget.full_name||'',action:'Reassigned',assigned_to:reassignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:users.find(u=>u.id===originalAgent)?.full_name||null}])
-        // try{ await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:reassignTo,agent_name:'Admin',message:'📥 A lead was assigned to you'}]) }catch(e){}
-        showApToast('Lead reassigned to '+(agent?.full_name||'agent')+'. Original agent retains access.')
-        setReassignTarget(null); setReassignTo(''); fetchLeads(); fetchActivityFull()
+        const agentName=users.find(u=>u.id===reassignTo)?.full_name||'agent'
+        showApToast(obligationsFailed
+          ? ('Lead shared with '+agentName+' — obligations couldn\'t be copied, please check manually')
+          : (reassignType==='mirror'
+            ? ('Lead mirrored to '+agentName+'. Original agent retains access.')
+            : ('Lead shared with '+agentName+' as a new independent copy. Original agent\'s lead is untouched.')))
+        setReassignTarget(null); setReassignTo(''); setReassignType('transfer'); fetchLeads(); fetchActivityFull()
       }catch(err){ showApToast('Error: '+err.message,'error') }
       setReassigning(false)
     }
@@ -4917,7 +5050,8 @@ export default function Dashboard({ session }) {
                     <option value=''>Reassign to agent...</option>
                     {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
-                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agent=users.find(u=>u.id===assignTo); const ids=[...selected]; const now=new Date().toISOString(); for(let i=0;i<selLeads.length;i+=50){ const batch=selLeads.slice(i,i+50); for(const lead of batch){ const currentMirrors=lead.mirror_agents||[]; const newMirrors=[...new Set([...currentMirrors,lead.assigned_to].filter(Boolean))]; await supabase.from('leads').update({assigned_to:assignTo,mirror_agents:newMirrors,assignment_type:'mirror',assigned_at:now}).eq('id',lead.id) } } const logEntries=selLeads.map(l=>({lead_id:l.id,lead_name:l.full_name||'',action:'Reassigned',assigned_to:assignTo,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:l.assigned_to||null,previous_agent_name:users.find(u=>u.id===l.assigned_to)?.full_name||null})); await supabase.from('activity_log').insert(logEntries); showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' reassigned to '+agent?.full_name+'. Original agents retain access.'); try{await supabase.from('notifications').insert([{type:'leads_assigned',agent_id:assignTo,agent_name:'Admin',message:`📥 ${ids.length} new lead${ids.length>1?'s':''} assigned to you`}])}catch(e){} setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
+                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,obligationsFailed}=await reassignLeads(selLeads,assignTo,'transfer'); if(error){ showApToast('Error: '+error.message,'error') } else { showApToast(obligationsFailed?(selLeads.length+' lead'+(selLeads.length>1?'s':'')+' shared with '+agentName+' — some obligations couldn\'t be copied, please check manually'):(selLeads.length+' lead'+(selLeads.length>1?'s':'')+' shared with '+agentName+' as new independent copies. Original agents\' leads are untouched.')); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
+                  <button className='btn' style={{background:'transparent',color:'white',border:'1px solid rgba(255,255,255,0.5)',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error}=await reassignLeads(selLeads,assignTo,'mirror'); if(error){ showApToast('Error: '+error.message,'error') } else { showApToast(selLeads.length+' lead'+(selLeads.length>1?'s':'')+' mirrored to '+agentName+'. Original agents retain access.'); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo} title='Original agent keeps access; new agent also gets it'>{assigning?'…':'🪞 Mirror'}</button>
                   <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>🗑 Delete Selected</button>
                   <button onClick={()=>setSelected(new Set())} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontSize:12}}>Clear</button>
                 </div>
@@ -4953,7 +5087,7 @@ export default function Dashboard({ session }) {
     <button onClick={()=>setViewLead(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
     <a href={'tel:'+(l.mobile||'')} title='Call' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></a>
     <a href={'https://wa.me/91'+(l.mobile||'')} target='_blank' rel='noreferrer' title='WhatsApp' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #BBF7D0',background:'#F0FDF4',textDecoration:'none'}}><IconBrandWhatsapp size={13} color='#25D366'/></a>
-    <button onClick={()=>{setReassignTarget(l);setReassignTo('')}} title='Reassign (original agent keeps access)' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>↩</button>
+    <button onClick={()=>{setReassignTarget(l);setReassignTo('');setReassignType('transfer')}} title='Reassign lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>↩</button>
     <button onClick={()=>handleUnassignLead(l)} title='Unassign agent' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FFF7ED',border:'1px solid #FED7AA',color:'#C2410C',fontSize:13,cursor:'pointer'}}>⊘</button>
     <button onClick={()=>handleDeleteLead(l)} title='Delete lead permanently' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',fontSize:12,cursor:'pointer'}}>🗑</button>
   </div>
@@ -4964,19 +5098,26 @@ export default function Dashboard({ session }) {
                 </div>
               </div>
               {reassignTarget&&(
-                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>{setReassignTarget(null);setReassignTo('')}}>
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:3000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>{setReassignTarget(null);setReassignTo('');setReassignType('transfer')}}>
                   <div onClick={e=>e.stopPropagation()} style={{background:'white',borderRadius:16,width:'100%',maxWidth:440,padding:28,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
                     <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>Reassign Lead</div>
                     <div style={{fontSize:13,color:'#64748B',marginBottom:16}}><strong>{reassignTarget.full_name}</strong> ({reassignTarget.mobile})<br/>Currently assigned to: <strong>{users.find(u=>u.id===reassignTarget.assigned_to)?.full_name||'Unassigned'}</strong></div>
-                    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1E40AF'}}>✅ <strong>Safe Reassign:</strong> The original agent keeps access to this lead. The new agent also gets it with full history.</div>
+                    <div style={{display:'flex',gap:8,marginBottom:12}}>
+                      <button onClick={()=>setReassignType('transfer')} style={{flex:1,padding:'8px 10px',borderRadius:8,border:reassignType==='transfer'?'2px solid #185FA5':'1px solid #E2E8F0',background:reassignType==='transfer'?'#EFF6FF':'white',fontSize:12,fontWeight:600,color:reassignType==='transfer'?'#185FA5':'#64748B',cursor:'pointer'}}>↩ Reassign</button>
+                      <button onClick={()=>setReassignType('mirror')} style={{flex:1,padding:'8px 10px',borderRadius:8,border:reassignType==='mirror'?'2px solid #185FA5':'1px solid #E2E8F0',background:reassignType==='mirror'?'#EFF6FF':'white',fontSize:12,fontWeight:600,color:reassignType==='mirror'?'#185FA5':'#64748B',cursor:'pointer'}}>🪞 Mirror</button>
+                    </div>
+                    {reassignType==='mirror'
+                      ? <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#1E40AF'}}>✅ <strong>Mirror:</strong> The original agent keeps access to this lead. The new agent also gets it with full history.</div>
+                      : <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:10,padding:'10px 14px',marginBottom:16,fontSize:12,color:'#166534'}}>✅ <strong>Reassign:</strong> The original agent's lead is left completely untouched. The new agent gets their own independent copy as a fresh "New" lead — nothing is taken away from anyone.</div>
+                    }
                     <label className='form-label'>Assign To</label>
                     <select className='form-input' style={{width:'100%',marginBottom:20}} value={reassignTo} onChange={e=>setReassignTo(e.target.value)}>
                       <option value=''>Select agent…</option>
                       {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                     </select>
                     <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
-                      <button onClick={()=>{setReassignTarget(null);setReassignTo('')}} style={{padding:'9px 20px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:13}}>Cancel</button>
-                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Reassigning…':'Reassign Lead'}</button>
+                      <button onClick={()=>{setReassignTarget(null);setReassignTo('');setReassignType('transfer')}} style={{padding:'9px 20px',border:'1px solid #E2E8F0',borderRadius:8,background:'white',cursor:'pointer',fontSize:13}}>Cancel</button>
+                      <button onClick={doReassignLead} disabled={reassigning||!reassignTo} style={{padding:'9px 20px',borderRadius:8,border:'none',background:reassignTo?'#185FA5':'#9CA3AF',color:'white',cursor:reassignTo?'pointer':'not-allowed',fontSize:13,fontWeight:600,opacity:reassigning?0.6:1}}>{reassigning?'Working…':(reassignType==='mirror'?'Mirror Lead':'Reassign Lead')}</button>
                     </div>
                   </div>
                 </div>
