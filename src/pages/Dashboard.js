@@ -4494,6 +4494,8 @@ export default function Dashboard({ session }) {
     const [leadDateTo,setLeadDateTo]       =useState('')
     const [leadAmtMin,setLeadAmtMin]       =useState('')
     const [leadAmtMax,setLeadAmtMax]       =useState('')
+    const [amtDropOpen,setAmtDropOpen]     =useState(false)
+    const amtDropRef                       =useRef(null)
     const [apToast,setApToast]             =useState(null)
     const [actFdAgent,setActFdAgent]       =useState('')
     const [actFdDate,setActFdDate]         =useState('')
@@ -4516,6 +4518,16 @@ export default function Dashboard({ session }) {
       if(sheetDropOpen) document.addEventListener('mousedown',onDown)
       return()=>document.removeEventListener('mousedown',onDown)
     },[sheetDropOpen])
+
+    // Close Loan Amount filter panel when clicking anywhere outside it
+    useEffect(()=>{
+      const onDown=e=>{ if(amtDropRef.current&&!amtDropRef.current.contains(e.target)) setAmtDropOpen(false) }
+      if(amtDropOpen) document.addEventListener('mousedown',onDown)
+      return()=>document.removeEventListener('mousedown',onDown)
+    },[amtDropOpen])
+
+    const fmtAmt=n=>{ const v=Number(n)||0; if(v>=10000000) return '₹'+(v/10000000).toFixed(v%10000000===0?0:1)+'Cr'; if(v>=100000) return '₹'+(v/100000).toFixed(v%100000===0?0:1)+'L'; return '₹'+v.toLocaleString('en-IN') }
+    const amtLabel=leadAmtMin===''&&leadAmtMax===''?'All Amounts':leadAmtMin&&leadAmtMax?`${fmtAmt(leadAmtMin)}–${fmtAmt(leadAmtMax)}`:leadAmtMin?`${fmtAmt(leadAmtMin)}+`:`Up to ${fmtAmt(leadAmtMax)}`
 
     useEffect(()=>{
       const sub=supabase
@@ -5140,11 +5152,24 @@ export default function Dashboard({ session }) {
                     </div>
                   )}
                 </div>
-                <input type='number' className='form-input' style={{width:90,fontSize:13}} placeholder='Min ₹' value={leadAmtMin} onChange={e=>setLeadAmtMin(e.target.value)}/>
-                <input type='number' className='form-input' style={{width:90,fontSize:13}} placeholder='Max ₹' value={leadAmtMax} onChange={e=>setLeadAmtMax(e.target.value)}/>
+                <div style={{position:'relative'}} ref={amtDropRef}>
+                  <button type='button' onClick={()=>setAmtDropOpen(o=>!o)} className='form-input' style={{width:'auto',fontSize:13,cursor:'pointer',borderColor:amtDropOpen?'#185FA5':undefined}}>{amtLabel} ▾</button>
+                  {amtDropOpen&&(
+                    <div style={{position:'absolute',top:'110%',left:0,zIndex:50,background:'white',border:'1px solid #E2E8F0',borderRadius:8,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',padding:8,minWidth:200}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                        <span style={{fontSize:11,color:'#94A3B8'}}>Loan Amount Range</span>
+                        <span onClick={()=>{setLeadAmtMin('');setLeadAmtMax('')}} style={{fontSize:12,color:'#185FA5',cursor:'pointer',fontWeight:600}}>Clear</span>
+                      </div>
+                      <div style={{display:'flex',gap:6}}>
+                        <input autoFocus type='number' className='form-input' style={{width:90,fontSize:13}} placeholder='Min ₹' value={leadAmtMin} onChange={e=>setLeadAmtMin(e.target.value)}/>
+                        <input type='number' className='form-input' style={{width:90,fontSize:13}} placeholder='Max ₹' value={leadAmtMax} onChange={e=>setLeadAmtMax(e.target.value)}/>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateFrom} onChange={e=>setLeadDateFrom(e.target.value)}/>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateTo} onChange={e=>setLeadDateTo(e.target.value)}/>
-                <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setSelectedSheets([]);setSheetDropOpen(false);setSheetSearch('');setLeadAmtMin('');setLeadAmtMax('');setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
+                <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setSelectedSheets([]);setSheetDropOpen(false);setSheetSearch('');setLeadAmtMin('');setLeadAmtMax('');setAmtDropOpen(false);setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
                 <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
                 <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
               </div>
