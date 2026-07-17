@@ -885,7 +885,14 @@ function AgentDashboard({ userId }) {
       const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
       let obligationMap={}
       const leadIds=leads.map(l=>l.id).filter(Boolean)
-      const{data:obligationsData,error:oErr}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds)
+      // Chunked to avoid a 400 from PostgREST when leadIds is large enough
+      // to blow the GET URL length limit on a single .in() filter.
+      let obligationsData=[],oErr=null
+      for(let i=0;i<leadIds.length;i+=50){
+        const{data,error}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds.slice(i,i+50))
+        if(error){ oErr=error; break }
+        obligationsData=[...obligationsData,...(data||[])]
+      }
       if(!oErr){
         obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
       }
