@@ -5459,8 +5459,16 @@ export default function Dashboard({ session }) {
         if(!staleLeads||!staleLeads.length)return
         const stale=staleLeads.filter(l=>{ const ref=l.assigned_at||l.created_at; return ref&&ref<threeDaysAgo })
         if(!stale.length)return
-        const staleIds=stale.map(l=>l.id)
-        const{data:existing}=await supabase.from('notifications').select('lead_id').eq('type','stale_lead').eq('read',false).in('lead_id',staleIds)
+        // No .in('lead_id', staleIds) here on purpose - that list is
+        // unbounded (org-wide, no date cap) and blew PostgREST's GET URL
+        // length limit once staleIds got large. We only need to know which
+        // leads already have an unread stale_lead notification, so fetch
+        // those directly instead of filtering by the (potentially huge)
+        // stale lead list. .limit(500) is a safety net: the mark-read UI
+        // only reaches the 50 most recent notifications of any type, so an
+        // older unread stale_lead row can in practice go unmarked
+        // indefinitely - this keeps the query bounded either way.
+        const{data:existing}=await supabase.from('notifications').select('lead_id').eq('type','stale_lead').eq('read',false).order('created_at',{ascending:false}).limit(500)
         const alreadyNotified=new Set((existing||[]).map(n=>n.lead_id))
         const toNotify=stale.filter(l=>!alreadyNotified.has(l.id))
         if(!toNotify.length)return
