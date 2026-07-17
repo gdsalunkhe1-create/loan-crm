@@ -19,7 +19,6 @@ import CibilParser from './CibilParser'
 import EmiCalculator from './EmiCalculator'
 import TaxCalculator from './TaxCalculator'
 import CamCalculator from './CamCalculator'
-import CallAssist from './CallAssist'
 import DateInput from '../components/DateInput'
 import TimeInput from '../components/TimeInput'
 import {
@@ -4443,7 +4442,6 @@ export default function Dashboard({ session }) {
       {id:'emi',               label:'EMI Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'tax',               label:'Tax Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
       {id:'cam',               label:'📋 CAM Builder',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'call-assist',       label:'📞 Call Assist',          icon:'headset',  roles:['agent','team_leader','manager','admin']},
     ]},
     {section:'MANAGE',items:[
       {id:'admin',    label:'Admin Panel', icon:'settings',    roles:['admin']},
@@ -5954,7 +5952,6 @@ export default function Dashboard({ session }) {
         {activePage==='emi'               &&<ErrorBoundary><EmiCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='tax'               &&<ErrorBoundary><TaxCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='cam'               &&<ErrorBoundary><CamCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
-        {activePage==='call-assist'       &&<ErrorBoundary><CallAssist    userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='reports'  &&<ErrorBoundary><Reports   userRole={role} userId={profile?.id}/></ErrorBoundary>}
       </main>
     </div>
