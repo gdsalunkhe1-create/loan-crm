@@ -1,4 +1,4 @@
-﻿/* eslint-disable */
+/* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
@@ -1657,7 +1657,7 @@ function BankStatementAnalyzer() {
     a.click()
   }
 
-  const downloadXLSX = () => { if (result) downloadBsaWorkbook(result) }
+  const downloadXLSX = () => { if (result) downloadBsaWorkbook(result).catch(e => alert('Export failed: ' + e.message)) }
 
   const RC = r => r === 'HIGH' ? '#dc2626' : r === 'MEDIUM' ? '#d97706' : '#16a34a'
   const SC = s => s === 'HIGH' ? { bg: '#fef2f2', tc: '#dc2626' } : s === 'MEDIUM' ? { bg: '#fffbeb', tc: '#d97706' } : { bg: '#f0fdf4', tc: '#16a34a' }

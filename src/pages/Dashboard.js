@@ -1,4 +1,4 @@
-﻿/* eslint-disable */
+/* eslint-disable */
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
@@ -3933,7 +3933,7 @@ function BankStatementAnalyzer() {
     URL.revokeObjectURL(url)
   }
 
-  const downloadXLSX = () => { if (result) downloadBsaWorkbook(result) }
+  const downloadXLSX = () => { if (result) downloadBsaWorkbook(result).catch(e => alert('Export failed: ' + e.message)) }
 
   const riskColor = r => r==='HIGH'?'#dc2626':r==='MEDIUM'?'#d97706':'#16a34a'
   const sevColor  = s => s==='HIGH'?'#fef2f2':s==='MEDIUM'?'#fffbeb':'#f0fdf4'

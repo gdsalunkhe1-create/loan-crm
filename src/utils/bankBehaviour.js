@@ -7,7 +7,7 @@ const DICT = {
   posAggregators: ['RAZORPAY','PINE LABS','PINELABS','MSWIPE','EZETAP','BHARATPE','BHARAT PE','PAYTM POS','PHONEPE MERCHANT','INNOVITI','MOSAMBEE','WORLDLINE','POS SETTLEMENT','MERCHANT SETTLEMENT','CARD SETTLEMENT','CASH @ POS','CC FUNDING','PAYU','CCAVENUE','CASHFREE','BILLDESK MERCHANT'],
   returnWords: ['ECS RTN','ECS RETURN','NACH RTN','NACH RETURN','INWARD RTN','INW RTN','I/W RETURN','O/W RETURN','CHQ RETURN','CHEQUE RETURN','CHQ RTN','DISHONOUR','DISHONOR','INSUFFICIENT','UNPAID','RETURN UNPAID','BOUNCE','ACH RTN','ACH RETURN','MANDATE FAIL'],
   chargeWords: ['RETURN CHARGES','RETURN CHARGE','RTN CHRG','RTN CHARGES','RET CHRG','RET CHARGES','RETURN CHG','RTN CHG','INW CHQ RTN','ECS RET','NACH RET','ACH RET CHRG','PENAL CHARGES','CHEQUE RETURN CHARGE','I/W CHQ RTN CHG'],
-  lenders: ['KREDITBEE','KREDIT BEE','NAVI','LAZYPAY','LAZY PAY','MONEYTAP','MONEY TAP','CASHE','EARLYSALARY','EARLY SALARY','FIBE','KISSHT','PAYSENSE','PAY SENSE','SMARTCOIN','SMART COIN','STASHFIN','STASH FIN','MPOKKET','M POKKET','SLICE','BRANCH','DHANI','RUPEEREDEE','TRUEBALANCE','TRUE BALANCE','AVAIL FINANCE','BHARAT LOAN','LOANTAP','LOAN TAP','POCKETCASH','KREDITONE','ZESTMONEY','ZEST MONEY'],
+  lenders: ['KREDITBEE','KREDIT BEE','KRAZYBEE','NAVI','LAZYPAY','LAZY PAY','MONEYTAP','MONEY TAP','CASHE','EARLYSALARY','EARLY SALARY','FIBE','KISSHT','PAYSENSE','PAY SENSE','SMARTCOIN','SMART COIN','STASHFIN','STASH FIN','MPOKKET','M POKKET','SLICE','BRANCH','DHANI','RUPEEREDEE','TRUEBALANCE','TRUE BALANCE','AVAIL FINANCE','BHARAT LOAN','LOANTAP','LOAN TAP','POCKETCASH','KREDITONE','ZESTMONEY','ZEST MONEY','KISETSU','KISETSU SAISON','RESPO FINANCIAL','RESPO','INCRED FINANCE','INCRED','AMAZON PAY LATER'],
   wallets: ['PAYTM WALLET','PHONEPE WALLET','AMAZON PAY','AMAZONPAY','MOBIKWIK','FREECHARGE','OLA MONEY','OLAMONEY','AIRTEL MONEY','JIO MONEY','JIOMONEY','SLICE WALLET'],
   forex: ['OCTAFX','OCTA FX','EXNESS','IQ OPTION','IQOPTION','OLYMP TRADE','OLYMPTRADE','BINOMO','ETORO','XM GLOBAL','FXTM','AVATRADE','AVA TRADE','FBS','FOREX','FX TRADING','CFD TRADING'],
   transferRails: ['IMPS','NEFT','RTGS','UPI','TFR','MMT','P2A'],
@@ -15,7 +15,7 @@ const DICT = {
   gst: ['GST ', 'GSTN', 'GOODS AND SERVICE TAX', 'GST PAYMENT', 'GSTIN'],
   insurance: ['LIC ', 'LIC PREMIUM', 'HDFC LIFE', 'ICICI PRU', 'ICICI PRUDENTIAL', 'SBI LIFE', 'MAX LIFE', 'BAJAJ ALLIANZ', 'TATA AIA', 'STAR HEALTH', 'HDFC ERGO', 'RELIANCE GENERAL', 'PREMIUM PAYMENT'],
   epf: ['EPFO', 'EPF CONTRIBUTION', 'PROVIDENT FUND', 'PF CONTRIBUTION', 'PF TRF'],
-  emiKeywords: ['EMI', 'ACH D', 'ACH DEBIT', 'NACH DEBIT', 'ECS DEBIT', 'LOAN INSTALLMENT', 'LOAN INSTALMENT', 'INSTALLMENT', 'INSTALMENT', 'PLA', 'PDC', 'STANDING INSTRUCTION', 'SI DEBIT'],
+  emiKeywords: ['EMI', 'ACH D', 'ACH DEBIT', 'ACH-DR', 'ACH DR', 'NACH DEBIT', 'ECS DEBIT', 'LOAN INSTALLMENT', 'LOAN INSTALMENT', 'INSTALLMENT', 'INSTALMENT', 'PLA', 'PDC', 'STANDING INSTRUCTION', 'SI DEBIT'],
   salaryKeywords: ['SALARY', 'SAL CR', 'SAL-', 'SAL/', 'PAYROLL', 'CMS', 'SAL TRF', 'MONTHLY SALARY', 'WAGES'],
   atm: ['ATM', 'CASH WDL', 'CASH WITHDRAWAL', 'ATM WDL', 'ATW'],
   banks: ['STATE BANK OF INDIA','SBI','HDFC BANK','HDFC','ICICI BANK','ICICI','AXIS BANK','KOTAK MAHINDRA','KOTAK','PUNJAB NATIONAL BANK','PNB','BANK OF BARODA','BOB','CANARA BANK','UNION BANK OF INDIA','UNION BANK','IDBI BANK','YES BANK','INDUSIND BANK','RBL BANK','FEDERAL BANK','SOUTH INDIAN BANK','KARUR VYSYA BANK','IDFC FIRST BANK','BANDHAN BANK','CITIBANK','CITI BANK','HSBC','STANDARD CHARTERED','DBS BANK','AU SMALL FINANCE BANK','EQUITAS SMALL FINANCE','UJJIVAN SMALL FINANCE','INDIAN OVERSEAS BANK','CENTRAL BANK OF INDIA','UCO BANK','BANK OF INDIA','BANK OF MAHARASHTRA','INDIAN BANK','KARNATAKA BANK','DCB BANK','JAMMU AND KASHMIR BANK'],
@@ -40,7 +40,7 @@ function parseDateFlexible(str) {
   const s = String(str).trim();
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
-  m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+  m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
   if (m) {
     let [, d, mo, y] = m;
     y = y.length === 2 ? (+y > 50 ? '19' + y : '20' + y) : y;
@@ -81,15 +81,56 @@ export function runBehaviourDetectors(txns, accountHolder = '') {
   return { stock_market_activity, cc_card_rotation, ecs_returns, small_loan_disbursals, wallet_to_bank, frequent_transfers, forex_trading };
 }
 
+// Bank name must come from the statement's own header/letterhead area, not
+// the whole document - the ledger body is full of NEFT/IMPS/UPI transaction
+// descriptions that reference OTHER banks as transfer counterparties, and a
+// generic "first array match wins" lookup over the full text will latch onto
+// whichever bank name happens to sit earliest/longest (e.g. a NEFT
+// counterparty like "Canara Bank") rather than the issuing bank.
+function detectBankName(headerText, fullTextUpper) {
+  // Strongest signal: an explicit self-declaration such as "Statement of
+  // Axis Account No: ..." or "AXIS BANK LIMITED - STATEMENT OF ACCOUNT".
+  // Some banks (e.g. Axis) never print their own name as an exact "X BANK"
+  // phrase anywhere in the text layer (the logo is an image, not text) -
+  // only this kind of self-declaration reveals it.
+  const selfDeclare = (fullTextUpper || '').match(/STATEMENT\s+OF\s+([A-Z][A-Z\s]{2,30}?)\s+(?:BANK\s+)?ACCOUNT/) || (fullTextUpper || '').match(/([A-Z][A-Z\s]{2,30}?BANK[A-Z\s]{0,20})\s*(?:LIMITED|LTD)?\s*-\s*STATEMENT/);
+  if (selfDeclare) {
+    const candidate = selfDeclare[1].trim();
+    const known = DICT.banks.find(b => candidate.includes(b) || b.includes(candidate));
+    if (known) return known;
+  }
+  // Fallback: longest bank name match within the header block ONLY (text
+  // before the transaction ledger begins) - never the whole document, or
+  // ledger-body counterparty banks win instead of the issuing bank.
+  const matches = DICT.banks.filter(b => headerText.includes(b));
+  if (!matches.length) return '';
+  return matches.reduce((longest, b) => (b.length > longest.length ? b : longest), matches[0]);
+}
+
 function detectHeader(fullText, transactions) {
   const t = up(fullText);
-  const bank_name = has(t, DICT.banks) || '';
+  // Restrict header-block matching to text before the ledger actually
+  // starts (before "OPENING BALANCE" / the "Particulars ... Balance"
+  // column header / "Tran Date"), so per-transaction bank mentions can't
+  // be mistaken for the issuing bank.
+  const ledgerStart = t.search(/OPENING BALANCE|PARTICULARS\s+DEBIT|TRAN\s+DATE/);
+  const headerBlock = ledgerStart > 0 ? t.slice(0, ledgerStart) : t.slice(0, 2000);
+  const bank_name = detectBankName(headerBlock, t);
   let account_number = '';
   let m = t.match(/A\/?C(?:COUNT)?\s*(?:NO|NUMBER|NUM)?\.?\s*[:-]?\s*(X{2,}\d{2,}|\d{9,18})/);
   if (m) account_number = m[1];
   let account_holder = '';
-  m = fullText.match(/(?:Account\s*Name|Customer\s*Name|Name\s*of\s*(?:the\s*)?(?:Account\s*)?Holder|Dear)\s*[:-]?\s*([A-Z][A-Za-z .]{4,40})/);
+  m = fullText.match(/(?:Account\s*Name|Customer\s*Name|Name\s*of\s*(?:the\s*)?(?:Account\s*)?Holder|Dear)\s*[:-]?\s*([A-Z][A-Za-z .]{4,40})/i);
   if (m) account_holder = m[1].trim().replace(/\s{2,}/g, ' ');
+  else {
+    // Some statements (e.g. Axis) print the holder's name as the bare
+    // first line of the document with no preceding label at all. Fall
+    // back to it only when it looks like a plausible name - short,
+    // letters/spaces only, and not itself a bank name or generic banner.
+    const firstLine = (fullText.split('\n')[0] || '').trim();
+    const looksLikeName = /^[A-Z][A-Za-z.\s]{2,40}$/.test(firstLine) && firstLine.split(/\s+/).length <= 5 && !DICT.banks.some(b => up(firstLine).includes(b));
+    if (looksLikeName) account_holder = firstLine;
+  }
   const dates = transactions.map(t2 => parseDateFlexible(t2.date)).filter(Boolean).sort((a, b) => a - b);
   const statement_period = dates.length ? `${dates[0].toLocaleDateString('en-GB')} - ${dates[dates.length - 1].toLocaleDateString('en-GB')}` : '';
   return { bank_name, account_number, account_holder, statement_period };
@@ -119,10 +160,25 @@ function detectSalary(txns, holderTokens) {
 }
 
 function detectEmiObligations(txns) {
-  const debits = txns.filter(t => num(t.debit) > 0 && (has(t.description, DICT.emiKeywords) || /\bEMI\b/i.test(t.description)));
+  // A repayment debit qualifies either because the line itself is
+  // EMI/ACH/NACH-labeled, OR because the counterparty is a recognized
+  // fintech/NBFC lender (KreditBee, Navi, KISETSU, RESPO, INCRED, Amazon
+  // Pay Later, etc.) even though the line has no literal "EMI" text at all
+  // - which is the normal case for UPI-routed loan repayments in India.
+  // Excludes recognized stock/mutual-fund brokers (e.g. "ACH-DR-Indian
+  // Clearing Corp") - the generic ACH-DR keyword would otherwise catch
+  // routine broker settlement debits as if they were loan EMIs.
+  const debits = txns.filter(t => num(t.debit) > 0 && !has(t.description, DICT.brokers) && (has(t.description, DICT.emiKeywords) || has(t.description, DICT.lenders) || /\bEMI\b/i.test(t.description)));
   const groups = {};
   debits.forEach(t => {
-    const k = partyKey(t.description) || 'EMI';
+    // Group by the canonical lender name when one is recognized, so the
+    // same lender printed under different description wording across
+    // months (e.g. "Navi Finserv Limited" vs "Navi Loans") is counted as
+    // one obligation instead of splitting into separate under-threshold
+    // groups. Falls back to the free-text party parser for EMI-labeled
+    // debits with no recognized lender name (e.g. bank ACH-DR auto-debits).
+    const lenderMatch = has(t.description, DICT.lenders);
+    const k = lenderMatch || partyKey(t.description) || 'EMI';
     if (!groups[k]) groups[k] = [];
     groups[k].push(t);
   });
@@ -186,6 +242,18 @@ function detectRiskFlagsWatchlistPositive(txns, detectors, salaryList) {
 
   const nearZero = txns.filter(t => t.balance !== undefined && t.balance !== null && num(t.balance) >= 0 && num(t.balance) < 500);
   nearZero.forEach(t => risk_flags.push({ type: 'MIN_BAL_CHARGE', date: t.date, description: `Near-zero balance (Rs.${num(t.balance)})`, amount: num(t.balance), severity: 'MEDIUM' }));
+
+  // Large one-time credit inflow via bank transfer (RTGS/NEFT/IMPS) that
+  // isn't a recognized salary credit - a strong signal of a new loan
+  // disbursal that may not have shown up in a CIBIL pull yet. Threshold is
+  // deliberately conservative (>=1.5x avg salary, floor Rs.1,00,000) to
+  // limit noise; self-transfers between the account holder's own accounts
+  // can still trip this, so cross-check against the Self/Frequent Transfer
+  // sheet before treating a hit here as confirmed new debt.
+  const avgSalaryForCredit = salaryList ? salaryList.mean : 0;
+  const salaryDates = new Set(salaryList ? salaryList.list.map(r => r.date) : []);
+  const bigCredits = txns.filter(t => num(t.credit) > 0 && !salaryDates.has(t.date) && num(t.credit) >= Math.max(100000, avgSalaryForCredit * 1.5) && /RTGS|NEFT|IMPS/i.test(t.description));
+  bigCredits.forEach(t => risk_flags.push({ type: 'LARGE_CREDIT_INFLOW', date: t.date, description: `Large one-time bank-transfer credit - possible new loan disbursal (verify against CIBIL/self-transfers): ${t.description}`, amount: num(t.credit), severity: 'HIGH' }));
 
   txns.forEach(t => {
     const amt = num(t.debit) || num(t.credit);
@@ -269,21 +337,42 @@ export function computeCreditAssessment(transactions, fullText, detectors, accou
   };
 }
 
-const AMT = /\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d{1,2})?|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{2}|\d{3,}/g;
+const AMT = /\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d{1,2})?|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{2}/g;
 const DATE = /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})|(\d{4}-\d{2}-\d{2})/;
 const toNum = s => Number(String(s).replace(/,/g, '')) || 0;
+// Labeled summary/banner fields (opening balance, statement period, page
+// totals, etc.) commonly repeat on every page of a statement and often sit
+// right next to a date stamp - without this exclusion they get misread as
+// real transaction rows, corrupting both the opening balance and any total
+// derived from summing transactions.
+const NON_TXN_LABELS = ['OPENING BALANCE', 'CLOSING BALANCE', 'AVAILABLE BALANCE', 'STATEMENT PERIOD', 'STATEMENT DATE', 'TOTAL DEBIT', 'TOTAL CREDIT', 'TOTAL WITHDRAWAL', 'TOTAL DEPOSIT', 'BROUGHT FORWARD', 'CARRIED FORWARD', 'PAGE NO', 'ACCOUNT SUMMARY', 'STATEMENT SUMMARY'];
 export function linesToTransactions(lines) {
   const txns = []; let prevBal = null;
+  // Real-world statements frequently wrap the "Particulars" column across
+  // two (or more) physical lines, with the date/amount landing on the LAST
+  // line of the wrap - not the first. A line with no date and no amount is
+  // buffered as a pending description fragment instead of being discarded,
+  // then merged into the next line that DOES carry a date+amount. Without
+  // this, the lender/party name (which is what EMI detection keys off) is
+  // silently thrown away while the amount/balance still gets counted -
+  // explaining why totals stayed correct even though every lender vanished.
+  let pending = '';
   for (const raw of lines) {
     const line = raw.replace(/\s+/g, ' ').trim();
-    const dm = line.match(DATE); if (!dm) continue;
-    const amounts = line.match(AMT); if (!amounts) continue;
-    const nums = amounts.map(toNum).filter(n => n > 0); if (!nums.length) continue;
+    if (!line) continue;
+    if (NON_TXN_LABELS.some(l => line.toUpperCase().includes(l))) { pending = ''; continue; }
+    const dm = line.match(DATE);
+    const amounts = line.match(AMT);
+    if (!dm || !amounts) { pending = pending ? pending + ' ' + line : line; continue; }
+    const nums = amounts.map(toNum).filter(n => n > 0);
+    if (!nums.length) { pending = ''; continue; }
     const balance = nums[nums.length - 1]; let debit = 0, credit = 0, amount = 0, isFirst = false;
     if (prevBal !== null) { const delta = round2(balance - prevBal); amount = Math.abs(delta); if (delta >= 0) credit = amount; else debit = amount; }
     else { amount = nums.length > 1 ? Math.max(...nums.slice(0, -1)) : 0; isFirst = true; }
     prevBal = balance;
-    let desc = line.replace(dm[0], ' '); amounts.forEach(a => { desc = desc.replace(a, ' '); });
+    const fullLine = pending ? pending + ' ' + line : line;
+    pending = '';
+    let desc = fullLine.replace(dm[0], ' '); amounts.forEach(a => { desc = desc.replace(a, ' '); });
     desc = desc.replace(/\s+/g, ' ').trim();
     if (isFirst && amount > 0) {
       const u = desc.toUpperCase();
@@ -299,7 +388,14 @@ async function pdfToLines(arrayBuffer) {
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p); const content = await page.getTextContent(); const rows = {};
     content.items.forEach(it => { if (!it.str || !it.str.trim()) return; const y = Math.round(it.transform[5]); const key = Math.round(y / 3) * 3; (rows[key] = rows[key] || []).push({ x: it.transform[4], s: it.str }); });
-    Object.keys(rows).map(Number).sort((a, b) => b - a).forEach(k => { const line = rows[k].sort((a, b) => a.x - b.x).map(o => o.s).join(' '); allLines.push(line); });
+    Object.keys(rows).map(Number).sort((a, b) => b - a).forEach(k => {
+      const line = rows[k].sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim();
+      // Some PDF generators (accessibility/tagged text layers, table-cell
+      // rendering quirks) emit the exact same row twice in a row - without
+      // this, every duplicated transaction row gets counted twice.
+      if (line && line === allLines[allLines.length - 1]) return;
+      allLines.push(line);
+    });
   }
   return allLines;
 }
