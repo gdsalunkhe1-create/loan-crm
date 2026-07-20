@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+import { downloadCibilWorkbook } from './cibilExcelExport'
 
 function loadPdfJs() {
   return new Promise((resolve) => {
@@ -176,7 +177,14 @@ function parseCibil(raw) {
   const enqDetails = []
   const ENQ = /Member\s*Name\s+(.+?)\s+Date\s*Of\s*Enquiry\s+(\d{2}\/\d{2}\/\d{4})\s+Enquiry\s*Purpose\s+(.+?)(?=\s*Member\s*Name|\s*Disclaimer|\s*End of report|$)/gis
   for (const m of enqRegion.matchAll(ENQ)) {
-    enqDetails.push({ institution: m[1].trim(), date: dmy(m[2]), product: m[3].split('–')[0].replace(/\s+/g, ' ').trim() })
+    const purposeBlock = m[3]
+    const amtM = purposeBlock.match(/Enquiry\s*Amount\s*[₹₹]?\s*([\d,]+)/i)
+    enqDetails.push({
+      institution: m[1].trim(),
+      date: dmy(m[2]),
+      product: purposeBlock.split('–')[0].replace(/\s+/g, ' ').trim(),
+      amount: amtM ? amtM[1].replace(/,/g, '') : ''
+    })
   }
   const inWin = n => enqDetails.filter(e => { const x = (anchor - e.date) / 86400000; return x >= 0 && x <= n })
   const byType = {}; enqDetails.forEach(e => { byType[e.product] = (byType[e.product] || 0) + 1 })
@@ -214,6 +222,8 @@ function parseCibil(raw) {
                           g(fieldWin, /Written[- ]?off\s*Amount\s*\(\s*Principal\s*\)\s*[₹₹]?\s*([\d,]+)/i)
     const openDate = g(fieldWin, /Date\s*Opened\s*\/?\s*Disbursed\s+(\d{2}\/\d{2}\/\d{4})/i)
     const closedDate = g(fieldWin, /Date\s*Closed\s+(\d{2}\/\d{2}\/\d{4})/i)
+    const tenure = g(fieldWin, /Repayment\s*Tenure\s+(\d+)/i)
+    const interestRate = g(fieldWin, /Rate\s*of\s*Interest\s+([\d.]+)/i)
     const isClosed = !!closedDate
     const settlementVal = (!settlement || settlement === '0' || settlement === '-') ? '' : settlement
     const writtenOffVal  = (!writtenOffRaw || writtenOffRaw === '0' || writtenOffRaw === '-') ? '' : writtenOffRaw
@@ -227,14 +237,14 @@ function parseCibil(raw) {
     accounts.push({
       bankName, loanType, loanAmount, accountNum,
       outstanding: isClosed ? '0' : outstandingRaw,
-      emi, openDate, closedDate, dpds: String(maxDpd), lateMonths: lateMonthsCibil,
+      emi, openDate, closedDate, tenure, interestRate, dpds: String(maxDpd), lateMonths: lateMonthsCibil,
       overdue: (!overdue || overdue === '0') ? '' : overdue,
       settlement: settlementVal,
       writtenOff: writtenOffVal,
       status: cibilStatusTag,
     })
   }
-  return { accounts, score, customerName, enquiries }
+  return { accounts, score, customerName, enquiries, reportDate: anchor }
 }
 
 // ── PAISABAZAAR PARSER ────────────────────────────────────────────────────────
@@ -258,7 +268,7 @@ function parsePaisaBazaar(text) {
   const ENQ_ROW = /([A-Z][A-Za-z0-9 .&'\-]{1,40}?)\s+(Personal Loan|Gold Loan|Credit Card|Consumer Loan|Home Loan|Housing Loan|Auto Loan|Business Loan|Two[- ]?Wheeler Loan|Education Loan|Overdraft)\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+[₹₹]?\s*([\d,]+)/g
   const enqDetails = []
   for (const m of enqSec.matchAll(ENQ_ROW)) {
-    enqDetails.push({ institution: m[1].trim(), product: m[2], date: mkDate(m[3], m[4], m[5]) })
+    enqDetails.push({ institution: m[1].trim(), product: m[2], date: mkDate(m[3], m[4], m[5]), amount: (m[6] || '').replace(/,/g, '') })
   }
   const inWin = n => enqDetails.filter(e => { const x = (anchor - e.date) / 86400000; return x >= 0 && x <= n })
   const byType = {}; enqDetails.forEach(e => { byType[e.product] = (byType[e.product] || 0) + 1 })
@@ -330,6 +340,8 @@ function parsePaisaBazaar(text) {
     const overdue     = g(/Overdue\s*Amount\s*[₹₹]?\s*([\d,]+)/i)
     const emi         = g(/EMI\s*Amount\s*[₹₹]?\s*([\d,]+)/i)
     const openDate    = g(/Date\s*Opened\s+(\d{2}\s+\w+\s+\d{4})/i)
+    const tenure      = g(/(?:Repayment\s*)?Tenure\s+(\d+)/i)
+    const interestRate = g(/(?:Rate\s*of\s*Interest|Interest\s*Rate)\s+([\d.]+)/i)
 
     // TASK 2: closed = only a real date (not "NA") in Date Closed field
     const closedRaw   = block.match(/Date\s*Closed\s+(\d{2}\s+\w+\s+\d{4}|NA)/i)?.[1] || ''
@@ -368,7 +380,7 @@ function parsePaisaBazaar(text) {
     accounts.push({
       bankName, loanType, loanAmount, accountNum,
       outstanding: isClosed ? '0' : outstanding,
-      emi, openDate, closedDate,
+      emi, openDate, closedDate, tenure, interestRate,
       dpds, overdue: (!overdue || overdue === '0') ? '' : overdue,
       settlement, writtenOff, status: pbStatusTag
     })
@@ -394,6 +406,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const [score,setScore]                 = useState(null)
   const [customerName,setCustomerName]   = useState('')
   const [enquiries,setEnquiries]         = useState(null)
+  const [reportDate,setReportDate]       = useState(null)
   const [showAll,setShowAll]             = useState(false)
   const [editIdx,setEditIdx]             = useState(null)
   const [editData,setEditData]           = useState({})
@@ -422,7 +435,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
   const parseFile = useCallback(async(file,password='')=>{
     setError('');setParsing(true);setPwdErr('');setFormatWarning('')
-    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('')
+    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('');setReportDate(null)
     try{
       const { text, pdf, pdfjsLib } = await extractTextFromPDF(file,password)
       setDebugText(text)
@@ -467,6 +480,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
       if(result.accounts.length===0){ setError(`Detected "${fmt}" but 0 accounts found. Check Debug Panel.`); setShowDebug(true) }
       setAccounts(result.accounts); setScore(result.score); setCustomerName(result.customerName); setEnquiries(result.enquiries||null)
+      setReportDate(result.reportDate || null)
       setNeedsPwd(false); setPwd('')
     }catch(e){
       if(e.message==='NEEDS_PASSWORD'){ setNeedsPwd(true); setPendingFile(file); setParsing(false); return }
@@ -511,9 +525,18 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     el.download=`CIBIL_${customerName||'Report'}.csv`; el.click()
   }
 
+  const exportExcel=async()=>{
+    try{
+      await downloadCibilWorkbook({
+        customerName, score, format, reportDate, accounts, enquiries,
+        fileLabel: customerName || 'Report'
+      })
+    }catch(e){ setError('Excel export failed: '+e.message) }
+  }
+
   const reset=()=>{
     setAccounts([]);setFileName('');setFormat('');setScore(null);setCustomerName('')
-    setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('')
+    setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('');setReportDate(null)
     setDebugText('');setShowDebug(false);setNeedsPwd(false);setPwd('');setPwdErr('')
   }
 
@@ -752,6 +775,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <button style={S.btn(showAll?'#EFF6FF':'#F9FAFB',showAll?'#1D4ED8':'#718096')} onClick={()=>setShowAll(!showAll)}>{showAll?'Active Only':'Show All'}</button>
                 <button style={S.btn('#0F6E56')} onClick={exportCSV}>⬇ Export CSV</button>
+                <button style={S.btn('#185FA5')} onClick={exportExcel}>📊 Export Excel</button>
                 {onUseInCam && <button style={S.btn('#185FA5')} onClick={() => {
                   try {
                     sessionStorage.setItem('cam_import_payload', JSON.stringify({
