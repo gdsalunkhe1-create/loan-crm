@@ -86,7 +86,6 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
   wsAcc.getColumn('overdue').numFmt = '#,##0'
   wsAcc.getColumn('interestRate').numFmt = '0.00'
   wsAcc.eachRow((row, i) => { if (i > 1) row.font = BODY_FONT })
-  wsAcc.autoFilter = { from: 'A1', to: `K${accounts.length + 1}` }
   wsAcc.views = [{ state: 'frozen', ySplit: 1 }]
 
   // ── Derived summary stats ──────────────────────────────────────────────
@@ -158,7 +157,6 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
     })
   wsEnq.getColumn('amount').numFmt = '#,##0'
   wsEnq.eachRow((row, i) => { if (i > 1) row.font = BODY_FONT })
-  wsEnq.autoFilter = { from: 'A1', to: `D${enqDetails.length + 1}` }
   wsEnq.views = [{ state: 'frozen', ySplit: 1 }]
 
   const buf = await wb.xlsx.writeBuffer()
