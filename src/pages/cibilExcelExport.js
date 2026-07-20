@@ -35,10 +35,15 @@ const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2
 const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial', size: 11 }
 const BODY_FONT = { name: 'Arial', size: 10 }
 
-function styleHeaderRow(row) {
+const ACC_HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF9C0006' } }
+const ACC_HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial', size: 11 }
+const ROW_FILL_OVERDUE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } }
+const ROW_FILL_CURRENT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }
+
+function styleHeaderRow(row, fill = HEADER_FILL, font = HEADER_FONT) {
   row.eachCell((cell) => {
-    cell.fill = HEADER_FILL
-    cell.font = HEADER_FONT
+    cell.fill = fill
+    cell.font = font
     cell.alignment = { vertical: 'middle' }
   })
   row.height = 20
@@ -65,9 +70,9 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
     { header: 'Overdue',            key: 'overdue',        width: 12 },
     { header: 'Status',             key: 'status',         width: 18 },
   ]
-  styleHeaderRow(wsAcc.getRow(1))
+  styleHeaderRow(wsAcc.getRow(1), ACC_HEADER_FILL, ACC_HEADER_FONT)
   accounts.forEach((a) => {
-    wsAcc.addRow({
+    const row = wsAcc.addRow({
       bankName: a.bankName || '',
       loanType: a.loanType || '',
       loanAmount: num(a.loanAmount),
@@ -81,6 +86,8 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
       overdue: a.overdue ? num(a.overdue) : '',
       status: a.status || '',
     })
+    const rowFill = /overdue/i.test(a.status || '') ? ROW_FILL_OVERDUE : ROW_FILL_CURRENT
+    row.eachCell((cell) => { cell.fill = rowFill })
   })
   wsAcc.getColumn('loanAmount').numFmt = '#,##0'
   wsAcc.getColumn('outstanding').numFmt = '#,##0'
