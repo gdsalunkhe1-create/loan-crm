@@ -61,6 +61,7 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
     { header: 'Closed Date',        key: 'closedDate',     width: 14 },
     { header: 'Tenure (mo)',        key: 'tenure',          width: 12 },
     { header: 'Interest Rate (%)',  key: 'interestRate',   width: 16 },
+    { header: 'DPD (days)',         key: 'dpds',            width: 14 },
     { header: 'Overdue',            key: 'overdue',        width: 12 },
     { header: 'Status',             key: 'status',         width: 18 },
   ]
@@ -76,6 +77,7 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
       closedDate: a.closedDate || '',
       tenure: a.tenure ? num(a.tenure) : '',
       interestRate: a.interestRate ? parseFloat(a.interestRate) : '',
+      dpds: a.dpds && a.dpds !== '0' ? a.dpds : '',
       overdue: a.overdue ? num(a.overdue) : '',
       status: a.status || '',
     })
