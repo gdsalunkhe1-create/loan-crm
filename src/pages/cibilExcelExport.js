@@ -39,6 +39,12 @@ const ACC_HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F
 const ACC_HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Arial', size: 11 }
 const ROW_FILL_OVERDUE = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } }
 const ROW_FILL_CURRENT = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }
+const THIN_BORDER = {
+  top: { style: 'thin', color: { argb: 'FF000000' } },
+  left: { style: 'thin', color: { argb: 'FF000000' } },
+  bottom: { style: 'thin', color: { argb: 'FF000000' } },
+  right: { style: 'thin', color: { argb: 'FF000000' } },
+}
 
 function styleHeaderRow(row, fill = HEADER_FILL, font = HEADER_FONT) {
   row.eachCell((cell) => {
@@ -71,6 +77,7 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
     { header: 'Status',             key: 'status',         width: 18 },
   ]
   styleHeaderRow(wsAcc.getRow(1), ACC_HEADER_FILL, ACC_HEADER_FONT)
+  wsAcc.getRow(1).eachCell({ includeEmpty: true }, (cell) => { cell.border = THIN_BORDER })
   accounts.forEach((a) => {
     const row = wsAcc.addRow({
       bankName: a.bankName || '',
@@ -87,7 +94,7 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
       status: a.status || '',
     })
     const rowFill = /overdue/i.test(a.status || '') ? ROW_FILL_OVERDUE : ROW_FILL_CURRENT
-    row.eachCell((cell) => { cell.fill = rowFill })
+    row.eachCell({ includeEmpty: true }, (cell) => { cell.fill = rowFill; cell.border = THIN_BORDER })
   })
   wsAcc.getColumn('loanAmount').numFmt = '#,##0'
   wsAcc.getColumn('outstanding').numFmt = '#,##0'
