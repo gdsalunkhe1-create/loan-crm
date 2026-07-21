@@ -168,7 +168,23 @@ function monthlyObligation(acc) {
 }
 
 // ── CIBIL.COM PARSER ──────────────────────────────────────────────────────────
+// Detects pages whose text never made it into pdf.js's extraction at all (as opposed to pages
+// that extracted fine but in an unexpected order, which the other cleanup/regex fixes handle).
+// A missing page number in the "N/TOTAL" footer stamp sequence means that whole page's content —
+// including any account or enquiry it held — is invisible to the parser, most commonly caused by
+// a disputed-account block or similar section CIBIL renders as a flattened image instead of text.
+function detectMissingPages(raw) {
+  const stamps = [...raw.matchAll(/myscore\.cibil\.com\/\S*?\s+(\d{1,4})\/(\d{1,4})\b/gi)]
+  if (!stamps.length) return null
+  const total = Math.max(...stamps.map(m => +m[2]))
+  const seen = new Set(stamps.map(m => +m[1]))
+  const missing = []
+  for (let n = 1; n <= total; n++) if (!seen.has(n)) missing.push(n)
+  return missing.length ? { missing, total } : null
+}
+
 function parseCibil(raw) {
+  const pageGaps = detectMissingPages(raw)
   const text = cleanCibilText(raw)
   const MONTHS_RX = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec'
   const dmy = s => { const p = s.split('/'); return new Date(+p[2], +p[1] - 1, +p[0]) }
@@ -248,7 +264,7 @@ function parseCibil(raw) {
       status: cibilStatusTag,
     })
   }
-  return { accounts, score, customerName, enquiries, reportDate: anchor }
+  return { accounts, score, customerName, enquiries, reportDate: anchor, pageGaps }
 }
 
 // ── PAISABAZAAR PARSER ────────────────────────────────────────────────────────
@@ -407,6 +423,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const [pendingFile,setPendingFile]     = useState(null)
   const [format,setFormat]               = useState('')
   const [formatWarning,setFormatWarning] = useState('')
+  const [pageGapWarning,setPageGapWarning] = useState('')
   const [score,setScore]                 = useState(null)
   const [customerName,setCustomerName]   = useState('')
   const [enquiries,setEnquiries]         = useState(null)
@@ -439,7 +456,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
   const parseFile = useCallback(async(file,password='')=>{
     setError('');setParsing(true);setPwdErr('');setFormatWarning('')
-    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('');setReportDate(null)
+    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('');setReportDate(null);setPageGapWarning('')
     try{
       const { text, pdf, pdfjsLib } = await extractTextFromPDF(file,password)
       setDebugText(text)
@@ -485,6 +502,13 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       if(result.accounts.length===0){ setError(`Detected "${fmt}" but 0 accounts found. Check Debug Panel.`); setShowDebug(true) }
       setAccounts(result.accounts); setScore(result.score); setCustomerName(result.customerName); setEnquiries(result.enquiries||null)
       setReportDate(result.reportDate || null)
+      if (result.pageGaps) {
+        const { missing, total } = result.pageGaps
+        const list = missing.slice(0, 8).join(', ') + (missing.length > 8 ? `, +${missing.length - 8} more` : '')
+        setPageGapWarning(`This PDF has ${missing.length} of ${total} pages that didn't extract any readable text (page${missing.length > 1 ? 's' : ''} ${list}). Any account or enquiry on ${missing.length > 1 ? 'those pages' : 'that page'} — including disputed accounts, which CIBIL sometimes renders as an image — won't appear below. Please check ${missing.length > 1 ? 'those pages' : 'that page'} manually in the PDF.`)
+      } else {
+        setPageGapWarning('')
+      }
       setNeedsPwd(false); setPwd('')
     }catch(e){
       if(e.message==='NEEDS_PASSWORD'){ setNeedsPwd(true); setPendingFile(file); setParsing(false); return }
@@ -540,7 +564,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
   const reset=()=>{
     setAccounts([]);setFileName('');setFormat('');setScore(null);setCustomerName('')
-    setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('');setReportDate(null)
+    setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('');setReportDate(null);setPageGapWarning('')
     setDebugText('');setShowDebug(false);setNeedsPwd(false);setPwd('');setPwdErr('')
   }
 
@@ -593,6 +617,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       </div>
 
       {formatWarning&&<div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B45309',fontSize:13,fontWeight:500}}>⚠️ {formatWarning}</div>}
+      {pageGapWarning&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B91C1C',fontSize:13,fontWeight:500}}>⚠️ {pageGapWarning}</div>}
       {highDpd&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#DC2626',fontSize:13,fontWeight:500}}>⚠️ One or more accounts have DPD over 90 days</div>}
       {hasSett&&<div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B45309',fontSize:13,fontWeight:500}}>⚠️ Settlement found on one or more accounts</div>}
       {hasWritten&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#DC2626',fontSize:13,fontWeight:500}}>⚠️ Written-off amount found on one or more accounts</div>}
