@@ -338,7 +338,7 @@ export function computeCreditAssessment(transactions, fullText, detectors, accou
 }
 
 const AMT = /\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d{1,2})?|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{2}/g;
-const DATE = /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})|(\d{4}-\d{2}-\d{2})/;
+const DATE = /(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})|(\d{1,2}[-\s][A-Za-z]{3}[-\s]\d{2,4})|(\d{4}-\d{2}-\d{2})/;
 const toNum = s => Number(String(s).replace(/,/g, '')) || 0;
 // Labeled summary/banner fields (opening balance, statement period, page
 // totals, etc.) commonly repeat on every page of a statement and often sit
