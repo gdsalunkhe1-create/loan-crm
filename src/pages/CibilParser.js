@@ -17,6 +17,61 @@ function loadPdfJs() {
   })
 }
 
+// Loaded on-demand only (not on every page load) since Tesseract's wasm binary is several MB
+// and OCR is slow — this is a manual "recover this page" action, not something that runs by default.
+function loadTesseract() {
+  return new Promise((resolve, reject) => {
+    if (window.Tesseract) { resolve(window.Tesseract); return }
+    const s = document.createElement('script')
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js'
+    s.onload = () => resolve(window.Tesseract)
+    s.onerror = () => reject(new Error('Failed to load OCR library'))
+    document.head.appendChild(s)
+  })
+}
+
+// Renders a single PDF page to a canvas image and runs OCR on it, for pages whose text layer
+// pdf.js couldn't read at all (see detectMissingPages) — most commonly disputed-account blocks
+// CIBIL renders as a flattened image instead of selectable text.
+async function ocrPage(pdf, pageNum, Tesseract) {
+  const page = await pdf.getPage(pageNum)
+  const viewport = page.getViewport({ scale: 2.5 })
+  const canvas = document.createElement('canvas')
+  canvas.width = viewport.width
+  canvas.height = viewport.height
+  const ctx = canvas.getContext('2d')
+  await page.render({ canvasContext: ctx, viewport }).promise
+  const { data } = await Tesseract.recognize(canvas, 'eng')
+  return data.text || ''
+}
+
+// OCR text is noisy (misread characters, collapsed spacing, broken line breaks), so this uses
+// looser matching than the main text-layer regexes — tolerant of a missing space or two, but
+// still anchored to the same field labels CIBIL always prints. Returns null if it can't find
+// enough to be worth adding (avoids pushing garbage rows from a failed OCR read).
+function extractAccountFromOcrText(raw) {
+  const t = raw.replace(/[|]/g, 'I').replace(/\s+/g, ' ')
+  const g = (rx) => { const m = t.match(rx); return m ? m[1].replace(/,/g, '').trim() : '' }
+  const bankName = g(/Member\s*Name\s*[:.]?\s*([A-Z][A-Z &.]{2,40}?)(?=\s*(?:Account\s*Type|https?:))/i)
+  const loanType = g(/Account\s*Type\s*[:.]?\s*([A-Za-z][A-Za-z /]{2,40}?)(?=\s*(?:Account\s*Number|Ownership))/i)
+  const accountNum = g(/Account\s*Number\s*[:.]?\s*([A-Za-z0-9]{4,25})/i)
+  const loanAmount = g(/Sanctioned\s*Amount\s*[₹Rs.]*\s*([\d,]{3,12})/i) || g(/High\s*Credit\s*[₹Rs.]*\s*([\d,]{3,12})/i)
+  const outstanding = g(/Current\s*Balance\s*[₹Rs.]*\s*([\d,]{1,12})/i)
+  const overdue = g(/Amount\s*Overdue\s*[₹Rs.]*\s*([\d,]{1,12})/i)
+  const openDate = g(/Date\s*Opened\s*\/?\s*Disbursed\s*[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i)
+  const closedDateM = t.match(/Date\s*Closed\s*[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i)
+  const closedDate = closedDateM ? closedDateM[1] : ''
+  if (!bankName || !loanType) return null
+  return {
+    bankName, loanType, accountNum, loanAmount, outstanding,
+    emi: '', openDate, closedDate,
+    dpds: '', overdue: (!overdue || overdue === '0') ? '' : overdue,
+    settlement: '', writtenOff: '',
+    status: closedDate ? 'Closed' : 'Active',
+    ocrExtracted: true,
+  }
+}
+
 async function extractTextFromPDF(file, password = '') {
   const pdfjsLib = await loadPdfJs()
   return new Promise((resolve, reject) => {
@@ -424,6 +479,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const [format,setFormat]               = useState('')
   const [formatWarning,setFormatWarning] = useState('')
   const [pageGapWarning,setPageGapWarning] = useState('')
+  const [pageGapInfo,setPageGapInfo]       = useState(null)
+  const [ocrBusy,setOcrBusy]               = useState(false)
+  const [ocrLog,setOcrLog]                 = useState('')
+  const pdfDocRef = useRef(null)
   const [score,setScore]                 = useState(null)
   const [customerName,setCustomerName]   = useState('')
   const [enquiries,setEnquiries]         = useState(null)
@@ -456,9 +515,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
   const parseFile = useCallback(async(file,password='')=>{
     setError('');setParsing(true);setPwdErr('');setFormatWarning('')
-    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('');setReportDate(null);setPageGapWarning('')
+    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('');setReportDate(null);setPageGapWarning('');setPageGapInfo(null);setOcrLog('')
     try{
       const { text, pdf, pdfjsLib } = await extractTextFromPDF(file,password)
+      pdfDocRef.current = pdf
       setDebugText(text)
       if(!text||text.trim().length<50) throw new Error('PDF appears empty or image-only.')
 
@@ -505,9 +565,11 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       if (result.pageGaps) {
         const { missing, total } = result.pageGaps
         const list = missing.slice(0, 8).join(', ') + (missing.length > 8 ? `, +${missing.length - 8} more` : '')
-        setPageGapWarning(`This PDF has ${missing.length} of ${total} pages that didn't extract any readable text (page${missing.length > 1 ? 's' : ''} ${list}). Any account or enquiry on ${missing.length > 1 ? 'those pages' : 'that page'} — including disputed accounts, which CIBIL sometimes renders as an image — won't appear below. Please check ${missing.length > 1 ? 'those pages' : 'that page'} manually in the PDF.`)
+        setPageGapWarning(`This PDF has ${missing.length} of ${total} pages that didn't extract any readable text (page${missing.length > 1 ? 's' : ''} ${list}). Any account or enquiry on ${missing.length > 1 ? 'those pages' : 'that page'} — including disputed accounts, which CIBIL sometimes renders as an image — won't appear below. Please check ${missing.length > 1 ? 'those pages' : 'that page'} manually in the PDF, or try OCR recovery below.`)
+        setPageGapInfo({ missing, total })
       } else {
         setPageGapWarning('')
+        setPageGapInfo(null)
       }
       setNeedsPwd(false); setPwd('')
     }catch(e){
@@ -562,9 +624,47 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     }catch(e){ setError('Excel export failed: '+e.message) }
   }
 
+  // Manual "recover this page" action for pages the text layer missed entirely (see
+  // detectMissingPages). Runs OCR page-by-page rather than automatically, since it's slow
+  // (a few seconds per page) and only needed for the rare disputed-account case. Caps at 6
+  // pages per click so a report with many gaps doesn't hang the tab.
+  const runOcrRecovery = async () => {
+    if (!pageGapInfo || !pdfDocRef.current) return
+    setOcrBusy(true)
+    const pagesToTry = pageGapInfo.missing.slice(0, 6)
+    const log = []
+    try {
+      const Tesseract = await loadTesseract()
+      const recovered = []
+      for (const pageNum of pagesToTry) {
+        try {
+          const ocrText = await ocrPage(pdfDocRef.current, pageNum, Tesseract)
+          const extracted = extractAccountFromOcrText(ocrText)
+          if (extracted) {
+            recovered.push(extracted)
+            log.push(`Page ${pageNum}: recovered ${extracted.bankName} — ${extracted.loanType} (verify against PDF)`)
+          } else {
+            log.push(`Page ${pageNum}: OCR ran but couldn't confidently extract an account — check this page manually`)
+          }
+        } catch (pageErr) {
+          log.push(`Page ${pageNum}: OCR failed — ${pageErr.message}`)
+        }
+      }
+      if (recovered.length) setAccounts(prev => [...prev, ...recovered])
+      if (pageGapInfo.missing.length > pagesToTry.length) {
+        log.push(`${pageGapInfo.missing.length - pagesToTry.length} more page(s) not attempted — click again to continue, or check them manually.`)
+      }
+      setOcrLog(log.join('\n'))
+    } catch (e) {
+      setOcrLog('OCR recovery failed to start: ' + e.message)
+    } finally {
+      setOcrBusy(false)
+    }
+  }
+
   const reset=()=>{
     setAccounts([]);setFileName('');setFormat('');setScore(null);setCustomerName('')
-    setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('');setReportDate(null);setPageGapWarning('')
+    setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('');setReportDate(null);setPageGapWarning('');setPageGapInfo(null);setOcrLog('');pdfDocRef.current=null
     setDebugText('');setShowDebug(false);setNeedsPwd(false);setPwd('');setPwdErr('')
   }
 
@@ -617,7 +717,21 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       </div>
 
       {formatWarning&&<div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B45309',fontSize:13,fontWeight:500}}>⚠️ {formatWarning}</div>}
-      {pageGapWarning&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B91C1C',fontSize:13,fontWeight:500}}>⚠️ {pageGapWarning}</div>}
+      {pageGapWarning&&(
+        <div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B91C1C',fontSize:13,fontWeight:500}}>
+          <div>⚠️ {pageGapWarning}</div>
+          <div style={{marginTop:8}}>
+            <button
+              onClick={runOcrRecovery}
+              disabled={ocrBusy}
+              style={{background:ocrBusy?'#FCA5A5':'#DC2626',color:'#fff',border:'none',borderRadius:6,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:ocrBusy?'default':'pointer'}}
+            >
+              {ocrBusy ? '🔍 Reading page(s) with OCR — this can take a bit…' : '🔍 Try OCR recovery on missing page(s)'}
+            </button>
+          </div>
+          {ocrLog&&<pre style={{marginTop:8,whiteSpace:'pre-wrap',fontSize:12,fontFamily:'inherit',fontWeight:400,color:'#7F1D1D'}}>{ocrLog}</pre>}
+        </div>
+      )}
       {highDpd&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#DC2626',fontSize:13,fontWeight:500}}>⚠️ One or more accounts have DPD over 90 days</div>}
       {hasSett&&<div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#B45309',fontSize:13,fontWeight:500}}>⚠️ Settlement found on one or more accounts</div>}
       {hasWritten&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'10px 16px',marginBottom:12,color:'#DC2626',fontSize:13,fontWeight:500}}>⚠️ Written-off amount found on one or more accounts</div>}
@@ -873,7 +987,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
                             const isActive=acc.status==='Active', isSett=acc.status?.includes('Settled'), isWO=acc.status?.includes('Written-off')
                             const sbg=isActive?'#E1F5EE':isSett?'#FFFBEB':isWO?'#FEF2F2':'#F1F5F9'
                             const sfg=isActive?'#0F6E56':isSett?'#B45309':isWO?'#DC2626':'#718096'
-                            return <span style={S.bdg(sbg,sfg)}>{acc.status}</span>
+                            return <>
+                              <span style={S.bdg(sbg,sfg)}>{acc.status}</span>
+                              {acc.ocrExtracted&&<span title="Recovered via OCR from an image-only page — double check against the PDF" style={{...S.bdg('#FEF2F2','#B91C1C'),marginLeft:4}}>🔍 verify</span>}
+                            </>
                           })()}</td>
                           <td style={{...S.td,whiteSpace:'nowrap'}}>
                             <button style={{background:'none',border:'1px solid #E2E8F0',borderRadius:6,padding:'4px 8px',cursor:'pointer',fontSize:12,marginRight:4}} onClick={()=>{setEditIdx(ri);setEditData({...acc})}}>✏️</button>
