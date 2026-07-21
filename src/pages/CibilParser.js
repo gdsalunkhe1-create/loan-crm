@@ -49,7 +49,11 @@ async function extractTextFromPDF(file, password = '') {
 function cleanCibilText(raw) {
   let t = raw
   t = t.replace(/\d{2}\/\d{2}\/\d{4},?\s*\d{2}:\d{2}\s*CIBIL\s*Report\s*https?:\/\/\S+\s*\d+\/\d+/gi, ' ')
-  t = t.replace(/https?:\/\/myscore\.cibil\.com\S*/gi, ' ')
+  // page-footer URL sometimes has the page number stuck to it (e.g. "...print=true&& 154/297"),
+  // and can appear either before or after the "DD/MM/YYYY, HH:MM CIBIL Report" header fragment
+  // depending on where pdf.js splits the page — strip both fragments independently so order doesn't matter
+  t = t.replace(/https?:\/\/myscore\.cibil\.com\/\S+(?:\s+\d{1,3}\/\d{1,3})?/gi, ' ')
+  t = t.replace(/\d{2}\/\d{2}\/\d{4},?\s*\d{2}:\d{2}\s*CIBIL\s*Report/gi, ' ')
   for (let i = 0; i < 12; i++) {
     t = t.replace(/([A-Za-z]) ([A-Z]) ([A-Za-z])/g, '$1$2$3')
     t = t.replace(/([A-Z]) ([A-Z]) ([A-Z])/g, '$1$2$3')
@@ -175,7 +179,7 @@ function parseCibil(raw) {
   const anchor = rd ? dmy(rd[1]) : new Date()
   const [acctRegion, enqRegion = ''] = text.split(/ENQUIRY\s*DETAILS/i)
   const enqDetails = []
-  const ENQ = /Member\s*Name\s+(.+?)\s+Date\s*Of\s*Enquiry\s+(\d{2}\/\d{2}\/\d{4})\s+Enquiry\s*Purpose\s+(.+?)(?=\s*Member\s*Name|\s*Disclaimer|\s*End of report|$)/gis
+  const ENQ = /Member\s*Name\s+((?:(?!Disclaimer|End of report|Member\s*Name).)+?)\s+Date\s*Of\s*Enquiry\s+(\d{2}\/\d{2}\/\d{4})\s+Enquiry\s*Purpose\s+(.+?)(?=\s*Member\s*Name|\s*Disclaimer|\s*End of report|$)/gis
   for (const m of enqRegion.matchAll(ENQ)) {
     const purposeBlock = m[3]
     const amtM = purposeBlock.match(/Enquiry\s*Amount\s*[₹₹]?\s*([\d,]+)/i)
@@ -207,7 +211,7 @@ function parseCibil(raw) {
     const bm = acctRegion.slice(pos).match(/Member\s*Name\s+(.+?)\s+(?:Account\s*Type|Credit\s*Limit|Sanctioned\s*Amount|High\s*Credit|Current\s*Balance|Cash\s*Limit)/is)
     const bankName = bm ? bm[1].replace(/\s+/g, ' ').trim() : ''
     if (!bankName || isNoise(bankName)) continue
-    const tm = payWin.match(/Account\s*Type\s+(.+?)\s+(?:Account\s*Number|Ownership)/is)
+    const tm = payWin.match(/Account\s*Type\s+(.+?)\s+(?:Account\s*Number|Ownership|Credit\s*Limit|Sanctioned\s*Amount|High\s*Credit)/is)
     const loanType = tm ? tm[1].replace(/\s+/g, ' ').trim() : ''
     if (!loanType || /employment/i.test(loanType)) continue
     const accNumM = payWin.match(/Account\s*Number\s+([A-Za-z0-9]+)/i)
