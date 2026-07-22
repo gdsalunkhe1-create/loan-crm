@@ -26,7 +26,7 @@ import {
   IconChevronDown, IconRefresh, IconUserPlus
 } from '@tabler/icons-react'
 
-export default function Campaigns({ userRole, userId }) {
+export default function Campaigns({ userRole, userId, orgId }) {
   const [campaigns, setCampaigns] = useState([])
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [selectedCampaign, setSelectedCampaign] = useState(null)
@@ -361,7 +361,8 @@ export default function Campaigns({ userRole, userId }) {
         priority:'High',
         status:'Pending',
         notes:callForm.notes,
-        due_date:new Date(Date.now()+24*60*60*1000).toISOString()
+        due_date:new Date(Date.now()+24*60*60*1000).toISOString(),
+        org_id:orgId
       }])
     }
 

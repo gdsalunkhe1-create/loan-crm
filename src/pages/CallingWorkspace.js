@@ -47,7 +47,7 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave, queuePosition, totalInQueue }) {
+export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave, queuePosition, totalInQueue, orgId }) {
   const isMobile = useIsMobile()
   const [callStarted, setCallStarted]     = useState(false)
   const [callTimer, setCallTimer]         = useState(0)
@@ -494,7 +494,8 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
           // tasks.due_date is `timestamptz` — must be written as an explicit
           // UTC instant (toDbTimestamp) or Postgres stores it 5h30m off.
           // See src/utils/timeUtils.js for the full explanation.
-          due_date:    toDbTimestamp(buildIST(followUpDate,followUpTime))
+          due_date:    toDbTimestamp(buildIST(followUpDate,followUpTime)),
+          org_id:      orgId
         }])
       }
 

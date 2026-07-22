@@ -21,7 +21,7 @@ class ErrorBoundary extends React.Component {
 }
 import { IconListCheck, IconHourglass, IconAlertTriangle, IconCircleCheck, IconTrash } from '@tabler/icons-react'
 
-export default function Tasks({ userRole, userId }) {
+export default function Tasks({ userRole, userId, orgId }) {
   const [tasks, setTasks] = useState([])
   const [leads, setLeads] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -78,7 +78,7 @@ export default function Tasks({ userRole, userId }) {
       const pad = n => String(n).padStart(2,'0')
       dueDate = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
     }
-    await supabase.from('tasks').insert([{...form, due_date: dueDate, status:'Pending', assigned_to: userId}])
+    await supabase.from('tasks').insert([{...form, due_date: dueDate, status:'Pending', assigned_to: userId, org_id: orgId}])
     setForm({title:'',lead_id:'',due_date:'',priority:'Medium',notes:''})
     setShowForm(false)
     fetchTasks()

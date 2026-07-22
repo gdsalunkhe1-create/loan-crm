@@ -816,6 +816,7 @@ function AgentDashboard({ userId }) {
       priority:'High',
       status:'Pending',
       assigned_to:userId,
+      org_id:profile?.org_id,
     }])
     if(tErr){ console.error('[Action] scheduleCallback task insert error:', tErr) }
     else{
@@ -1482,7 +1483,8 @@ function AgentDashboard({ userId }) {
           title:'Callback: '+callLogLead.full_name,
           due_date:safeDueDate(callLogCallbackDate,callLogCallbackTime),
           status:'Pending',
-          priority:'High'
+          priority:'High',
+          org_id:profile?.org_id
         }])
         fetchCallbackTasks()
       }
@@ -1652,6 +1654,7 @@ function AgentDashboard({ userId }) {
           queuePosition={queueIndex+1}
           totalInQueue={leadQueue.length}
           onClose={()=>{ setShowWorkspace(false); setQueueComplete(false); fetchAll() }}
+          orgId={profile?.org_id}
           onSave={(result)=>{
             // CallingWorkspace calls onSave twice:
             // 1st call: {lead: {...}, call: {...}}
@@ -5983,9 +5986,9 @@ export default function Dashboard({ session }) {
         {activePage==='dashboard'&&role==='team_leader' &&<ErrorBoundary><TeamLeaderPanel  userId={profile?.id}/></ErrorBoundary>}
         {activePage==='dashboard'&&role==='agent'       &&<ErrorBoundary><AgentDashboard   userId={profile?.id}/></ErrorBoundary>}
         {activePage==='leads'    &&<ErrorBoundary><Leads     userRole={role} userId={profile?.id}/></ErrorBoundary>}
-        {activePage==='campaigns'&&<ErrorBoundary><Campaigns userRole={role} userId={profile?.id}/></ErrorBoundary>}
+        {activePage==='campaigns'&&<ErrorBoundary><Campaigns userRole={role} userId={profile?.id} orgId={profile?.org_id}/></ErrorBoundary>}
         {activePage==='calls'    &&<ErrorBoundary><Calls     userRole={role} userId={profile?.id}/></ErrorBoundary>}
-        {activePage==='tasks'    &&<ErrorBoundary><Tasks     userRole={role} userId={profile?.id}/></ErrorBoundary>}
+        {activePage==='tasks'    &&<ErrorBoundary><Tasks     userRole={role} userId={profile?.id} orgId={profile?.org_id}/></ErrorBoundary>}
         {activePage==='cibil'             &&<ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="cibil"        onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>}
         {activePage==='cibil-paisabazaar' &&<ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="paisabazaar" onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>}
         {activePage==='bsa'               &&<ErrorBoundary><BankStatementAnalyzer/></ErrorBoundary>}
