@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+import CibilBankReconciliation from './CibilBankReconciliation'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -114,15 +115,15 @@ export default function Leads({ userRole, userId }) {
   const fetchLeads = async () => {
     if (userRole === 'agent') {
       const [{ data: assigned }, { data: mirrored }] = await Promise.all([
-        supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at',{ascending:false}),
-        supabase.from('leads').select('*').contains('mirror_agents', [userId]).order('created_at',{ascending:false})
+        supabase.from('leads').select('*').eq('assigned_to', userId).order('created_at',{ascending:false}).order('id',{ascending:false}),
+        supabase.from('leads').select('*').contains('mirror_agents', [userId]).order('created_at',{ascending:false}).order('id',{ascending:false})
       ])
       const merged = [...(assigned||[]), ...(mirrored||[])]
       const seen = new Set()
       const deduped = merged.filter(l => { if(seen.has(l.id)) return false; seen.add(l.id); return true })
       setLeads(deduped)
     } else {
-      const { data } = await supabase.from('leads').select('*').order('created_at',{ascending:false})
+      const { data } = await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
       if (data) setLeads(data)
     }
   }
@@ -888,7 +889,7 @@ export default function Leads({ userRole, userId }) {
             </div>
             {/* Tabs */}
             <div style={{display:'flex'}}>
-              {[{id:'details',label:'Details'},{id:'notes',label:'Notes'},{id:'actions',label:'Actions'}].map(t=>(
+              {[{id:'details',label:'Details'},{id:'notes',label:'Notes'},{id:'actions',label:'Actions'},{id:'cibil',label:'CIBIL ↔ Bank'}].map(t=>(
                 <button key={t.id}
                   onClick={()=>setActiveTab(t.id)}
                   style={{
@@ -1014,6 +1015,10 @@ export default function Leads({ userRole, userId }) {
                   )}
                 </div>
               </div>
+            )}
+
+            {activeTab==='cibil' && (
+              <CibilBankReconciliation leadId={selectedLead.id} />
             )}
 
           </div>

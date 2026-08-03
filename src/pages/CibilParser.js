@@ -72,6 +72,37 @@ function extractAccountFromOcrText(raw) {
   }
 }
 
+// pdf.js emits text items in content-stream order, which for grid/table-based printed
+// reports (like CIBIL.com's and PaisaBazaar's account-detail pages) does not always match
+// the *visual* row order — a label and its value can sit on the same on-page line but arrive
+// out of order in the stream, or a page break can split a row's cells across two pages'
+// worth of items. Reconstructing rows from each item's actual (x, y) position — the same
+// approach pdftotext's -layout mode uses — keeps every label next to its own value in the
+// extracted text, which is what every "Label\s+(value)" regex in this file depends on.
+function reconstructPageText(items) {
+  const Y_TOL = 2 // points — items within this y-distance are treated as the same visual row
+  const rows = []
+  for (const it of items) {
+    const s = it.str
+    if (!s || !s.trim()) continue
+    const tr = it.transform
+    // Defensive fallback: if an item has no usable transform, just append it to the last row
+    // rather than dropping it, so nothing silently disappears from the extracted text.
+    if (!Array.isArray(tr) || tr.length < 6 || !isFinite(tr[5])) {
+      if (rows.length) rows[rows.length - 1].items.push({ x: Infinity, str: s })
+      else rows.push({ y: 0, items: [{ x: 0, str: s }] })
+      continue
+    }
+    const x = tr[4], y = tr[5]
+    let row = rows.find(r => Math.abs(r.y - y) <= Y_TOL)
+    if (!row) { row = { y, items: [] }; rows.push(row) }
+    row.items.push({ x, str: s })
+  }
+  rows.sort((a, b) => b.y - a.y) // PDF y-axis grows upward; top of page = highest y
+  for (const row of rows) row.items.sort((a, b) => a.x - b.x)
+  return rows.map(r => r.items.map(i => i.str).join(' ')).join('\n')
+}
+
 async function extractTextFromPDF(file, password = '') {
   const pdfjsLib = await loadPdfJs()
   return new Promise((resolve, reject) => {
@@ -90,7 +121,7 @@ async function extractTextFromPDF(file, password = '') {
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i)
           const content = await page.getTextContent()
-          text += content.items.map(x => x.str).join(' ') + '\n'
+          text += reconstructPageText(content.items) + '\n'
         }
         resolve({ text, pdf, pdfjsLib })
       } catch (err) { reject(err) }
@@ -103,12 +134,17 @@ async function extractTextFromPDF(file, password = '') {
 // CIBIL.com PDFs inject page headers throughout text AND space out letters
 function cleanCibilText(raw) {
   let t = raw
-  t = t.replace(/\d{2}\/\d{2}\/\d{4},?\s*\d{2}:\d{2}\s*CIBIL\s*Report\s*https?:\/\/\S+\s*\d+\/\d+/gi, ' ')
+  // NOTE: header date can print as DD/MM/YYYY *or* single-digit M/D/YY (e.g. "7/28/26, 7:25 PM")
+  // depending on how the report was exported — \d{1,2}\/\d{1,2}\/\d{2,4} covers both so this
+  // junk actually gets stripped instead of silently surviving on every one of the ~100+ pages.
+  t = t.replace(/\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*CIBIL\s*Report\s*https?:\/\/\S+\s*\d+\/\d+/gi, ' ')
   // page-footer URL sometimes has the page number stuck to it (e.g. "...print=true&& 154/297"),
-  // and can appear either before or after the "DD/MM/YYYY, HH:MM CIBIL Report" header fragment
+  // and can appear either before or after the header-date + "CIBIL Report" fragment
   // depending on where pdf.js splits the page — strip both fragments independently so order doesn't matter
   t = t.replace(/https?:\/\/myscore\.cibil\.com\/\S+(?:\s+\d{1,3}\/\d{1,3})?/gi, ' ')
-  t = t.replace(/\d{2}\/\d{2}\/\d{4},?\s*\d{2}:\d{2}\s*CIBIL\s*Report/gi, ' ')
+  // orphaned page-number fragment (e.g. "4/103") often sits right before the date+"CIBIL Report"
+  // text once the URL it used to be attached to is stripped above — eat it here too
+  t = t.replace(/(?:\b\d{1,3}\/\d{1,3}\s+)?\d{1,2}\/\d{1,2}\/\d{2,4},?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?\s*CIBIL\s*Report/gi, ' ')
   for (let i = 0; i < 12; i++) {
     t = t.replace(/([A-Za-z]) ([A-Z]) ([A-Za-z])/g, '$1$2$3')
     t = t.replace(/([A-Z]) ([A-Z]) ([A-Z])/g, '$1$2$3')
@@ -244,9 +280,14 @@ function parseCibil(raw) {
   const MONTHS_RX = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec'
   const dmy = s => { const p = s.split('/'); return new Date(+p[2], +p[1] - 1, +p[0]) }
   const score = parseInt((text.match(/Your\s*CIBIL\s*Score\s*is\s*(\d{3})/i) || [])[1]) || null
-  const nf = raw.match(/\bName\s+(MR|MS|MRS|DR)\.?\s+([A-Z][A-Z ]{3,60}?)(?=\s*Date|\s*Gender|\n)/i)
-  const customerName = nf ? (nf[1] + ' ' + nf[2]).replace(/\s+/g, ' ').trim() : ''
-  const rd = text.match(/\bDate\s*:\s*(\d{2}\/\d{2}\/\d{4})/)
+  // Title prefix (Mr/Ms/Mrs/Dr) is OPTIONAL - a real CIBIL report tested
+  // (customer: PRADYUMNA ISHWAR GONDIL) prints "Name  PRADYUMNA ISHWAR..."
+  // with no title at all, which the old title-required regex silently
+  // missed entirely, leaving customerName as ''.
+  const nf = raw.match(/\bName\s+(?:(MR|MS|MRS|DR)\.?\s+)?([A-Z][A-Z ]{3,60}?)(?=\s*Date|\s*Gender|\n)/i)
+  const customerName = nf ? ((nf[1] ? nf[1] + ' ' : '') + nf[2]).replace(/\s+/g, ' ').trim() : ''
+  const rd = text.match(/(?:CIBIL\s*Score\s*is\s*\d{3}\s*as\s*of\s*Date|Report\s*Date)\s*:\s*(\d{2}\/\d{2}\/\d{4})/i) ||
+             text.match(/\bDate\s*:\s*(\d{2}\/\d{2}\/\d{4})/)
   const anchor = rd ? dmy(rd[1]) : new Date()
   const [acctRegion, enqRegion = ''] = text.split(/ENQUIRY\s*DETAILS/i)
   const enqDetails = []
@@ -277,7 +318,7 @@ function parseCibil(raw) {
   for (let i = 0; i < anchors.length; i++) {
     const pos = anchors[i]
     const nextPos = i + 1 < anchors.length ? anchors[i + 1] : acctRegion.length
-    const fieldWin = acctRegion.slice(Math.max(0, pos - 450), pos + 520)
+    const fieldWin = acctRegion.slice(Math.max(0, pos - 450), nextPos)
     const payWin = acctRegion.slice(pos, nextPos)
     const bm = acctRegion.slice(pos).match(/Member\s*Name\s+(.+?)\s+(?:Account\s*Type|Credit\s*Limit|Sanctioned\s*Amount|High\s*Credit|Current\s*Balance|Cash\s*Limit)/is)
     const bankName = bm ? bm[1].replace(/\s+/g, ' ').trim() : ''
@@ -302,9 +343,17 @@ function parseCibil(raw) {
     const isClosed = !!closedDate
     const settlementVal = (!settlement || settlement === '0' || settlement === '-') ? '' : settlement
     const writtenOffVal  = (!writtenOffRaw || writtenOffRaw === '0' || writtenOffRaw === '-') ? '' : writtenOffRaw
-    const cibilStatusTag = isClosed
-      ? (settlementVal ? 'Closed · Settled' : writtenOffVal ? 'Closed · Written-off' : 'Closed')
-      : 'Active'
+    // Real status text CIBIL.com prints — e.g. Standard, Closed, Written-off, Settled,
+    // Post (WO) Settled, Suit Filed. "-" means the field wasn't populated for this account.
+    const creditFacilityStatusRaw = g(fieldWin, /Credit\s*Facility\s*Status\s+(-|.+?)(?=\s*Written[- ]?off\s*Amount|\s*Settlement\s*Amount|\s*PAYMENT\s*STATUS|$)/i)
+    const creditFacilityStatus = (creditFacilityStatusRaw && creditFacilityStatusRaw !== '-') ? creditFacilityStatusRaw.trim() : ''
+    const suitFiledRaw = g(fieldWin, /Suit\s*-?\s*Filed\s*\/?\s*Wilful\s*Default\s+(-|.+?)(?=\s*Credit\s*Facility\s*Status|$)/i)
+    const suitFiled = (suitFiledRaw && suitFiledRaw !== '-') ? suitFiledRaw.trim() : ''
+    const cibilStatusTag = creditFacilityStatus
+      ? creditFacilityStatus
+      : (isClosed
+          ? (settlementVal ? 'Closed · Settled' : writtenOffVal ? 'Closed · Written-off' : 'Closed')
+          : 'Active')
     const dpdHits = [...payWin.matchAll(new RegExp('((?:' + MONTHS_RX + ')\\s+20\\d{2})\\s+(\\d{1,3})\\b', 'gi'))]
     const lateMonthsCibil = dpdHits.filter(m => +m[2] > 0 && +m[2] <= 365).map(m => `${m[1]} (${m[2]}d)`)
     const dpdNums = dpdHits.map(m => +m[2]).filter(n => n > 0 && n <= 365)
@@ -316,6 +365,7 @@ function parseCibil(raw) {
       overdue: (!overdue || overdue === '0') ? '' : overdue,
       settlement: settlementVal,
       writtenOff: writtenOffVal,
+      suitFiled,
       status: cibilStatusTag,
     })
   }
@@ -361,7 +411,7 @@ function parsePaisaBazaar(text) {
   const seen = new Set()
 
   // TASK 2: collect ALL matches first so each block is bounded to the next match
-  const rx = /(?:Back\s+to\s+Top\s+Credit\s+Factors\s+)?([A-Z][A-Z0-9 &]{1,40}?)\s+Product\s+Type\s*[-–]\s*(.+?)\s+Status:\s*(Active|Closed|Payment Delayed)/gi
+  const rx = /(?:Back\s+to\s+Top\s+Credit\s+Factors\s+)?([A-Z][A-Z0-9 &]{1,40}?)\s+Product\s+Type\s*[-–]\s*(.+?)\s+Status:\s*([A-Za-z][A-Za-z0-9()./\-\s]*?)\s*(?=Account\s*Number)/gi
   const allMatches = [...text.matchAll(rx)]
 
   for (let mi = 0; mi < allMatches.length; mi++) {
@@ -394,8 +444,8 @@ function parsePaisaBazaar(text) {
     if (!bankName || isNoise(bankName)) continue
 
     const loanType  = m[2].trim()
-    const rawStatus = m[3].trim()
-    const status    = rawStatus === 'Payment Delayed' ? 'Active' : rawStatus
+    const rawStatus = m[3].replace(/\s+/g, ' ').trim()
+    const status    = /^payment delayed$/i.test(rawStatus) ? 'Active' : rawStatus
 
     // TASK 2: bound block to start of next match (prevents field bleed into next account)
     const blockStart = m.index
@@ -421,7 +471,7 @@ function parsePaisaBazaar(text) {
     // TASK 2: closed = only a real date (not "NA") in Date Closed field
     const closedRaw   = block.match(/Date\s*Closed\s+(\d{2}\s+\w+\s+\d{4}|NA)/i)?.[1] || ''
     const closedDate  = (closedRaw && closedRaw !== 'NA') ? closedRaw : ''
-    const isClosed    = status === 'Closed' || !!closedDate
+    const isClosed    = !/^active$/i.test(status) || !!closedDate
 
     const accountNum  = g(/Account\s*Number\s+(X+[\w]+)/i)
 
@@ -430,23 +480,30 @@ function parsePaisaBazaar(text) {
     const dpdM = block.match(/Payment\s*Delayed\s*by:\s*(\d+)\s*days/i)
     const dpds = dpdM ? dpdM[1] : '0'
 
-    // Settlement — Suit-Filed Status field; treat NA / ₹-1 / 0 as blank
-    let settlement = ''
-    const settM = block.match(/Suit[- ]?Filed\s*Status\s+(NA|[₹₹]?\s*-?[\d,]+)/i)
-    if (settM && settM[1] !== 'NA') {
-      const sv = parseInt(settM[1].replace(/[^0-9]/g, '')) || 0
-      if (sv > 0) settlement = String(sv)
+    // With row-reconstructed text (see reconstructPageText), the 5 column headers here wrap
+    // across several short lines ("Credit" / "Facility" / "Status" etc.) but the 5 values —
+    // Settled Amount, Principal Write-off, Total Write-off, Credit Facility Status, Suit-Filed
+    // Status — always land together on one clean line. Anchor on the first 3 (unambiguous,
+    // amount-shaped) tokens of that line rather than trying to parse the wrapped labels or the
+    // free-text status columns, which is fragile since "Post (WO) Settled" is itself multi-word.
+    const AMT = '(NA|[₹₹]\\s*-?[\\d,]+)'
+    const valueLineM = block.match(new RegExp('^\\s*' + AMT + '\\s+' + AMT + '\\s+' + AMT + '(?=\\s)', 'm'))
+    const amtOrBlank = (raw) => {
+      if (!raw || raw === 'NA' || /-/.test(raw)) return ''
+      const v = parseInt(raw.replace(/[^0-9]/g, '')) || 0
+      return v > 0 ? String(v) : ''
     }
-    // Written-off — Principal Write-off Amount field; treat NA / 0 as blank
-    let writtenOff = ''
-    const woM = block.match(/Principal\s*Write[- ]?off\s*Amount\s+(NA|[₹₹]?\s*-?[\d,]+)/i)
-    if (woM && woM[1] !== 'NA') {
-      const wv = parseInt(woM[1].replace(/[^0-9]/g, '')) || 0
-      if (wv > 0) writtenOff = String(wv)
-    }
-    const pbStatusTag = isClosed
-      ? (settlement ? 'Closed · Settled' : writtenOff ? 'Closed · Written-off' : 'Closed')
-      : 'Active'
+    const settlement       = valueLineM ? amtOrBlank(valueLineM[1]) : ''
+    const writtenOff       = valueLineM ? amtOrBlank(valueLineM[2]) : ''
+    const writtenOffTotal  = valueLineM ? amtOrBlank(valueLineM[3]) : ''
+    // Suit-Filed Status's own free-text value isn't reliably separable from the preceding
+    // Credit Facility Status text (both can be multi-word) — and in every real report seen so
+    // far it's "NA" regardless. Leave it unextracted rather than risk a wrong split; the header
+    // "Status:" text already captured above is the reliable source for the account's status.
+    const suitFiled = ''
+    // The header "Status:" text (now captured in full, not restricted to an enum) is the
+    // source of truth for the account's displayed status — it already matches the
+    // Credit Facility Status field verbatim in every real report.
 
     const key = `${bankName}|${loanType}|${accountNum}`
     if (seen.has(key)) continue
@@ -457,7 +514,7 @@ function parsePaisaBazaar(text) {
       outstanding: isClosed ? '0' : outstanding,
       emi, openDate, closedDate, tenure, interestRate,
       dpds, overdue: (!overdue || overdue === '0') ? '' : overdue,
-      settlement, writtenOff, status: pbStatusTag
+      settlement, writtenOff, writtenOffTotal, suitFiled, status
     })
   }
   return { accounts, score, customerName, enquiries, reportDate }
@@ -617,8 +674,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
   const exportExcel=async()=>{
     try{
+      const accountsForExport = accounts.map(a=>({...a, emi: monthlyObligation(a) || a.emi}))
       await downloadCibilWorkbook({
-        customerName, score, format, reportDate, accounts, enquiries,
+        customerName, score, format, reportDate, accounts: accountsForExport, enquiries,
         fileLabel: customerName || 'Report'
       })
     }catch(e){ setError('Excel export failed: '+e.message) }
@@ -807,6 +865,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         <>
           <div style={{...S.crd,padding:'20px 24px',display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
             {customerName&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>👤 {customerName}</div>}
+            {reportDate&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📅 {fmtD(reportDate)}</div>}
             {score!==null&&(
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <div style={{background:scB(score),color:scC(score),padding:'8px 20px',borderRadius:24,fontWeight:800,fontSize:22}}>{score}</div>
@@ -888,7 +947,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
             </div>
           )}
 
-          <div style={S.crd}>
+          <div style={{...S.crd,overflow:'visible'}}>
             <div style={S.hdr}><h3 style={S.ttl}>🔗 Link to Customer Profile</h3></div>
             <div style={{padding:'14px 20px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
               <div style={{position:'relative',flex:'1 1 260px'}}>
@@ -901,7 +960,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
                         style={{padding:'10px 14px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #F7FAFC'}}
                         onMouseEnter={e=>e.currentTarget.style.background='#F7FAFC'}
                         onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
-                        <strong>{l.full_name}</strong><span style={{color:'#718096',marginLeft:8}}>{l.mobile}</span>
+                        <strong style={{color:'#2D3748'}}>{l.full_name}</strong><span style={{color:'#718096',marginLeft:8}}>{l.mobile}</span>
                       </div>
                     ))}
                   </div>
@@ -925,6 +984,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
                       accounts,
                       score,
                       customerName,
+                      source: format,
                       flags: { highDpd, hasSett, hasWritten }
                     }));
                     if (onUseInCam) onUseInCam();

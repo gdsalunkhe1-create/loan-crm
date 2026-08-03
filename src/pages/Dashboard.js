@@ -21,6 +21,7 @@ import TaxCalculator from './TaxCalculator'
 import CamCalculator from './CamCalculator'
 import DateInput from '../components/DateInput'
 import TimeInput from '../components/TimeInput'
+import SaveBsaToLead from '../components/SaveBsaToLead'
 import {
   IconLayoutDashboard, IconUsers, IconPhoneCall, IconCheckbox,
   IconChartBar, IconSettings, IconAdjustments, IconPhone,
@@ -371,6 +372,7 @@ function AgentDashboard({ userId }) {
   const [isObEditing,setIsObEditing]         = useState(false)
   const [obSavedSnapshot,setObSavedSnapshot] = useState(null)
   const [obIsNewLead,setObIsNewLead]         = useState(false)
+  const [creditReport,setCreditReport]       = useState(null)
   const [toast,setToast]                   = useState(null)
   const [darkMode,setDarkMode]             = useState(false)
   const [greeting,setGreeting]             = useState('')
@@ -877,8 +879,8 @@ function AgentDashboard({ userId }) {
       else if(dateRange==='week')  sd.setDate(now.getDate()-7)
       else if(dateRange==='month') sd.setDate(1)
       const[lR,mirR,cR,tR,pR]=await Promise.all([
-        supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}),
-        supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}),
+        supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}).order('id',{ascending:false}),
+        supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}).order('id',{ascending:false}),
         supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
         supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
         supabase.from('profiles').select('*').eq('id',userId).single(),
@@ -1067,6 +1069,12 @@ function AgentDashboard({ userId }) {
     setIsObEditing(isNew)
     setObSavedSnapshot({salary:lead.monthly_salary||'',company:lead.company_name||'',notes:lead.notes||''})
     setLeadReassignInfo(null)
+    setCreditReport(null)
+    supabase.from('customer_cibil_data').select('*').eq('lead_id',lead.id).maybeSingle().then(({data:cr,error:crErr})=>{
+      console.log('[CreditReport] lead_id:',lead.id,'data:',cr,'error:',crErr)
+      if(crErr){ console.error('[CreditReport] fetch error:',crErr); return }
+      if(selectedLeadObRef.current?.id===lead.id) setCreditReport(cr||null)
+    })
     if(!readOnly&&userId){
       const{data:rl}=await supabase.from('activity_log').select('*').eq('lead_id',lead.id).eq('action','Reassigned').eq('assigned_to',userId).order('created_at',{ascending:false}).limit(1)
       setLeadReassignInfo(rl&&rl.length>0?rl[0]:null)
@@ -1327,19 +1335,58 @@ function AgentDashboard({ userId }) {
     return title+bank
   }
 
-  const buildObligationShareBlock=(ob)=>{
-    const loanAmount=ob.obligation_type==='Personal Loan'?ob.overdue_amount:ob.sanctioned_amount
-    const outstanding=ob.pos_amount||ob.outstanding_amount
-    const fmt=v=>v?`₹${Number(v).toLocaleString('en-IN')}`:'-'
-    return [
-      `Loan Type: ${ob.obligation_type||'-'}`,
-      `Bank Name: ${ob.bank_name||'-'}`,
-      `Loan Amount: ${fmt(loanAmount)}`,
-      `Outstanding Amount: ${fmt(outstanding)}`,
-      `Emi Amount: ${fmt(ob.emi_amount)}`,
-      `Tenure: ${ob.tenure_months?`${ob.tenure_months} months`:'-'}`,
-      `Emi paid: ${ob.emis_paid||'-'}`,
-    ].join('\n')
+  const fmtCompactCurrency=(v)=>{
+    const n=Number(v)
+    if(!n) return '-'
+    if(n>=100000){
+      const l=n/100000
+      const s=l%1===0?String(l):l.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
+      return `₹${s}L`
+    }
+    if(n>=1000){
+      const k=n/1000
+      const s=k%1===0?String(k):k.toFixed(1).replace(/\.0$/,'')
+      return `₹${s}K`
+    }
+    return `₹${n}`
+  }
+
+  const obligationTypeAbbrev=(t)=>{
+    const map={
+      'Personal Loan':'PL','Home Loan':'HL','Business Loan':'BL','Car Loan':'CL',
+      'Two Wheeler Loan':'TWL','Gold Loan':'GL','Education Loan':'EL',
+      'Credit Card':'Credit Card','Overdraft':'OD',
+    }
+    return map[t]||t||'-'
+  }
+
+  const buildObligationsTable=(drafts)=>{
+    if(!drafts||!drafts.length) return 'No obligations recorded yet.'
+    const rows=drafts.map(ob=>{
+      const loanAmount=ob.obligation_type==='Personal Loan'?ob.overdue_amount:ob.sanctioned_amount
+      const outstanding=ob.pos_amount||ob.outstanding_amount
+      return {
+        type: obligationTypeAbbrev(ob.obligation_type),
+        bank: ob.bank_name||'-',
+        emi: fmtCompactCurrency(ob.emi_amount),
+        os: fmtCompactCurrency(outstanding),
+        emiPaid: (ob.emis_paid===undefined||ob.emis_paid===null||ob.emis_paid==='')?'-':String(ob.emis_paid),
+        tenure: ob.tenure_months?`${Math.round(ob.tenure_months/12)} Yrs`:'-',
+        total: fmtCompactCurrency(loanAmount),
+      }
+    })
+    const cols=['type','bank','emi','os','emiPaid','tenure','total']
+    const headers={type:'Type',bank:'Bank',emi:'EMI',os:'O/S',emiPaid:'EMI Paid',tenure:'Tenure',total:'Total Amount'}
+    const rightAlign={emi:true,os:true,emiPaid:true,tenure:true,total:true}
+    const widths={}
+    cols.forEach(c=>{ widths[c]=Math.max(headers[c].length,...rows.map(r=>String(r[c]).length)) })
+    const padRight=(s,w)=>String(s)+' '.repeat(Math.max(0,w-String(s).length))
+    const padLeft=(s,w)=>' '.repeat(Math.max(0,w-String(s).length))+String(s)
+    const rowLine=obj=>cols.map(c=>rightAlign[c]?padLeft(obj[c],widths[c]):padRight(obj[c],widths[c])).join(' | ')
+    const headerLine=rowLine(headers)
+    const sepLine=cols.map(c=>'-'.repeat(widths[c])).join('-|-')
+    const bodyLines=rows.map(rowLine)
+    return ['```',headerLine,sepLine,...bodyLines,'```'].join('\n')
   }
 
   const buildObligationShareMessage=()=>{
@@ -1354,14 +1401,7 @@ function AgentDashboard({ userId }) {
     lines.push(`Required amount: ${obModalRequiredLoanAmount?`₹${Number(obModalRequiredLoanAmount).toLocaleString('en-IN')}`:'Not entered'}`)
     lines.push('*Obligations:*')
     lines.push('')
-    if(obligationDrafts.length){
-      obligationDrafts.forEach((ob,i)=>{
-        lines.push(buildObligationShareBlock(ob))
-        if(i<obligationDrafts.length-1) lines.push('')
-      })
-    }else{
-      lines.push('No obligations recorded yet.')
-    }
+    lines.push(buildObligationsTable(obligationDrafts))
     lines.push('')
     lines.push(`Shared by ${profile?.full_name||'Agent'}`)
     return lines.join('\n')
@@ -2630,6 +2670,45 @@ function AgentDashboard({ userId }) {
                   </div>
                 )
               })}
+
+              {/* ── Credit Report (read-only) ── */}
+              <div style={{marginTop:20}}>
+                <div style={{fontSize:11,fontWeight:600,color:'rgba(255,255,255,0.6)',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:8}}>Credit Report</div>
+                {creditReport?(
+                  <div style={{background:'rgba(255,255,255,0.06)',border:'1px solid rgba(255,255,255,0.1)',borderRadius:10,padding:'14px 16px'}}>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:20,marginBottom:12}}>
+                      <div><div style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Source</div><div style={{fontSize:14,fontWeight:600,color:'#e2e8f0',marginTop:2}}>{creditReport.report_source==='paisabazaar'?'PaisaBazaar':'CIBIL.com'}</div></div>
+                      <div><div style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Score</div><div style={{fontSize:14,fontWeight:700,color:'#60A5FA',marginTop:2}}>{creditReport.cibil_score??'—'}</div></div>
+                      <div><div style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Report Date</div><div style={{fontSize:14,color:'#e2e8f0',marginTop:2}}>{creditReport.report_date?new Date(creditReport.report_date).toLocaleDateString('en-IN'):'—'}</div></div>
+                      <div><div style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>Uploaded</div><div style={{fontSize:14,color:'#e2e8f0',marginTop:2}}>{creditReport.uploaded_at?new Date(creditReport.uploaded_at).toLocaleDateString('en-IN'):'—'}</div></div>
+                    </div>
+                    {Array.isArray(creditReport.accounts)&&creditReport.accounts.length>0?(
+                      <div style={{overflowX:'auto'}}>
+                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                          <thead><tr>
+                            <th style={{textAlign:'left',padding:'6px 8px',color:'rgba(255,255,255,0.5)',fontWeight:600,borderBottom:'1px solid rgba(255,255,255,0.1)'}}>Bank</th>
+                            <th style={{textAlign:'left',padding:'6px 8px',color:'rgba(255,255,255,0.5)',fontWeight:600,borderBottom:'1px solid rgba(255,255,255,0.1)'}}>Status</th>
+                            <th style={{textAlign:'left',padding:'6px 8px',color:'rgba(255,255,255,0.5)',fontWeight:600,borderBottom:'1px solid rgba(255,255,255,0.1)'}}>Outstanding</th>
+                          </tr></thead>
+                          <tbody>
+                            {creditReport.accounts.map((acc,i)=>(
+                              <tr key={i}>
+                                <td style={{padding:'6px 8px',color:'#e2e8f0',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{acc.bankName||'—'}</td>
+                                <td style={{padding:'6px 8px',color:'#94a3b8',borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{acc.status||'—'}</td>
+                                <td style={{padding:'6px 8px',color:'#a78bfa',fontWeight:600,borderBottom:'1px solid rgba(255,255,255,0.06)'}}>{acc.outstanding?'₹'+Number(acc.outstanding).toLocaleString('en-IN'):'—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ):(
+                      <div style={{color:'rgba(255,255,255,0.4)',fontSize:12}}>No account details saved.</div>
+                    )}
+                  </div>
+                ):(
+                  <div style={{color:'rgba(255,255,255,0.4)',fontSize:13}}>No credit report uploaded yet.</div>
+                )}
+              </div>
           </div>
         </div>
         </ErrorBoundary>
@@ -3469,7 +3548,7 @@ function TeamLeaderPanel({ userId }) {
     if(!agL.length){setLeads([]);setCalls([]);setAgentStats([]);setLoading(false);return}
     const ids=agL.map(a=>a.id)
     const[lR,cR]=await Promise.all([
-      supabase.from('leads').select('*').in('assigned_to',ids).order('created_at',{ascending:false}),
+      supabase.from('leads').select('*').in('assigned_to',ids).order('created_at',{ascending:false}).order('id',{ascending:false}),
       supabase.from('calls').select('*').in('agent_id',ids).gte('created_at',sd.toISOString()),
     ])
     const allL=lR.data||[],cL=cR.data||[]
@@ -3900,7 +3979,7 @@ function ManagerPanel({ userId }) {
 }
 
 // ─── BANK STATEMENT ANALYZER ─────────────────────────────────────────────────
-function BankStatementAnalyzer() {
+function BankStatementAnalyzer({ userId }) {
   const BSA_P = '#185FA5'
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -3963,7 +4042,7 @@ function BankStatementAnalyzer() {
           <h2 style={{fontSize:18,fontWeight:700,color:'#111827',margin:0}}>🔍 Bank Statement Analyzer</h2>
           <div style={{fontSize:13,color:'#6b7280',marginTop:4}}>Local credit risk analysis for loan processing</div>
         </div>
-        {result && <div style={{display:'flex',gap:8}}><Btn onClick={downloadXLSX}>⬇ Excel Report</Btn><Btn outline onClick={downloadCSV}>⬇ CSV</Btn></div>}
+        {result && <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><Btn onClick={downloadXLSX}>⬇ Excel Report</Btn><Btn outline onClick={downloadCSV}>⬇ CSV</Btn><SaveBsaToLead bsaResult={result} userId={userId} /></div>}
       </div>
 
       {!result && (
@@ -4583,15 +4662,20 @@ export default function Dashboard({ session }) {
       if(data) setActivityLogs(data)
     }
 
-    const SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2bnpldWVsZGZteGhlc21vZXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzY2MDA0NCwiZXhwIjoyMDkzMjM2MDQ0fQ.J7qjEpXnTlFvRJDM3uHG4JbPmFakaSFnu16mLtCvSdA'
     const fetchLeads=async()=>{
-      const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false})
+      const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
       if(data) setAdminLeads(data)
       const{data:obls}=await supabase.from('loan_obligations').select('*')
       if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
     }
     fetchLeadsRef.current=fetchLeads
-    const fetchAuthUsers=async()=>{ try{ const res=await fetch('https://pvnzeueldfmxhesmoetc.supabase.co/auth/v1/admin/users?per_page=1000',{headers:{'Authorization':'Bearer '+SK,'apikey':SK}}); const d=await res.json(); setAuthUsers(d.users||[]) }catch{} }
+    const fetchAuthUsers=async()=>{
+      try{
+        const{data,error}=await supabase.functions.invoke('admin-users',{body:{action:'list'}})
+        if(error) throw error
+        setAuthUsers(data?.users||[])
+      }catch{}
+    }
     const fetchSettings=async()=>{ const{data}=await supabase.from('settings').select('key,value'); if(!data)return; const m={}; data.forEach(s=>{m[s.key]=s.value}); setSettings(m) }
     const fetchActivityFull=async()=>{ const{data}=await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500); if(data) setActivityFull(data) }
     const showApToast=(msg,type='success')=>{ setApToast({msg,type}); setTimeout(()=>setApToast(null),3500) }
@@ -4812,13 +4896,13 @@ export default function Dashboard({ session }) {
     const createUser=async(e)=>{
       e.preventDefault(); setLoading(true)
       try{
-        const res=await fetch('https://pvnzeueldfmxhesmoetc.supabase.co/auth/v1/admin/users',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SK,'apikey':SK},body:JSON.stringify({email:userForm.email,password:'Capital@123',email_confirm:true})})
-        const ud=await res.json()
-        if(ud.id){
+        const{data,error}=await supabase.functions.invoke('admin-users',{body:{action:'create',email:userForm.email}})
+        const ud=data?.user
+        if(!error&&ud?.id){
           await supabase.from('profiles').insert([{id:ud.id,full_name:userForm.full_name,email:userForm.email,mobile:userForm.mobile,role:userForm.role,team_leader_id:userForm.team_leader_id||null,manager_id:userForm.manager_id||null,department:userForm.department,status:'active'}])
           setUserForm({full_name:'',email:'',mobile:'',role:'agent',team_leader_id:'',manager_id:'',department:''});setShowUserForm(false);fetchUsers()
           alert('✅ User created!\nEmail: '+userForm.email+'\nPassword: Capital@123')
-        }else alert('Error: '+JSON.stringify(ud))
+        }else alert('Error: '+(error?.message||JSON.stringify(data)))
       }catch(err){alert('Error: '+err.message)}
       setLoading(false)
     }
@@ -4845,10 +4929,9 @@ export default function Dashboard({ session }) {
       try{
         const{data:u}=await supabase.from('profiles').select('id,email').eq('email',resetEmail.trim()).single()
         if(!u){alert('User not found');setResetLoading(false);return}
-        const res=await fetch('https://pvnzeueldfmxhesmoetc.supabase.co/auth/v1/admin/users/'+u.id,{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SK,'apikey':SK},body:JSON.stringify({password:'Capital@123'})})
-        const r=await res.json()
-        if(r.id) alert('✅ Password reset to Capital@123 for '+resetEmail)
-        else alert('Error: '+JSON.stringify(r))
+        const{data,error}=await supabase.functions.invoke('admin-users',{body:{action:'reset_password',userId:u.id}})
+        if(!error&&data?.user?.id) alert('✅ Password reset to Capital@123 for '+resetEmail)
+        else alert('Error: '+(error?.message||JSON.stringify(data)))
       }catch(err){alert('Error: '+err.message)}
       setResetLoading(false)
     }
@@ -5382,7 +5465,7 @@ export default function Dashboard({ session }) {
                 <div className="card-header"><h3>Export Data</h3></div>
                 <div className="card-body" style={{display:'flex',flexDirection:'column',gap:8}}>
                   <button className="btn btn-outline" style={{justifyContent:'flex-start'}} onClick={async()=>{
-                    const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false})
+                    const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
                     if(!data||!data.length)return
                     const keys=Object.keys(data[0])
                     exportToExcel('leads_export',[keys,...data.map(r=>keys.map(k=>r[k]??''))],'Leads')
@@ -5989,12 +6072,16 @@ export default function Dashboard({ session }) {
         {activePage==='campaigns'&&<ErrorBoundary><Campaigns userRole={role} userId={profile?.id} orgId={profile?.org_id}/></ErrorBoundary>}
         {activePage==='calls'    &&<ErrorBoundary><Calls     userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='tasks'    &&<ErrorBoundary><Tasks     userRole={role} userId={profile?.id} orgId={profile?.org_id}/></ErrorBoundary>}
-        {activePage==='cibil'             &&<ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="cibil"        onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>}
-        {activePage==='cibil-paisabazaar' &&<ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="paisabazaar" onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>}
-        {activePage==='bsa'               &&<ErrorBoundary><BankStatementAnalyzer/></ErrorBoundary>}
+        <div style={{display:activePage==='cibil'?'block':'none'}}>
+          <ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="cibil"        onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>
+        </div>
+        <div style={{display:activePage==='cibil-paisabazaar'?'block':'none'}}>
+          <ErrorBoundary><CibilParser userRole={role} userId={profile?.id} source="paisabazaar" onUseInCam={()=>setActivePage('cam')}/></ErrorBoundary>
+        </div>
+        {activePage==='bsa'               &&<ErrorBoundary><BankStatementAnalyzer userId={profile?.id}/></ErrorBoundary>}
         {activePage==='emi'               &&<ErrorBoundary><EmiCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
         {activePage==='tax'               &&<ErrorBoundary><TaxCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
-        {activePage==='cam'               &&<ErrorBoundary><CamCalculator userRole={role} userId={profile?.id}/></ErrorBoundary>}
+        {activePage==='cam'               &&<ErrorBoundary><CamCalculator userRole={role} userId={profile?.id} setActivePage={setActivePage}/></ErrorBoundary>}
         {activePage==='reports'  &&<ErrorBoundary><Reports   userRole={role} userId={profile?.id}/></ErrorBoundary>}
       </main>
     </div>

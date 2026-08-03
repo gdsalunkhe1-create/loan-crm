@@ -4,6 +4,7 @@ import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
 import DateInput from '../components/DateInput'
+import SaveBsaToLead from '../components/SaveBsaToLead'
 
 const IST_TZ = 'Asia/Kolkata'
 
@@ -1609,7 +1610,7 @@ INSERT INTO lead_stages (name,color,order_index) VALUES
 }
 
 // ─── BANK STATEMENT ANALYZER ─────────────────────────────────────────────────
-function BankStatementAnalyzer() {
+function BankStatementAnalyzer({ userId }) {
   const [file, setFile] = useState(null)
   const [dragOver, setDragOver] = useState(false)
   const [phase, setPhase] = useState(0)
@@ -1777,10 +1778,11 @@ function BankStatementAnalyzer() {
           <h2 style={{ fontSize:18, fontWeight:700, color:'#111827', margin:'0 0 2px' }}>📋 Analysis Report</h2>
           <div style={{ fontSize:12, color:'#9ca3af' }}>{sm.account_holder} · {sm.bank_name} · {sm.statement_period}</div>
         </div>
-        <div style={{ display:'flex', gap:8 }}>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           <Btn small onClick={downloadXLSX}>⬇ Excel Report</Btn>
           <Btn small onClick={downloadCSV}>⬇ CSV</Btn>
           <Btn small outline onClick={reset}>← New Analysis</Btn>
+          <SaveBsaToLead bsaResult={result} userId={userId} />
         </div>
       </div>
 
@@ -2311,7 +2313,7 @@ export default function FullAdminPanel() {
               )}
               {active==='bsa' && (
                 <ErrorBoundary>
-                  <BankStatementAnalyzer/>
+                  <BankStatementAnalyzer userId={adminUser?.id}/>
                 </ErrorBoundary>
               )}
             </>

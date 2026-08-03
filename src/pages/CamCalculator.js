@@ -8,10 +8,10 @@ const fmtL = n => ((+n || 0) / 100000).toFixed(2) + ' L';
 const pct  = v => ((+v || 0) * 100).toFixed(1) + '%';
 
 const LOAN_TYPES   = ['Personal Loan', 'Credit Card', 'Property Loan', 'Housing Loan', 'Mortgage Loan', 'Consumer Loan', 'Gold Loan', 'Car Loan', 'Other'];
-const OWNERSHIP    = ['Individual', 'Joint'];
+const OWNERSHIP    = ['Individual', 'Joint', 'Guarantor'];
 const STATUSES     = ['Live', 'Closed', 'BT'];
 const PAID_BY      = ['Self', 'Both', 'Co-applicant'];
-const PAID_BY_TYPES = ['Housing Loan', 'Mortgage Loan', 'Property Loan'];
+const PAID_BY_TYPES = ['Housing Loan', 'Mortgage Loan', 'Property Loan', 'Car Loan'];
 
 function obligatedEMI(row) {
   const emi = +row.emi || 0;
@@ -30,6 +30,16 @@ function obligatedEMI(row) {
   return { val: emi, reason: '100% EMI' };
 }
 
+let __rowIdSeq = 0;
+const newRowId = () => {
+  __rowIdSeq += 1;
+  // Date.now() + Math.random() collides when many rows are created in the same
+  // millisecond (e.g. the CIBIL import .map()) because a double can't hold full
+  // precision for a huge timestamp plus a random fraction. A monotonic counter
+  // combined with the timestamp guarantees uniqueness.
+  return `${Date.now()}-${__rowIdSeq}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
 const clean = v => String(v == null ? '' : v).replace(/[^0-9]/g, '');
 const isClosedStatus = s => /closed|settled|written/i.test(s || '');
 const mapCibilType = (t = '') => {
@@ -38,15 +48,25 @@ const mapCibilType = (t = '') => {
   if (s.includes('gold')) return 'Gold Loan';
   if (s.includes('property') || s.includes('against property') || s.includes('lap')) return 'Property Loan';
   if (s.includes('home') || s.includes('housing') || s.includes('mortgage')) return 'Housing Loan';
-  if (s.includes('personal')) return 'Personal Loan';
   if (s.includes('consumer')) return 'Consumer Loan';
+  // Check auto/car BEFORE the generic "personal" check — CIBIL reports these as
+  // "Auto Loan Personal" / "Car Loan Personal", which also contain the word
+  // "personal" and were previously being mis-mapped to Personal Loan.
   if (s.includes('auto') || s.includes('car')) return 'Car Loan';
+  if (s.includes('personal')) return 'Personal Loan';
   return 'Other';
 };
+const mapCibilOwnership = (o = '') => {
+  const s = String(o).toLowerCase();
+  if (s.includes('guarantor')) return 'Guarantor';
+  if (s.includes('joint')) return 'Joint';
+  if (s.includes('individual')) return 'Individual';
+  return 'Individual'; // fallback when CIBIL doesn't report ownership on the account
+};
 const cibilToRow = a => ({
-  id: Date.now() + Math.random(),
+  id: newRowId(),
   financier: a.bankName || '',
-  ownership: 'Individual',
+  ownership: mapCibilOwnership(a.ownership),
   loanType: mapCibilType(a.loanType),
   status: 'Live',
   loanAmount: clean(a.loanAmount),
@@ -57,7 +77,7 @@ const cibilToRow = a => ({
 });
 
 const emptyRow = () => ({
-  id: Date.now() + Math.random(),
+  id: newRowId(),
   financier: '', ownership: 'Individual', loanType: 'Personal Loan',
   status: 'Live', loanAmount: '', outstanding: '', emi: '', remEmi: '', paidBy: 'Self',
 });
@@ -79,9 +99,10 @@ const COLS = [
   ['Paid By', 105], ['Obligated EMI', 100], ['Reason', 110],
 ];
 
-export default function CamCalculator({ userRole, userId }) {
+export default function CamCalculator({ userRole, userId, setActivePage }) {
   const [obligations, setObligations] = useState([emptyRow()]);
   const [customerName, setCustomerName] = useState('');
+  const [cibilSource, setCibilSource] = useState('');
 
   const [netSalary, setNetSalary] = useState('');
   const [variableIncome, setVariableIncome] = useState('');
@@ -108,6 +129,7 @@ export default function CamCalculator({ userRole, userId }) {
       if (!active.length) return false;
       setObligations(active.map(cibilToRow));
       if (!Array.isArray(parsed) && parsed.customerName) setCustomerName(parsed.customerName);
+      if (!Array.isArray(parsed) && parsed.source) setCibilSource(parsed.source);
       return true;
     } catch (e) { console.error('CAM import failed', e); return false; }
   };
@@ -246,6 +268,11 @@ export default function CamCalculator({ userRole, userId }) {
           <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#7a8194' }}>Credit assessment &amp; eligibility{customerName ? ` — ${customerName}` : ''}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {cibilSource && setActivePage && (
+            <button style={btnSec} onClick={() => setActivePage(cibilSource === 'paisabazaar' ? 'cibil-paisabazaar' : 'cibil')}>
+              ← Back to CIBIL Report
+            </button>
+          )}
           <button style={btnSec} onClick={() => { if (!importFromCibil()) alert('No CIBIL report found. Open a CIBIL/PaisaBazaar report first and click "Build CAM from this report".'); }}>⬇ Import from CIBIL</button>
           <button style={btnSec} onClick={exportCSV}>⬇ CSV</button>
           <button style={btnPri} onClick={exportExcel}>⬇ Download Excel</button>
