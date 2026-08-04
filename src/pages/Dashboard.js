@@ -428,6 +428,28 @@ function AgentDashboard({ userId }) {
   const [filterLoanAmount,setFilterLoanAmount]   = useState('')
   const [filterCity,setFilterCity]               = useState('')
 
+  // ── Disbursed-amount capture (Part 2) ── shared by updateLeadStatus and saveCallLog;
+  // disbursedAmountOnConfirm holds the "resume with this amount" callback for whichever path opened it.
+  const [showDisbursedAmountModal,setShowDisbursedAmountModal] = useState(false)
+  const [disbursedAmountLead,setDisbursedAmountLead]           = useState(null)
+  const [disbursedAmountInput,setDisbursedAmountInput]         = useState('')
+  const [savingDisbursedAmount,setSavingDisbursedAmount]       = useState(false)
+  const [disbursedAmountOnConfirm,setDisbursedAmountOnConfirm] = useState(null)
+
+  // ── Monthly target widget (Parts 3 & 4) ──
+  const [monthlyTarget,setMonthlyTarget]         = useState(null)   // agent_monthly_targets row for this month, or null
+  const [targetLoading,setTargetLoading]         = useState(true)
+  const [showEditTarget,setShowEditTarget]       = useState(false)
+  const [targetForm,setTargetForm]               = useState({monthly_disbursement_target:'',working_days:''})
+  const [savingTarget,setSavingTarget]           = useState(false)
+
+  // ── Motivational disbursement popup (Part 5) ──
+  const [disbursementCelebration,setDisbursementCelebration] = useState(null)
+
+  // ── Leaderboard (Part 6) ──
+  const [leaderboard,setLeaderboard]             = useState([])
+  const [leaderboardLoading,setLeaderboardLoading] = useState(true)
+
   useEffect(()=>{
     const build=()=>{
       const h=new Date().getHours()
@@ -444,6 +466,8 @@ function AgentDashboard({ userId }) {
 
   useEffect(()=>{ if(userId) fetchAll() },[dateRange, userId])
   useEffect(()=>{ fetchLeadStages() },[])
+  useEffect(()=>{ if(userId) fetchMonthlyTarget() },[userId])
+  useEffect(()=>{ fetchLeaderboard() },[])
 
   useEffect(()=>{
     if(!viewLead) return
@@ -502,6 +526,7 @@ function AgentDashboard({ userId }) {
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},(payload)=>{
         console.log('[RT] leads UPDATE received:', payload)
         const upd=payload.new
+        if(upd?.status==='Disbursed') fetchLeaderboard()
         if(!upd?.id){
           console.log('[RT] leads UPDATE: empty payload (RLS blocked), falling back to fetchAll')
           debouncedFetchAll()
@@ -864,6 +889,57 @@ function AgentDashboard({ userId }) {
     if(data&&data.length>0) setLeadStages(data)
   }
 
+  const fetchMonthlyTarget=async()=>{
+    if(!userId) return
+    setTargetLoading(true)
+    const monthStr=istToday().slice(0,7)
+    const{data}=await supabase.from('agent_monthly_targets').select('*').eq('agent_id',userId).eq('month',monthStr).maybeSingle()
+    setMonthlyTarget(data||null)
+    setTargetLoading(false)
+  }
+
+  const saveMonthlyTarget=async()=>{
+    const target=Number(targetForm.monthly_disbursement_target)
+    const workingDays=Number(targetForm.working_days)
+    if(!target||target<=0||!workingDays||workingDays<=0){ showToast('Enter a valid target and working days','error'); return }
+    setSavingTarget(true)
+    const monthStr=istToday().slice(0,7)
+    const row={agent_id:userId,org_id:profile?.org_id,month:monthStr,monthly_disbursement_target:target,working_days:workingDays}
+    const{data,error}=await supabase.from('agent_monthly_targets').upsert([row],{onConflict:'agent_id,month'}).select().maybeSingle()
+    setSavingTarget(false)
+    if(error){ showToast('Could not save target: '+error.message,'error'); return }
+    setMonthlyTarget(data||row)
+    setShowEditTarget(false)
+    showToast('Monthly target saved')
+  }
+
+  const fetchLeaderboard=async()=>{
+    setLeaderboardLoading(true)
+    const monthStr=istToday().slice(0,7)
+    const [yy,mm]=monthStr.split('-').map(Number)
+    const monthStart=new Date(yy,mm-1,1)
+    const monthEndExclusive=new Date(yy,mm,1)
+    const{data:disbursedLeads}=await supabase.from('leads').select('assigned_to,disbursed_amount,status,stage_history,updated_at').eq('status','Disbursed').not('disbursed_amount','is',null)
+    if(!disbursedLeads){ setLeaderboardLoading(false); return }
+    const totals={}
+    disbursedLeads.forEach(l=>{
+      if(!l.assigned_to) return
+      const t=getStatusChangeTime(l,'Disbursed')
+      if(!t||t<monthStart||t>=monthEndExclusive) return
+      totals[l.assigned_to]=(totals[l.assigned_to]||0)+(Number(l.disbursed_amount)||0)
+    })
+    const agentIds=Object.keys(totals)
+    if(agentIds.length===0){ setLeaderboard([]); setLeaderboardLoading(false); return }
+    const{data:profs}=await supabase.from('profiles').select('id,full_name').in('id',agentIds)
+    const rows=agentIds.map(id=>({
+      agentId:id,
+      name:profs?.find(p=>p.id===id)?.full_name||'Agent',
+      amount:totals[id],
+    })).sort((a,b)=>b.amount-a.amount)
+    setLeaderboard(rows)
+    setLeaderboardLoading(false)
+  }
+
   const fetchAll=async(opts={})=>{
     if(!userId) return
     if(fetchInFlightRef.current){
@@ -922,14 +998,70 @@ function AgentDashboard({ userId }) {
   checkRemindersRef.current = checkReminders
   fetchCallbackTasksRef.current = fetchCallbackTasks
 
+  // Finds when a lead entered `status`, using the most recent matching stage_history
+  // entry; falls back to updated_at for pre-trigger leads currently sitting in that status.
+  const getStatusChangeTime=(lead,status)=>{
+    const hist=Array.isArray(lead.stage_history)?lead.stage_history:[]
+    for(let i=hist.length-1;i>=0;i--){
+      if(hist[i]&&hist[i].to===status&&hist[i].at) return new Date(hist[i].at)
+    }
+    if(lead.status===status) return new Date(lead.updated_at||lead.created_at)
+    return null
+  }
+
+  // Computes the current month's target-vs-achieved numbers for the target widget (Part 4)
+  // and the disbursement celebration popup (Part 5) — both read from the same source of truth.
+  const computeTargetProgress=(leads,targetRow)=>{
+    if(!targetRow) return null
+    const monthStr=istToday().slice(0,7)
+    const [yy,mm]=monthStr.split('-').map(Number)
+    const monthStart=new Date(yy,mm-1,1)
+    const monthEndExclusive=new Date(yy,mm,1)
+    const target=Number(targetRow.monthly_disbursement_target)||0
+    const workingDays=Number(targetRow.working_days)||0
+    const monthlyLoginTarget=target*1.3
+
+    const disbursedThisMonth=leads.reduce((sum,l)=>{
+      if(l.status!=='Disbursed') return sum
+      const t=getStatusChangeTime(l,'Disbursed')
+      if(!t||t<monthStart||t>=monthEndExclusive) return sum
+      return sum+(Number(l.disbursed_amount)||0)
+    },0)
+
+    const loggedThisMonth=leads.reduce((sum,l)=>{
+      const t=getStatusChangeTime(l,'Login')
+      if(!t||t<monthStart||t>=monthEndExclusive) return sum
+      return sum+(Number(l.required_loan_amount)||Number(l.eligible_amount)||0)
+    },0)
+
+    const todayDay=Number(istToday().slice(8,10))
+    let elapsedWorkingDays=0
+    for(let day=1;day<todayDay;day++){
+      if(new Date(yy,mm-1,day).getDay()!==0) elapsedWorkingDays++
+    }
+    elapsedWorkingDays=Math.min(elapsedWorkingDays,workingDays)
+    const remainingWorkingDays=Math.max(workingDays-elapsedWorkingDays,1)
+
+    const disbursementShortfall=Math.max(target-disbursedThisMonth,0)
+    const loginShortfall=Math.max(monthlyLoginTarget-loggedThisMonth,0)
+    const requiredDailyDisbursement=disbursementShortfall/remainingWorkingDays
+    const requiredDailyLogin=loginShortfall/remainingWorkingDays
+
+    return {
+      target,workingDays,monthlyLoginTarget,disbursedThisMonth,loggedThisMonth,
+      elapsedWorkingDays,remainingWorkingDays,disbursementShortfall,loginShortfall,
+      requiredDailyDisbursement,requiredDailyLogin,
+    }
+  }
+
   const computePipelineStats=(leads)=>{
     const todayStart=new Date(); todayStart.setHours(0,0,0,0)
     const monthStart=new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0)
     const targets={
-      todayLogins:     leads.filter(l=>l.status==='Login'    &&new Date(l.created_at)>=todayStart).length,
-      todayDisbursed:  leads.filter(l=>l.status==='Disbursed'&&new Date(l.created_at)>=todayStart).length,
-      monthlyLogins:   leads.filter(l=>l.status==='Login'    &&new Date(l.created_at)>=monthStart).length,
-      monthlyDisbursed:leads.filter(l=>l.status==='Disbursed'&&new Date(l.created_at)>=monthStart).length,
+      todayLogins:     leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart }).length,
+      todayDisbursed:  leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart }).length,
+      monthlyLogins:   leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart }).length,
+      monthlyDisbursed:leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart }).length,
     }
     const dur=900, t0=Date.now()
     const step=()=>{
@@ -966,7 +1098,7 @@ function AgentDashboard({ userId }) {
     }catch(e){console.error('[notifyAdmins]',e)}
   }
 
-  const updateLeadStatus=async(leadId,newStatus)=>{
+  const updateLeadStatus=async(leadId,newStatus,disbursedAmountValue)=>{
     const lead=myLeads.find(l=>l.id===leadId)
     const isMirrorLead=lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
     if(newStatus==='Callback'){
@@ -985,20 +1117,47 @@ function AgentDashboard({ userId }) {
       showToast('Stage updated to '+newStatus)
       return
     }
+    if(newStatus==='Disbursed'&&!lead?.disbursed_amount&&disbursedAmountValue==null){
+      setDisbursedAmountLead(lead)
+      setDisbursedAmountInput('')
+      setDisbursedAmountOnConfirm(()=>(amt)=>updateLeadStatus(leadId,'Disbursed',amt))
+      setShowDisbursedAmountModal(true)
+      return
+    }
     console.log('[Action] updateLeadStatus → DB write:', leadId, newStatus)
-    const {data,error}=await supabase.from('leads').update({status:newStatus}).eq('id',leadId).select()
+    const updatePayload={status:newStatus}
+    if(newStatus==='Disbursed'&&disbursedAmountValue!=null) updatePayload.disbursed_amount=disbursedAmountValue
+    const {data,error}=await supabase.from('leads').update(updatePayload).eq('id',leadId).select()
     if(error){ console.error('[Action] updateLeadStatus DB error:', error); showToast('Could not update stage: '+error.message,'error'); return }
     if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.(); return }
     // Optimistic update — RT subscription will also fire on other devices
-    setMyLeads(prev=>[...prev.map(l=>l.id===leadId?{...l,status:newStatus}:l)])
+    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,...updatePayload}:l)
+    setMyLeads(updatedLeads)
     showToast('Stage updated to '+newStatus)
     fetchAllRef.current?.()
+    if(newStatus==='Disbursed') fetchLeaderboard()
     if(newStatus==='Lead'){
       const lead=data[0]
       // notifyAdmins({type:'lead_saved',lead_id:leadId,customer_name:lead.full_name,amount:lead.loan_amount||null,
       //   message:`🎯 ${profile?.full_name||'Agent'} booked a LEAD — ${lead.full_name}${lead.loan_amount?' · ₹'+Number(lead.loan_amount).toLocaleString('en-IN'):''}`,
       // })
     }
+    if(newStatus==='Disbursed'&&disbursedAmountValue!=null){
+      const progress=computeTargetProgress(updatedLeads,monthlyTarget)
+      if(progress) setDisbursementCelebration(progress)
+    }
+  }
+
+  const confirmDisbursedAmount=async()=>{
+    const amt=Number(disbursedAmountInput)
+    if(!amt||amt<=0){ showToast('Enter a valid disbursed amount','error'); return }
+    setSavingDisbursedAmount(true)
+    await disbursedAmountOnConfirm?.(amt)
+    setSavingDisbursedAmount(false)
+    setShowDisbursedAmountModal(false)
+    setDisbursedAmountLead(null)
+    setDisbursedAmountInput('')
+    setDisbursedAmountOnConfirm(null)
   }
 
   const saveNote=async()=>{
@@ -1476,8 +1635,16 @@ function AgentDashboard({ userId }) {
 
   const openCallingWorkspace=(lead)=>{ handleCall(lead) }
 
-  const saveCallLog=async()=>{
+  const saveCallLog=async(disbursedAmountOverride)=>{
     if(!callLogLead) return
+    if(callLogStage==='Disbursed'&&!callLogLead.disbursed_amount&&disbursedAmountOverride==null){
+      setDisbursedAmountLead(callLogLead)
+      setDisbursedAmountInput('')
+      setDisbursedAmountOnConfirm(()=>(amt)=>saveCallLog(amt))
+      setShowCallLogModal(false)
+      setShowDisbursedAmountModal(true)
+      return
+    }
     setSavingCallLog(true)
 
     try{
@@ -1485,6 +1652,7 @@ function AgentDashboard({ userId }) {
       const leadsUpdate={}
       if(callLogDisposition) leadsUpdate.disposition=callLogDisposition
       if(callLogStage) leadsUpdate.status=callLogStage
+      if(callLogStage==='Disbursed'&&disbursedAmountOverride!=null) leadsUpdate.disbursed_amount=disbursedAmountOverride
 
       // Run calls insert and leads update in parallel - both fire at same time
       await Promise.all([
@@ -1501,8 +1669,10 @@ function AgentDashboard({ userId }) {
       ])
 
       // Update local state immediately without waiting for fetchAll
+      let updatedLeads=myLeads
       if(Object.keys(leadsUpdate).length>0){
-        setMyLeads(prev=>prev.map(l=>l.id===callLogLead.id?{...l,...leadsUpdate}:l))
+        updatedLeads=myLeads.map(l=>l.id===callLogLead.id?{...l,...leadsUpdate}:l)
+        setMyLeads(updatedLeads)
       }
 
       // Add to local calls state immediately
@@ -1539,6 +1709,12 @@ function AgentDashboard({ userId }) {
 
       // Refresh in background after modal is already closed
       setTimeout(()=>fetchAll(),500)
+
+      if(callLogStage==='Disbursed'&&disbursedAmountOverride!=null){
+        fetchLeaderboard()
+        const progress=computeTargetProgress(updatedLeads,monthlyTarget)
+        if(progress) setDisbursementCelebration(progress)
+      }
     }catch(err){
       showToast('Error saving call log: '+err.message,'error')
     }finally{
@@ -1663,6 +1839,9 @@ function AgentDashboard({ userId }) {
     {label:'Monthly Logins',   value:animatedStats.monthlyLogins,   color:'#92400E',bg:'#FEF3C7',status:'Login'},
     {label:'Monthly Disbursed',value:animatedStats.monthlyDisbursed,color:'#27500A',bg:'#EAF3DE',status:'Disbursed'},
   ]
+
+  const monthNameLabel=new Date(Number(istToday().slice(0,4)),Number(istToday().slice(5,7))-1,1).toLocaleString('en-US',{month:'long'})
+  const targetProgress=computeTargetProgress(myLeads,monthlyTarget)
 
   return (
     <div style={{minHeight:'100vh',background:bg0,color:txt1,fontFamily:'system-ui,sans-serif'}}>
@@ -2122,6 +2301,80 @@ function AgentDashboard({ userId }) {
                   Skip
                 </button>
               </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* DISBURSED AMOUNT MODAL */}
+      {showDisbursedAmountModal&&disbursedAmountLead&&(
+        <>
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:300}} onClick={()=>{setShowDisbursedAmountModal(false);setDisbursedAmountLead(null);setDisbursedAmountOnConfirm(null)}}/>
+          <div style={{position:'fixed',top:isMobile?'auto':'50%',bottom:isMobile?0:'auto',left:isMobile?0:'50%',transform:isMobile?'none':'translate(-50%,-50%)',background:'white',borderRadius:isMobile?'16px 16px 0 0':16,boxShadow:'0 24px 60px rgba(0,0,0,0.2)',zIndex:400,width:isMobile?'100%':'90%',maxWidth:420,overflow:'hidden'}}>
+            <div style={{background:'linear-gradient(135deg,#065F46,#059669)',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,color:'white'}}>
+                <div style={{width:34,height:34,borderRadius:'50%',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <IconCircleCheck size={17}/>
+                </div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:15}}>Mark as Disbursed</div>
+                  <div style={{fontSize:12,opacity:0.8}}>{disbursedAmountLead.full_name} · {disbursedAmountLead.mobile}</div>
+                </div>
+              </div>
+              <button onClick={()=>{setShowDisbursedAmountModal(false);setDisbursedAmountLead(null);setDisbursedAmountOnConfirm(null)}} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
+            </div>
+            <div style={{padding:'16px 18px'}}>
+              <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Disbursed Amount (₹) *</label>
+              <input type="number" min="1" autoFocus value={disbursedAmountInput} onChange={e=>setDisbursedAmountInput(e.target.value)}
+                placeholder="e.g. 500000"
+                className="mobile-input"
+                style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box',color:'#111827',marginBottom:14}}
+                onFocus={e=>e.target.style.borderColor='#065F46'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}
+                onKeyDown={e=>{ if(e.key==='Enter') confirmDisbursedAmount() }}/>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={confirmDisbursedAmount} disabled={savingDisbursedAmount||!disbursedAmountInput}
+                  className="mobile-button"
+                  style={{flex:1,padding:'12px',background:(savingDisbursedAmount||!disbursedAmountInput)?'#CBD5E0':'#065F46',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:(savingDisbursedAmount||!disbursedAmountInput)?'not-allowed':'pointer'}}>
+                  {savingDisbursedAmount?'Saving…':'Confirm Disbursed'}
+                </button>
+                <button onClick={()=>{setShowDisbursedAmountModal(false);setDisbursedAmountLead(null);setDisbursedAmountOnConfirm(null)}}
+                  style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* DISBURSEMENT CELEBRATION POPUP */}
+      {disbursementCelebration&&(
+        <>
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:600}} onClick={()=>setDisbursementCelebration(null)}/>
+          <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:18,boxShadow:'0 24px 60px rgba(0,0,0,0.25)',zIndex:700,width:isMobile?'92%':420,overflow:'hidden',textAlign:'center'}}>
+            <div style={{background:'linear-gradient(135deg,#059669,#10B981)',padding:'26px 20px 20px',color:'white'}}>
+              <div style={{fontSize:38,marginBottom:6}}>🎉</div>
+              <div style={{fontWeight:700,fontSize:17}}>
+                {fmtCompactCurrency(disbursementCelebration.disbursedThisMonth)} of {fmtCompactCurrency(disbursementCelebration.target)} disbursed this month
+              </div>
+              <div style={{fontSize:13,opacity:0.9,marginTop:2}}>
+                ({disbursementCelebration.target>0?Math.min(100,Math.round(disbursementCelebration.disbursedThisMonth/disbursementCelebration.target*100)):0}%)
+              </div>
+            </div>
+            <div style={{padding:'18px 20px'}}>
+              {disbursementCelebration.disbursementShortfall>0?(
+                <div style={{fontSize:14,color:'#374151',lineHeight:1.6}}>
+                  <strong style={{color:'#065F46'}}>{fmtCompactCurrency(disbursementCelebration.disbursementShortfall)}</strong> to go — that's{' '}
+                  <strong style={{color:'#065F46'}}>{fmtCompactCurrency(disbursementCelebration.requiredDailyDisbursement)}/day</strong> disbursement for the next {disbursementCelebration.remainingWorkingDays} working day{disbursementCelebration.remainingWorkingDays>1?'s':''}.
+                </div>
+              ):(
+                <div style={{fontSize:14,color:'#065F46',fontWeight:600}}>Target achieved — amazing work! 🏆</div>
+              )}
+              <button onClick={()=>setDisbursementCelebration(null)}
+                className="mobile-button"
+                style={{marginTop:16,width:'100%',padding:'11px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:'pointer'}}>
+                Keep Going 🚀
+              </button>
             </div>
           </div>
         </>
@@ -2888,6 +3141,117 @@ function AgentDashboard({ userId }) {
                 <div style={{fontSize:isMobile?11:12,fontWeight:600,color:s.color}}>{s.label}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* MONTHLY TARGET WIDGET */}
+        {!targetLoading && (
+          <div style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:16,marginBottom:14,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
+            {(!monthlyTarget||showEditTarget) ? (
+              <>
+                {!monthlyTarget && (
+                  <div style={{background:'#EEF2FF',border:'1px solid #C7D2FE',borderRadius:8,padding:'8px 12px',fontSize:12.5,fontWeight:600,color:'#3730A3',marginBottom:12}}>
+                    🎯 Set your target for {monthNameLabel}
+                  </div>
+                )}
+                <div style={{fontSize:14,fontWeight:700,color:txt1,marginBottom:4}}>{monthlyTarget?'Edit your target':'Monthly Target'} — {monthNameLabel}</div>
+                <div style={{fontSize:12,color:txt2,marginBottom:12}}>Set your monthly disbursement target so we can show your daily progress.</div>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:10,marginBottom:12}}>
+                  <div>
+                    <label style={{display:'block',fontSize:11,fontWeight:600,color:txt2,marginBottom:5,textTransform:'uppercase'}}>Monthly Disbursement Target (₹)</label>
+                    <input type="number" min="1" className="mobile-input" value={targetForm.monthly_disbursement_target}
+                      onChange={e=>setTargetForm(f=>({...f,monthly_disbursement_target:e.target.value}))}
+                      placeholder="e.g. 2000000"
+                      style={{width:'100%',padding:'9px 10px',border:'1.5px solid '+bdr,borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box',color:txt1,background:bg1}}/>
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontSize:11,fontWeight:600,color:txt2,marginBottom:5,textTransform:'uppercase'}}>Working Days This Month</label>
+                    <input type="number" min="1" max="31" className="mobile-input" value={targetForm.working_days}
+                      onChange={e=>setTargetForm(f=>({...f,working_days:e.target.value}))}
+                      placeholder="e.g. 26"
+                      style={{width:'100%',padding:'9px 10px',border:'1.5px solid '+bdr,borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box',color:txt1,background:bg1}}/>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={saveMonthlyTarget} disabled={savingTarget} className="mobile-button"
+                    style={{flex:1,padding:'11px',background:savingTarget?'#CBD5E0':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingTarget?'not-allowed':'pointer'}}>
+                    {savingTarget?'Saving…':'Save Target'}
+                  </button>
+                  {monthlyTarget&&(
+                    <button onClick={()=>setShowEditTarget(false)} style={{padding:'11px 16px',background:'transparent',border:'1px solid '+bdr,borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:txt2}}>Cancel</button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+                  <div style={{fontSize:14,fontWeight:700,color:txt1}}>🎯 {monthNameLabel} Target Progress</div>
+                  <button onClick={()=>{ setTargetForm({monthly_disbursement_target:String(monthlyTarget.monthly_disbursement_target),working_days:String(monthlyTarget.working_days)}); setShowEditTarget(true) }}
+                    style={{padding:'3px 10px',borderRadius:20,border:'1px solid '+bdr,background:'transparent',cursor:'pointer',fontSize:11,fontWeight:600,color:txt2}}>
+                    Edit target
+                  </button>
+                </div>
+
+                <div style={{marginBottom:14}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:5}}>
+                    <span style={{color:txt2,fontWeight:600}}>Disbursement</span>
+                    <span style={{color:txt1,fontWeight:700}}>{fmtCompactCurrency(targetProgress.disbursedThisMonth)} / {fmtCompactCurrency(targetProgress.target)}</span>
+                  </div>
+                  <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:Math.min(100,targetProgress.target>0?(targetProgress.disbursedThisMonth/targetProgress.target*100):0)+'%',background:'#065F46',borderRadius:6}}/>
+                  </div>
+                </div>
+
+                <div style={{marginBottom:14}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:5}}>
+                    <span style={{color:txt2,fontWeight:600}}>Login</span>
+                    <span style={{color:txt1,fontWeight:700}}>{fmtCompactCurrency(targetProgress.loggedThisMonth)} / {fmtCompactCurrency(targetProgress.monthlyLoginTarget)}</span>
+                  </div>
+                  <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:Math.min(100,targetProgress.monthlyLoginTarget>0?(targetProgress.loggedThisMonth/targetProgress.monthlyLoginTarget*100):0)+'%',background:'#534AB7',borderRadius:6}}/>
+                  </div>
+                </div>
+
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt2,marginBottom:10}}>
+                  <span>{targetProgress.remainingWorkingDays} working day{targetProgress.remainingWorkingDays>1?'s':''} left</span>
+                  <span>{targetProgress.elapsedWorkingDays}/{targetProgress.workingDays} days elapsed</span>
+                </div>
+
+                <div style={{background:bg2,borderRadius:8,padding:'10px 12px',fontSize:12.5,color:txt1,fontWeight:600,lineHeight:1.5}}>
+                  {(targetProgress.disbursementShortfall>0||targetProgress.loginShortfall>0)?(
+                    <>{fmtCompactCurrency(targetProgress.requiredDailyDisbursement)}/day disbursement + {fmtCompactCurrency(targetProgress.requiredDailyLogin)}/day login needed to hit target</>
+                  ):(
+                    <>🏆 Both targets achieved this month!</>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* TOP PERFORMERS LEADERBOARD */}
+        {!leaderboardLoading && leaderboard.length>0 && (
+          <div style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:16,marginBottom:14,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
+            <div style={{fontSize:14,fontWeight:700,color:txt1,marginBottom:12}}>🏆 Top Performers — {monthNameLabel}</div>
+            <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:10,marginBottom:leaderboard.length>3?12:0}}>
+              {leaderboard.slice(0,3).map((row,i)=>(
+                <div key={row.agentId} style={{background:i===0?'#FEF3C7':i===1?'#F1F5F9':'#FBEAD9',border:'1px solid '+(i===0?'#FDE68A':i===1?'#E2E8F0':'#F3D5B5'),borderRadius:10,padding:'12px',textAlign:'center'}}>
+                  <div style={{fontSize:22,marginBottom:4}}>{i===0?'🥇':i===1?'🥈':'🥉'}</div>
+                  <div style={{fontSize:12.5,fontWeight:700,color:txt1,marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.name}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:'#065F46'}}>{fmtCompactCurrency(row.amount)}</div>
+                </div>
+              ))}
+            </div>
+            {leaderboard.length>3&&(
+              <div style={{marginTop:4}}>
+                {leaderboard.slice(3).map((row,i)=>(
+                  <div key={row.agentId} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 4px',borderTop:'1px solid '+bdr,fontSize:12.5}}>
+                    <span style={{color:txt2}}>#{i+4} {row.name}</span>
+                    <span style={{color:txt1,fontWeight:600}}>{fmtCompactCurrency(row.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
