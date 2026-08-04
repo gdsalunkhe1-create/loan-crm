@@ -930,12 +930,14 @@ function AgentDashboard({ userId }) {
     })
     const agentIds=Object.keys(totals)
     if(agentIds.length===0){ setLeaderboard([]); setLeaderboardLoading(false); return }
-    const{data:profs}=await supabase.from('profiles').select('id,full_name').in('id',agentIds)
-    const rows=agentIds.map(id=>({
-      agentId:id,
-      name:profs?.find(p=>p.id===id)?.full_name||'Agent',
-      amount:totals[id],
-    })).sort((a,b)=>b.amount-a.amount)
+    const{data:profs}=await supabase.from('profiles').select('id,full_name').eq('role','agent').eq('status','active').in('id',agentIds)
+    const rows=agentIds
+      .filter(id=>profs?.some(p=>p.id===id))
+      .map(id=>({
+        agentId:id,
+        name:profs.find(p=>p.id===id)?.full_name||'Agent',
+        amount:totals[id],
+      })).sort((a,b)=>b.amount-a.amount)
     setLeaderboard(rows)
     setLeaderboardLoading(false)
   }
@@ -1158,6 +1160,25 @@ function AgentDashboard({ userId }) {
     setDisbursedAmountLead(null)
     setDisbursedAmountInput('')
     setDisbursedAmountOnConfirm(null)
+  }
+
+  // Manual correction path for leads already in 'Disbursed' status — pre-trigger leads with a
+  // null disbursed_amount, or a sheet-uploaded loan amount that doesn't match what was actually disbursed.
+  const saveDisbursedAmountEdit=async(leadId,amt)=>{
+    const{error}=await supabase.from('leads').update({disbursed_amount:amt}).eq('id',leadId)
+    if(error){ showToast('Could not save amount: '+error.message,'error'); return }
+    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,disbursed_amount:amt}:l)
+    setMyLeads(updatedLeads) // re-renders targetProgress/loanAmtDisplay off the same computeTargetProgress(myLeads,…) call used elsewhere
+    setViewLead(prev=>prev&&prev.id===leadId?{...prev,disbursed_amount:amt}:prev)
+    showToast('Disbursed amount updated')
+    fetchLeaderboard()
+  }
+
+  const editDisbursedAmount=(lead)=>{
+    setDisbursedAmountLead(lead)
+    setDisbursedAmountInput(lead.disbursed_amount?String(lead.disbursed_amount):'')
+    setDisbursedAmountOnConfirm(()=>(amt)=>saveDisbursedAmountEdit(lead.id,amt))
+    setShowDisbursedAmountModal(true)
   }
 
   const saveNote=async()=>{
@@ -1497,6 +1518,11 @@ function AgentDashboard({ userId }) {
   const fmtCompactCurrency=(v)=>{
     const n=Number(v)
     if(!n) return '-'
+    if(n>=10000000){
+      const c=n/10000000
+      const s=c%1===0?String(c):c.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
+      return `₹${s}Cr`
+    }
     if(n>=100000){
       const l=n/100000
       const s=l%1===0?String(l):l.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
@@ -1824,6 +1850,7 @@ function AgentDashboard({ userId }) {
   const amountInHandAfterBT = Math.max(0, (obligationTotals.eligibleLoan||0) - btPosTotal)
 
   const fmtAmt  =n=>n?'₹'+Number(n).toLocaleString('en-IN'):'-'
+  const loanAmtDisplay=lead=>(lead.status==='Disbursed'&&lead.disbursed_amount)?fmtCompactCurrency(lead.disbursed_amount):fmtAmt(lead.loan_amount)
   const initials=name=>name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)||'?'
 
   const bg0=darkMode?'#0f172a':'#F8FAFC'
@@ -1842,6 +1869,8 @@ function AgentDashboard({ userId }) {
 
   const monthNameLabel=new Date(Number(istToday().slice(0,4)),Number(istToday().slice(5,7))-1,1).toLocaleString('en-US',{month:'long'})
   const targetProgress=computeTargetProgress(myLeads,monthlyTarget)
+  // fmtCompactCurrency renders 0 as '-', which reads as "no data" here — this widget needs a real zero to read as progress.
+  const fmtAchieved=v=>v===0?'₹0':fmtCompactCurrency(v)
 
   return (
     <div style={{minHeight:'100vh',background:bg0,color:txt1,fontFamily:'system-ui,sans-serif'}}>
@@ -3132,13 +3161,13 @@ function AgentDashboard({ userId }) {
           </button>
         </div>
         {showPipeline && (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,marginBottom:8}}>
             {PIPELINE_CARDS.map(s=>(
               <div key={s.label}
                 onClick={()=>{setFilterStatus(s.status);setActiveTab('leads')}}
-                style={{background:s.bg,borderRadius:12,padding:isMobile?'12px':16,cursor:'pointer',border:'1px solid rgba(0,0,0,0.05)'}}>
-                <div style={{fontSize:isMobile?24:32,fontWeight:700,color:s.color,lineHeight:1,marginBottom:4}}>{s.value}</div>
-                <div style={{fontSize:isMobile?11:12,fontWeight:600,color:s.color}}>{s.label}</div>
+                style={{background:s.bg,borderRadius:10,padding:isMobile?'8px 10px':'10px 12px',cursor:'pointer',border:'1px solid rgba(0,0,0,0.05)'}}>
+                <div style={{fontSize:isMobile?16:21,fontWeight:700,color:s.color,lineHeight:1,marginBottom:2}}>{s.value}</div>
+                <div style={{fontSize:isMobile?10:11,fontWeight:600,color:s.color}}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -3192,23 +3221,31 @@ function AgentDashboard({ userId }) {
                   </button>
                 </div>
 
-                <div style={{marginBottom:14}}>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:5}}>
-                    <span style={{color:txt2,fontWeight:600}}>Disbursement</span>
-                    <span style={{color:txt1,fontWeight:700}}>{fmtCompactCurrency(targetProgress.disbursedThisMonth)} / {fmtCompactCurrency(targetProgress.target)}</span>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:isMobile?0:28,marginBottom:isMobile?0:4}}>
+                  <div style={{marginBottom:14}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12,fontWeight:700,marginBottom:5}}>
+                      <span style={{color:txt2,fontWeight:600}}>Disbursement</span>
+                      <span style={{color:txt1}}>{fmtAchieved(targetProgress.disbursedThisMonth)} / {fmtCompactCurrency(targetProgress.target)}</span>
+                    </div>
+                    <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:Math.min(100,targetProgress.target>0?(targetProgress.disbursedThisMonth/targetProgress.target*100):0)+'%',background:'#065F46',borderRadius:6}}/>
+                    </div>
+                    <div style={{textAlign:'right',fontSize:12,fontWeight:700,color:'#B45309',marginTop:4}}>
+                      Pending: {fmtAchieved(targetProgress.disbursementShortfall)}
+                    </div>
                   </div>
-                  <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:Math.min(100,targetProgress.target>0?(targetProgress.disbursedThisMonth/targetProgress.target*100):0)+'%',background:'#065F46',borderRadius:6}}/>
-                  </div>
-                </div>
 
-                <div style={{marginBottom:14}}>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:5}}>
-                    <span style={{color:txt2,fontWeight:600}}>Login</span>
-                    <span style={{color:txt1,fontWeight:700}}>{fmtCompactCurrency(targetProgress.loggedThisMonth)} / {fmtCompactCurrency(targetProgress.monthlyLoginTarget)}</span>
-                  </div>
-                  <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:Math.min(100,targetProgress.monthlyLoginTarget>0?(targetProgress.loggedThisMonth/targetProgress.monthlyLoginTarget*100):0)+'%',background:'#534AB7',borderRadius:6}}/>
+                  <div style={{marginBottom:14}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12,fontWeight:700,marginBottom:5}}>
+                      <span style={{color:txt2,fontWeight:600}}>Login</span>
+                      <span style={{color:txt1}}>{fmtAchieved(targetProgress.loggedThisMonth)} / {fmtCompactCurrency(targetProgress.monthlyLoginTarget)}</span>
+                    </div>
+                    <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:Math.min(100,targetProgress.monthlyLoginTarget>0?(targetProgress.loggedThisMonth/targetProgress.monthlyLoginTarget*100):0)+'%',background:'#534AB7',borderRadius:6}}/>
+                    </div>
+                    <div style={{textAlign:'right',fontSize:12,fontWeight:700,color:'#B45309',marginTop:4}}>
+                      Pending: {fmtAchieved(targetProgress.loginShortfall)}
+                    </div>
                   </div>
                 </div>
 
@@ -3217,7 +3254,7 @@ function AgentDashboard({ userId }) {
                   <span>{targetProgress.elapsedWorkingDays}/{targetProgress.workingDays} days elapsed</span>
                 </div>
 
-                <div style={{background:bg2,borderRadius:8,padding:'10px 12px',fontSize:12.5,color:txt1,fontWeight:600,lineHeight:1.5}}>
+                <div style={{background:bg2,borderRadius:8,padding:'10px 12px',fontSize:15,color:txt1,fontWeight:700,lineHeight:1.5}}>
                   {(targetProgress.disbursementShortfall>0||targetProgress.loginShortfall>0)?(
                     <>{fmtCompactCurrency(targetProgress.requiredDailyDisbursement)}/day disbursement + {fmtCompactCurrency(targetProgress.requiredDailyLogin)}/day login needed to hit target</>
                   ):(
@@ -3438,7 +3475,15 @@ function AgentDashboard({ userId }) {
                       {/* Loan amount + stage */}
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                         <div>
-                          <div style={{fontWeight:700,color:'#185FA5',fontSize:15}}>{fmtAmt(lead.loan_amount)}</div>
+                          <div style={{fontWeight:700,color:'#185FA5',fontSize:15,display:'flex',alignItems:'center',gap:6}}>
+                            {loanAmtDisplay(lead)}
+                            {lead.status==='Disbursed'&&(
+                              <button onClick={e=>{e.stopPropagation();editDisbursedAmount(lead)}} title="Edit disbursed amount"
+                                style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
+                                <IconEdit size={13}/>
+                              </button>
+                            )}
+                          </div>
                           {lead.monthly_salary&&<div style={{fontSize:11,color:txt2}}>Sal: {fmtAmt(lead.monthly_salary)}</div>}
                         </div>
                         <select value={displayStatus||'New'} onChange={e=>updateLeadStatus(lead.id,e.target.value)}
@@ -3543,7 +3588,15 @@ function AgentDashboard({ userId }) {
                               </div>
                             </td>
                             <td style={{padding:'12px 14px'}}>
-                              <div style={{fontWeight:600,color:'#185FA5',fontSize:13}}>{fmtAmt(lead.loan_amount)}</div>
+                              <div style={{fontWeight:600,color:'#185FA5',fontSize:13,display:'flex',alignItems:'center',gap:5}}>
+                                {loanAmtDisplay(lead)}
+                                {lead.status==='Disbursed'&&(
+                                  <button onClick={()=>editDisbursedAmount(lead)} title="Edit disbursed amount"
+                                    style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
+                                    <IconEdit size={12}/>
+                                  </button>
+                                )}
+                              </div>
                               {lead.monthly_salary&&<div style={{fontSize:10,color:txt2}}>Sal: {fmtAmt(lead.monthly_salary)}</div>}
                             </td>
                             <td style={{padding:'12px 14px'}}>
@@ -3763,13 +3816,21 @@ function AgentDashboard({ userId }) {
                 ['Last Action Date',viewLead.assigned_at?new Date(viewLead.assigned_at).toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric'}):'--'],
                 ['Sheet No.',viewLead.sheet_number||'—'],
                 ['City',viewLead.city||'—'],
-                ['Loan Amount',fmtAmt(viewLead.loan_amount)],
+                ['Loan Amount',loanAmtDisplay(viewLead)],
                 ['Company',viewLead.company||'—'],
                 ['App ID',viewLead.application_id||'—'],
               ].map(([label,val])=>(
                 <div key={label} style={{background:bg0,borderRadius:8,padding:'10px 12px'}}>
                   <div style={{fontSize:11,color:txt2,marginBottom:3}}>{label}</div>
-                  <div style={{fontSize:13,fontWeight:600,color:txt1,wordBreak:'break-word'}}>{val}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:txt1,wordBreak:'break-word',display:'flex',alignItems:'center',gap:6}}>
+                    {val}
+                    {label==='Loan Amount'&&viewLead.status==='Disbursed'&&(
+                      <button onClick={()=>editDisbursedAmount(viewLead)} title="Edit disbursed amount"
+                        style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
+                        <IconEdit size={13}/>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
