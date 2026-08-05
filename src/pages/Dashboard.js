@@ -410,6 +410,9 @@ function AgentDashboard({ userId }) {
   const [animatedStats,setAnimatedStats]   = useState({
     todayLogins:0, todayDisbursed:0, monthlyLogins:0, monthlyDisbursed:0
   })
+  const [pipelineAmounts,setPipelineAmounts] = useState({
+    todayLogins:0, todayDisbursed:0, monthlyLogins:0, monthlyDisbursed:0
+  })
   const [showCallLogModal,setShowCallLogModal]   = useState(false)
   const [callLogLead,setCallLogLead]             = useState(null)
   const [callLogDisposition,setCallLogDisposition] = useState('')
@@ -1059,12 +1062,24 @@ function AgentDashboard({ userId }) {
   const computePipelineStats=(leads)=>{
     const todayStart=new Date(); todayStart.setHours(0,0,0,0)
     const monthStart=new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0)
+    const todayLoginLeads=leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart })
+    const todayDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
+    const monthLoginLeads=leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart })
+    const monthDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
     const targets={
-      todayLogins:     leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart }).length,
-      todayDisbursed:  leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart }).length,
-      monthlyLogins:   leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart }).length,
-      monthlyDisbursed:leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart }).length,
+      todayLogins:     todayLoginLeads.length,
+      todayDisbursed:  todayDisbLeads.length,
+      monthlyLogins:   monthLoginLeads.length,
+      monthlyDisbursed:monthDisbLeads.length,
     }
+    const loginAmt=l=>Number(l.required_loan_amount)||Number(l.eligible_amount)||0
+    const disbAmt =l=>Number(l.disbursed_amount)||0
+    setPipelineAmounts({
+      todayLogins:     todayLoginLeads.reduce((s,l)=>s+loginAmt(l),0),
+      todayDisbursed:  todayDisbLeads.reduce((s,l)=>s+disbAmt(l),0),
+      monthlyLogins:   monthLoginLeads.reduce((s,l)=>s+loginAmt(l),0),
+      monthlyDisbursed:monthDisbLeads.reduce((s,l)=>s+disbAmt(l),0),
+    })
     const dur=900, t0=Date.now()
     const step=()=>{
       const p=Math.min((Date.now()-t0)/dur,1), e=1-Math.pow(1-p,3)
@@ -1822,6 +1837,17 @@ function AgentDashboard({ userId }) {
 
   const pendingTasks  =myTasks.filter(t=>t.status!=='Completed')
   const overdueTasks  =myTasks.filter(t=>t.status!=='Completed'&&compareIST(t.due_date,nowIST())<0)
+  // Callbacks due today, dropping any lead that's already been called and moved off the Callback stage
+  const todayCallbacks=myTasks.filter(t=>{
+    if(t.status==='Completed') return false
+    if(!(t.title||'').startsWith('Callback:')) return false
+    if(!isISTToday(t.due_date)) return false
+    const lead=myLeads.find(l=>l.id===t.lead_id)
+    if(lead&&lead.status!=='Callback') return false
+    return true
+  })
+  const todayContacts =myLeads.filter(l=>isISTToday(l.updated_at)).length
+  const todayCallsMade=myCalls.filter(c=>c.call_outcome&&isISTToday(c.created_at)).length
   const exportCount   =getExportLeads().length
   const filteredLeads =myLeads.filter(l=>{
     const ms=!search||l.full_name?.toLowerCase().includes(search.toLowerCase())||l.mobile?.includes(search)||l.city?.toLowerCase().includes(search.toLowerCase())
@@ -1860,17 +1886,24 @@ function AgentDashboard({ userId }) {
   const txt1=darkMode?'#f1f5f9':'#111827'
   const txt2=darkMode?'#94a3b8':'#6B7280'
 
-  const PIPELINE_CARDS=[
-    {label:'Today Logins',     value:animatedStats.todayLogins,     color:'#534AB7',bg:'#EEEDFE',status:'Login'},
-    {label:'Today Disbursed',  value:animatedStats.todayDisbursed,  color:'#065F46',bg:'#D1FAE5',status:'Disbursed'},
-    {label:'Monthly Logins',   value:animatedStats.monthlyLogins,   color:'#92400E',bg:'#FEF3C7',status:'Login'},
-    {label:'Monthly Disbursed',value:animatedStats.monthlyDisbursed,color:'#27500A',bg:'#EAF3DE',status:'Disbursed'},
-  ]
-
   const monthNameLabel=new Date(Number(istToday().slice(0,4)),Number(istToday().slice(5,7))-1,1).toLocaleString('en-US',{month:'long'})
   const targetProgress=computeTargetProgress(myLeads,monthlyTarget)
   // fmtCompactCurrency renders 0 as '-', which reads as "no data" here — this widget needs a real zero to read as progress.
   const fmtAchieved=v=>v===0?'₹0':fmtCompactCurrency(v)
+
+  const openEditTarget=()=>{
+    if(monthlyTarget) setTargetForm({monthly_disbursement_target:String(monthlyTarget.monthly_disbursement_target),working_days:String(monthlyTarget.working_days)})
+    setShowEditTarget(true)
+  }
+
+  const PIPELINE_CARDS=[
+    {label:'Today Logins',     value:fmtAchieved(pipelineAmounts.todayLogins)+'/'+animatedStats.todayLogins,     color:'#534AB7',bg:'#EEEDFE',status:'Login'},
+    {label:'Today Disbursed',  value:fmtAchieved(pipelineAmounts.todayDisbursed)+'/'+animatedStats.todayDisbursed,  color:'#065F46',bg:'#D1FAE5',status:'Disbursed'},
+    {label:'Monthly Logins',   value:fmtAchieved(pipelineAmounts.monthlyLogins)+'/'+animatedStats.monthlyLogins,   color:'#92400E',bg:'#FEF3C7',status:'Login'},
+    {label:'Monthly Disbursed',value:fmtAchieved(pipelineAmounts.monthlyDisbursed)+'/'+animatedStats.monthlyDisbursed,color:'#27500A',bg:'#EAF3DE',status:'Disbursed'},
+    {label:'August Target',    value:monthlyTarget?fmtCompactCurrency(monthlyTarget.monthly_disbursement_target):'Not set',color:'#185FA5',bg:'#E6F1FB',onClick:openEditTarget},
+    {label:'Pending',          value:targetProgress?fmtAchieved(targetProgress.disbursementShortfall):'Not set',color:'#B45309',bg:'#FFF7ED',onClick:openEditTarget},
+  ]
 
   return (
     <div style={{minHeight:'100vh',background:bg0,color:txt1,fontFamily:'system-ui,sans-serif'}}>
@@ -3153,29 +3186,9 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* PIPELINE CARDS — 2x2 on mobile */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>📊 Pipeline Overview</div>
-          <button onClick={()=>setShowPipeline(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
-            {showPipeline?'Hide':'Show'}
-          </button>
-        </div>
-        {showPipeline && (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,marginBottom:8}}>
-            {PIPELINE_CARDS.map(s=>(
-              <div key={s.label}
-                onClick={()=>{setFilterStatus(s.status);setActiveTab('leads')}}
-                style={{background:s.bg,borderRadius:10,padding:isMobile?'8px 10px':'10px 12px',cursor:'pointer',border:'1px solid rgba(0,0,0,0.05)'}}>
-                <div style={{fontSize:isMobile?16:21,fontWeight:700,color:s.color,lineHeight:1,marginBottom:2}}>{s.value}</div>
-                <div style={{fontSize:isMobile?10:11,fontWeight:600,color:s.color}}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* MONTHLY TARGET WIDGET */}
+        {/* MONTHLY TARGET WIDGET — primary focus of the dashboard, rendered first */}
         {!targetLoading && (
-          <div style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:16,marginBottom:14,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
+          <div style={{background:bg1,border:'1.5px solid rgba(24,95,165,0.25)',borderRadius:14,padding:18,marginBottom:14,boxShadow:'0 6px 20px rgba(15,23,42,0.10)'}}>
             {(!monthlyTarget||showEditTarget) ? (
               <>
                 {!monthlyTarget && (
@@ -3213,48 +3226,48 @@ function AgentDashboard({ userId }) {
               </>
             ) : (
               <>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-                  <div style={{fontSize:14,fontWeight:700,color:txt1}}>🎯 {monthNameLabel} Target Progress</div>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+                  <div style={{fontSize:16,fontWeight:700,color:txt1}}>🎯 {monthNameLabel} Target Progress</div>
                   <button onClick={()=>{ setTargetForm({monthly_disbursement_target:String(monthlyTarget.monthly_disbursement_target),working_days:String(monthlyTarget.working_days)}); setShowEditTarget(true) }}
-                    style={{padding:'3px 10px',borderRadius:20,border:'1px solid '+bdr,background:'transparent',cursor:'pointer',fontSize:11,fontWeight:600,color:txt2}}>
+                    style={{padding:'3px 10px',borderRadius:20,border:'1px solid '+bdr,background:'transparent',cursor:'pointer',fontSize:11,fontWeight:600,color:txt2,flexShrink:0}}>
                     Edit target
                   </button>
                 </div>
 
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:isMobile?0:28,marginBottom:isMobile?0:4}}>
-                  <div style={{marginBottom:14}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12,fontWeight:700,marginBottom:5}}>
+                  <div style={{marginBottom:16}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:700,marginBottom:6}}>
                       <span style={{color:txt2,fontWeight:600}}>Disbursement</span>
                       <span style={{color:txt1}}>{fmtAchieved(targetProgress.disbursedThisMonth)} / {fmtCompactCurrency(targetProgress.target)}</span>
                     </div>
-                    <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
+                    <div style={{height:9,borderRadius:6,background:bg2,overflow:'hidden'}}>
                       <div style={{height:'100%',width:Math.min(100,targetProgress.target>0?(targetProgress.disbursedThisMonth/targetProgress.target*100):0)+'%',background:'#065F46',borderRadius:6}}/>
                     </div>
-                    <div style={{textAlign:'right',fontSize:12,fontWeight:700,color:'#B45309',marginTop:4}}>
+                    <div style={{textAlign:'right',fontSize:14,fontWeight:700,color:'#B45309',marginTop:5}}>
                       Pending: {fmtAchieved(targetProgress.disbursementShortfall)}
                     </div>
                   </div>
 
-                  <div style={{marginBottom:14}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12,fontWeight:700,marginBottom:5}}>
+                  <div style={{marginBottom:16}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:700,marginBottom:6}}>
                       <span style={{color:txt2,fontWeight:600}}>Login</span>
                       <span style={{color:txt1}}>{fmtAchieved(targetProgress.loggedThisMonth)} / {fmtCompactCurrency(targetProgress.monthlyLoginTarget)}</span>
                     </div>
-                    <div style={{height:8,borderRadius:6,background:bg2,overflow:'hidden'}}>
+                    <div style={{height:9,borderRadius:6,background:bg2,overflow:'hidden'}}>
                       <div style={{height:'100%',width:Math.min(100,targetProgress.monthlyLoginTarget>0?(targetProgress.loggedThisMonth/targetProgress.monthlyLoginTarget*100):0)+'%',background:'#534AB7',borderRadius:6}}/>
                     </div>
-                    <div style={{textAlign:'right',fontSize:12,fontWeight:700,color:'#B45309',marginTop:4}}>
+                    <div style={{textAlign:'right',fontSize:14,fontWeight:700,color:'#B45309',marginTop:5}}>
                       Pending: {fmtAchieved(targetProgress.loginShortfall)}
                     </div>
                   </div>
                 </div>
 
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:txt2,marginBottom:10}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:14,color:txt2,marginBottom:12}}>
                   <span>{targetProgress.remainingWorkingDays} working day{targetProgress.remainingWorkingDays>1?'s':''} left</span>
                   <span>{targetProgress.elapsedWorkingDays}/{targetProgress.workingDays} days elapsed</span>
                 </div>
 
-                <div style={{background:bg2,borderRadius:8,padding:'10px 12px',fontSize:15,color:txt1,fontWeight:700,lineHeight:1.5}}>
+                <div style={{background:bg2,borderRadius:8,padding:'12px 14px',fontSize:17,color:txt1,fontWeight:700,lineHeight:1.5}}>
                   {(targetProgress.disbursementShortfall>0||targetProgress.loginShortfall>0)?(
                     <>{fmtCompactCurrency(targetProgress.requiredDailyDisbursement)}/day disbursement + {fmtCompactCurrency(targetProgress.requiredDailyLogin)}/day login needed to hit target</>
                   ):(
@@ -3292,7 +3305,27 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* STAT CARDS — 2x2 on mobile */}
+        {/* PIPELINE CARDS — 2x3 grid (6 cards) */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>📊 Pipeline Overview</div>
+          <button onClick={()=>setShowPipeline(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
+            {showPipeline?'Hide':'Show'}
+          </button>
+        </div>
+        {showPipeline && (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6,marginBottom:8}}>
+            {PIPELINE_CARDS.map(s=>(
+              <div key={s.label}
+                onClick={s.onClick||(()=>{setFilterStatus(s.status);setActiveTab('leads')})}
+                style={{background:s.bg,borderRadius:10,padding:isMobile?'8px 10px':'10px 12px',cursor:'pointer',border:'1px solid rgba(0,0,0,0.05)',overflow:'hidden'}}>
+                <div style={{fontSize:isMobile?16:21,fontWeight:700,color:s.color,lineHeight:1,marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.value}</div>
+                <div style={{fontSize:isMobile?10:11,fontWeight:600,color:s.color}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* STAT CARDS — 3 across */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <div style={{fontSize:11,fontWeight:700,color:txt2,textTransform:'uppercase',letterSpacing:'0.6px'}}>📈 Today's Stats</div>
           <button onClick={()=>setShowStatCards(p=>!p)} style={{padding:'3px 10px',borderRadius:20,border:'1px solid #e5e7eb',background:'white',cursor:'pointer',fontSize:11,fontWeight:600,color:'#6b7280'}}>
@@ -3300,17 +3333,16 @@ function AgentDashboard({ userId }) {
           </button>
         </div>
         {showStatCards && (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:10}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:isMobile?6:10,marginBottom:10}}>
             {[
-              {icon:<IconUsers size={16}/>,        label:'Total Leads',  value:myLeads.length,                                                    color:'#185FA5',bg:'#E6F1FB'},
-              {icon:<IconPhoneIncoming size={16}/>, label:'Calls Made',   value:myCalls.length,                                                    color:'#0F6E56',bg:'#E1F5EE'},
-              {icon:<IconClockHour4 size={16}/>,    label:'Pending Tasks',value:pendingTasks.length,                                               color:'#854F0B',bg:'#FAEEDA'},
-              {icon:<IconCircleCheck size={16}/>,   label:'Approvals',    value:myLeads.filter(l=>['Approved','Disbursed'].includes(l.status)).length,color:'#534AB7',bg:'#EEEDFE'},
+              {icon:<IconUsers size={16}/>,        label:'Contacts',  value:todayContacts,  color:'#185FA5',bg:'#E6F1FB'},
+              {icon:<IconPhoneIncoming size={16}/>, label:'Calls Made', value:todayCallsMade, color:'#0F6E56',bg:'#E1F5EE'},
+              {icon:<IconClockHour4 size={16}/>,    label:'Callbacks',  value:todayCallbacks.length,color:'#854F0B',bg:'#FAEEDA'},
             ].map(s=>(
-              <div key={s.label} style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:isMobile?'12px':14,display:'flex',alignItems:'center',gap:10,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
-                <div style={{width:32,height:32,borderRadius:8,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',color:s.color,flexShrink:0}}>{s.icon}</div>
-                <div>
-                  <div style={{fontSize:10,color:txt2,marginBottom:2}}>{s.label}</div>
+              <div key={s.label} style={{background:bg1,border:'1px solid '+bdr,borderRadius:12,padding:isMobile?'10px 8px':14,display:'flex',alignItems:'center',gap:isMobile?6:10,boxShadow:'0 1px 3px rgba(0,0,0,0.04)',overflow:'hidden'}}>
+                <div style={{width:isMobile?26:32,height:isMobile?26:32,borderRadius:8,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',color:s.color,flexShrink:0}}>{s.icon}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:10,color:txt2,marginBottom:2,wordBreak:'break-word'}}>{s.label}</div>
                   <div style={{fontSize:20,fontWeight:700,color:s.color,lineHeight:1}}>{s.value}</div>
                 </div>
               </div>
