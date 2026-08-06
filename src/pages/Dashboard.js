@@ -287,7 +287,10 @@ const CALL_DISPOSITIONS = [
 ]
 
 const STAGE_OPTIONS = ['New','Interested','Callback','Documents Pending','Login','Approved','Disbursed','Not Interested','DND','Ringing','Busy','Call Cut','Not Required Hup','Wrong Number/ Invalid Number','Not Required Polite','Switched Off','Voice Mail','Disbursed Other','Not Doable','Police','Lead']
-
+// Stages a lead shouldn't be auto-demoted out of just because a later call's disposition
+// happens to share a name with a lower-value stage (e.g. picking "Busy" on a lead that's
+// already progressed to Login). Once a lead is in one of these, only an explicit manual
+// Lead Stage change should move it — the disposition auto-sync stays off.
 const PROTECTED_STAGES = ['Callback','Lead','Login','Approved','Disbursed']
 
 const OBLIGATION_TYPES = ['Personal Loan','Housing Loan','Education Loan','Car Loan','Bike Loan','Consumer Durable Loan','Credit Card','Gold Loan']
@@ -920,7 +923,7 @@ function AgentDashboard({ userId }) {
     const {data:lData,error:lErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
     if(lErr){ console.error('[Action] scheduleCallback lead update error:', lErr); showToast('Could not update stage: '+lErr.message,'error') }
     else if(!lData||lData.length===0){ console.warn('[Action] scheduleCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
-    else { setMyLeads(prev=>[...prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback'}:l)]); fetchAllRef.current?.() }
+    else { setMyLeads(prev=>[...prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback',updated_at:new Date().toISOString()}:l)]); fetchAllRef.current?.() }
     const {error:tErr}=await supabase.from('tasks').insert([{
       title:'Callback: '+callbackLead.full_name,
       lead_id:callbackLead.id,
@@ -948,7 +951,7 @@ function AgentDashboard({ userId }) {
     const {data:skipData,error:skipErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
     if(skipErr){ console.error('[Action] skipCallback lead update error:', skipErr); showToast('Could not update stage: '+skipErr.message,'error') }
     else if(!skipData||skipData.length===0){ console.warn('[Action] skipCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
-    else { setMyLeads(prev=>prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback'}:l)); showToast('Stage updated to Callback'); fetchAllRef.current?.() }
+    else { setMyLeads(prev=>prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback',updated_at:new Date().toISOString()}:l)); showToast('Stage updated to Callback'); fetchAllRef.current?.() }
     setShowCallbackModal(false)
   }
 
@@ -1213,7 +1216,7 @@ function AgentDashboard({ userId }) {
       const newMirrorStatuses={...(lead.mirror_agent_statuses||{}), [userId]:newStatus}
       const {error}=await supabase.from('leads').update({mirror_agent_statuses:newMirrorStatuses}).eq('id',leadId)
       if(error){ showToast('Could not update stage: '+error.message,'error'); return }
-      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,mirror_agent_statuses:newMirrorStatuses}:l))
+      setMyLeads(prev=>prev.map(l=>l.id===leadId?{...l,mirror_agent_statuses:newMirrorStatuses,updated_at:new Date().toISOString()}:l))
       showToast('Stage updated to '+newStatus)
       return
     }
@@ -1752,6 +1755,12 @@ function AgentDashboard({ userId }) {
   },[callLogLead?.id])
 
   const handleCall=(lead)=>{
+    // Look the lead up fresh from current state by id rather than trusting whatever
+    // reference got passed in — closures from a list render can lag a beat behind
+    // the very latest optimistic update (e.g. clicking Call again right after
+    // scheduling a callback for the same lead), which previously let a stale
+    // status slip past the PROTECTED_STAGES guard below.
+    const freshLead = myLeads.find(l=>l.id===lead?.id) || lead
     // Don't assign window.location.href directly for tel: — on a PC with no
     // registered calling app (or some Android webview states) that's treated
     // as a real navigation attempt, which can blank/reload the SPA and wipe
@@ -1760,17 +1769,17 @@ function AgentDashboard({ userId }) {
     // tel: link without ever touching the app's own document location.
     try{
       const a=document.createElement('a')
-      a.href=`tel:${lead.mobile}`
+      a.href=`tel:${freshLead.mobile}`
       a.style.display='none'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
     }catch(e){
-      window.location.href=`tel:${lead.mobile}`
+      window.location.href=`tel:${freshLead.mobile}`
     }
-    setCallLogLead(lead)
+    setCallLogLead(freshLead)
     setCallLogDisposition('')
-    setCallLogStage(lead?.status||'New')
+    setCallLogStage(freshLead?.status||'New')
     setCallLogNotes('')
     setCallLogCallbackDate(istToday())
     setCallLogCallbackTime('10:00')
@@ -2063,13 +2072,13 @@ function AgentDashboard({ userId }) {
             if(result?.lead && typeof result.lead === 'object'){
               const leadUpdate = result.lead
               setLeadQueue(prev=>prev.map(l=>l.id===currentLeadId?{...l,...leadUpdate}:l))
-              setMyLeads(prev=>prev.map(l=>l.id===currentLeadId?{...l,...leadUpdate}:l))
+              setMyLeads(prev=>prev.map(l=>l.id===currentLeadId?{...l,...leadUpdate,updated_at:new Date().toISOString()}:l))
             }
             // Shape 2: plain updateData object (has 'status' or 'notes' directly)
             else if(result && !result.lead && !result.call && typeof result === 'object'){
               const leadUpdate = result
               setLeadQueue(prev=>prev.map(l=>l.id===currentLeadId?{...l,...leadUpdate}:l))
-              setMyLeads(prev=>prev.map(l=>l.id===currentLeadId?{...l,...leadUpdate}:l))
+              setMyLeads(prev=>prev.map(l=>l.id===currentLeadId?{...l,...leadUpdate,updated_at:new Date().toISOString()}:l))
             }
             if(result?.call){
               setMyCalls(prev=>{
@@ -2589,6 +2598,8 @@ function AgentDashboard({ userId }) {
                     // share an identically-named Lead Stage option — auto-sync the stage to
                     // match instead of leaving it on whatever the lead's stage happened to be
                     // before this call (which is where it was silently staying stuck).
+                    // Exception: if the lead's stage going into this call is already one of the
+                    // protected/advanced stages, don't let a routine disposition knock it back down.
                     if(STAGE_OPTIONS.includes(val) && !PROTECTED_STAGES.includes(callLogStage)) setCallLogStage(val)
                   }}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white',color:'#111827',outline:'none',boxSizing:'border-box'}}
