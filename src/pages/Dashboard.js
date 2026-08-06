@@ -1228,8 +1228,13 @@ function AgentDashboard({ userId }) {
     const {data,error}=await supabase.from('leads').update(updatePayload).eq('id',leadId).select()
     if(error){ console.error('[Action] updateLeadStatus DB error:', error); showToast('Could not update stage: '+error.message,'error'); return }
     if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.(); return }
-    // Optimistic update — RT subscription will also fire on other devices
-    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,...updatePayload}:l)
+    // Optimistic update — RT subscription will also fire on other devices.
+    // Bump updated_at locally too: the realtime handler's staleness guard
+    // compares timestamps to decide whether to accept an incoming event, and
+    // if our local copy still carries the pre-save updated_at, a delayed or
+    // out-of-order realtime event from an earlier write can pass that check
+    // and clobber this fresher status right back to whatever it was before.
+    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,...updatePayload,updated_at:new Date().toISOString()}:l)
     setMyLeads(updatedLeads)
     showToast('Stage updated to '+newStatus)
     fetchAllRef.current?.()
@@ -1263,7 +1268,7 @@ function AgentDashboard({ userId }) {
   const saveDisbursedAmountEdit=async(leadId,amt)=>{
     const{error}=await supabase.from('leads').update({disbursed_amount:amt}).eq('id',leadId)
     if(error){ showToast('Could not save amount: '+error.message,'error'); return }
-    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,disbursed_amount:amt}:l)
+    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,disbursed_amount:amt,updated_at:new Date().toISOString()}:l)
     setMyLeads(updatedLeads) // re-renders targetProgress/loanAmtDisplay off the same computeTargetProgress(myLeads,…) call used elsewhere
     setViewLead(prev=>prev&&prev.id===leadId?{...prev,disbursed_amount:amt}:prev)
     showToast('Disbursed amount updated')
@@ -1805,10 +1810,13 @@ function AgentDashboard({ userId }) {
           : Promise.resolve()
       ])
 
-      // Update local state immediately without waiting for fetchAll
+      // Update local state immediately without waiting for fetchAll. Bump updated_at
+      // here too — same reasoning as updateLeadStatus: without it, an out-of-order or
+      // delayed realtime UPDATE event can slip past the staleness guard and revert this
+      // stage/disposition right back to what it was before the save.
       let updatedLeads=myLeads
       if(Object.keys(leadsUpdate).length>0){
-        updatedLeads=myLeads.map(l=>l.id===callLogLead.id?{...l,...leadsUpdate}:l)
+        updatedLeads=myLeads.map(l=>l.id===callLogLead.id?{...l,...leadsUpdate,updated_at:new Date().toISOString()}:l)
         setMyLeads(updatedLeads)
       }
 
