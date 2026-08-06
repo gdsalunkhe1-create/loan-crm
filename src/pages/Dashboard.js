@@ -2563,7 +2563,15 @@ function AgentDashboard({ userId }) {
               {/* Disposition */}
               <div style={{marginBottom:12}}>
                 <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase',letterSpacing:'0.04em'}}>Disposition</label>
-                <select value={callLogDisposition} onChange={e=>setCallLogDisposition(e.target.value)}
+                <select value={callLogDisposition} onChange={e=>{
+                    const val=e.target.value
+                    setCallLogDisposition(val)
+                    // Most dispositions (Call Cut, Disbursed Other, Busy, Switched Off, etc.)
+                    // share an identically-named Lead Stage option — auto-sync the stage to
+                    // match instead of leaving it on whatever the lead's stage happened to be
+                    // before this call (which is where it was silently staying stuck).
+                    if(STAGE_OPTIONS.includes(val)) setCallLogStage(val)
+                  }}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white',color:'#111827',outline:'none',boxSizing:'border-box'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}>
                   <option value="">— Select Disposition —</option>
