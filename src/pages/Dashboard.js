@@ -326,6 +326,14 @@ function useIsMobile() {
 // =============================================
 function AgentDashboard({ userId }) {
   const isMobile = useIsMobile()
+  // Persist the leads-list filter bar (stage / search / amount / city / date range)
+  // in sessionStorage, keyed per-agent, so it survives things like the `tel:` call
+  // navigation or a background data refresh — instead of silently resetting to
+  // "All Stages" whenever the agent comes back from making a call.
+  const FILTER_STORAGE_KEY = 'cqp_agentFilters_'+(userId||'anon')
+  const loadSavedFilters=()=>{
+    try{ return JSON.parse(sessionStorage.getItem(FILTER_STORAGE_KEY)||'{}') }catch{ return {} }
+  }
   const [myLeads,setMyLeads]               = useState([])
   const [myCalls,setMyCalls]               = useState([])
   const [myTasks,setMyTasks]               = useState([])
@@ -340,7 +348,7 @@ function AgentDashboard({ userId }) {
   const [agentDbUnread,setAgentDbUnread]   = useState(0)
   const [showAgentDbBell,setShowAgentDbBell] = useState(false)
   const [reminderPopup,setReminderPopup]   = useState(null)
-  const [search,setSearch]                 = useState('')
+  const [search,setSearch]                 = useState(()=>loadSavedFilters().search||'')
   const [filterStatus,setFilterStatus]     = useState('')
   const [activeTab,setActiveTab]           = useState('leads')
   const [showExportModal,setShowExportModal]   = useState(false)
@@ -423,13 +431,24 @@ function AgentDashboard({ userId }) {
   const [previousOutcomes,setPreviousOutcomes]   = useState([])
   const [savingCallLog,setSavingCallLog]         = useState(false)
   const [viewLead,setViewLead]                   = useState(null)
-  const [agentStatusSet,setAgentStatusSet]       = useState([])
+  const [agentStatusSet,setAgentStatusSet]       = useState(()=>loadSavedFilters().agentStatusSet||[])
   const [agentStatusDropOpen,setAgentStatusDropOpen] = useState(false)
   agentStatusDropOpenRef.current = agentStatusDropOpen
-  const [agentDateFrom,setAgentDateFrom]         = useState('')
-  const [agentDateTo,setAgentDateTo]             = useState('')
-  const [filterLoanAmount,setFilterLoanAmount]   = useState('')
-  const [filterCity,setFilterCity]               = useState('')
+  const [agentDateFrom,setAgentDateFrom]         = useState(()=>loadSavedFilters().agentDateFrom||'')
+  const [agentDateTo,setAgentDateTo]             = useState(()=>loadSavedFilters().agentDateTo||'')
+  const [filterLoanAmount,setFilterLoanAmount]   = useState(()=>loadSavedFilters().filterLoanAmount||'')
+  const [filterCity,setFilterCity]               = useState(()=>loadSavedFilters().filterCity||'')
+
+  // Keep sessionStorage in sync whenever any filter changes, so the selection
+  // survives a remount (e.g. after the tel: call navigation below, or a
+  // background refresh) instead of quietly reverting to "All Stages".
+  useEffect(()=>{
+    try{
+      sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({
+        search, agentStatusSet, agentDateFrom, agentDateTo, filterLoanAmount, filterCity
+      }))
+    }catch{}
+  },[search, agentStatusSet, agentDateFrom, agentDateTo, filterLoanAmount, filterCity, userId])
 
   // ── Disbursed-amount capture (Part 2) ── shared by updateLeadStatus and saveCallLog;
   // disbursedAmountOnConfirm holds the "resume with this amount" callback for whichever path opened it.
@@ -1664,7 +1683,22 @@ function AgentDashboard({ userId }) {
   },[callLogLead?.id])
 
   const handleCall=(lead)=>{
-    window.location.href=`tel:${lead.mobile}`
+    // Don't assign window.location.href directly for tel: — on a PC with no
+    // registered calling app (or some Android webview states) that's treated
+    // as a real navigation attempt, which can blank/reload the SPA and wipe
+    // all in-memory state (including the stage filter) the moment the agent
+    // comes back. A throwaway <a> click lets the OS handle (or ignore) the
+    // tel: link without ever touching the app's own document location.
+    try{
+      const a=document.createElement('a')
+      a.href=`tel:${lead.mobile}`
+      a.style.display='none'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    }catch(e){
+      window.location.href=`tel:${lead.mobile}`
+    }
     setCallLogLead(lead)
     setCallLogDisposition('')
     setCallLogStage(lead?.status||'New')
