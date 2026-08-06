@@ -288,6 +288,8 @@ const CALL_DISPOSITIONS = [
 
 const STAGE_OPTIONS = ['New','Interested','Callback','Documents Pending','Login','Approved','Disbursed','Not Interested','DND','Ringing','Busy','Call Cut','Not Required Hup','Wrong Number/ Invalid Number','Not Required Polite','Switched Off','Voice Mail','Disbursed Other','Not Doable','Police','Lead']
 
+const PROTECTED_STAGES = ['Callback','Lead','Login','Approved','Disbursed']
+
 const OBLIGATION_TYPES = ['Personal Loan','Housing Loan','Education Loan','Car Loan','Bike Loan','Consumer Durable Loan','Credit Card','Gold Loan']
 const JOINT_OPTIONS = ['Individual','Joint']
 const YES_NO_OPTIONS = ['No','Yes']
@@ -2587,7 +2589,7 @@ function AgentDashboard({ userId }) {
                     // share an identically-named Lead Stage option — auto-sync the stage to
                     // match instead of leaving it on whatever the lead's stage happened to be
                     // before this call (which is where it was silently staying stuck).
-                    if(STAGE_OPTIONS.includes(val)) setCallLogStage(val)
+                    if(STAGE_OPTIONS.includes(val) && !PROTECTED_STAGES.includes(callLogStage)) setCallLogStage(val)
                   }}
                   style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,background:'white',color:'#111827',outline:'none',boxSizing:'border-box'}}
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}>
