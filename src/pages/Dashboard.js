@@ -334,6 +334,29 @@ function AgentDashboard({ userId }) {
   const loadSavedFilters=()=>{
     try{ return JSON.parse(sessionStorage.getItem(FILTER_STORAGE_KEY)||'{}') }catch{ return {} }
   }
+
+  // Draft persistence for the "Log Call" modal. On mobile, tapping the tel:
+  // link backgrounds the browser tab for the actual phone call — on low-RAM
+  // Android devices Chrome/the WebView can kill that backgrounded tab to
+  // free memory, so when the agent returns, the page silently reloads and
+  // whatever stage/notes they'd already typed (but not yet saved) is gone.
+  // We snapshot the in-progress call log to localStorage as the agent fills
+  // it in, and restore it automatically on the next load if it was never
+  // saved — so a killed tab loses at most a few seconds of typing, not the
+  // whole call log.
+  const CALLLOG_DRAFT_KEY = 'cqp_callLogDraft_'+(userId||'anon')
+  const loadCallLogDraft=()=>{
+    try{
+      const raw=localStorage.getItem(CALLLOG_DRAFT_KEY)
+      if(!raw) return null
+      const draft=JSON.parse(raw)
+      // Ignore stale drafts (older than 6h) so a long-forgotten one never resurfaces
+      if(!draft?.savedAt||Date.now()-draft.savedAt>6*60*60*1000) return null
+      return draft
+    }catch{ return null }
+  }
+  const clearCallLogDraft=()=>{ try{ localStorage.removeItem(CALLLOG_DRAFT_KEY) }catch{} }
+  const draftRestoredRef = useRef(false)
   const [myLeads,setMyLeads]               = useState([])
   const [myCalls,setMyCalls]               = useState([])
   const [myTasks,setMyTasks]               = useState([])
@@ -428,6 +451,45 @@ function AgentDashboard({ userId }) {
   const [callLogNotes,setCallLogNotes]           = useState('')
   const [callLogCallbackDate,setCallLogCallbackDate] = useState('')
   const [callLogCallbackTime,setCallLogCallbackTime] = useState('10:00')
+
+  // Restore an unsaved call-log draft once leads are loaded (see comment above
+  // CALLLOG_DRAFT_KEY for why this can happen — a backgrounded tab getting killed
+  // mid-call). Runs once per mount.
+  useEffect(()=>{
+    if(draftRestoredRef.current) return
+    if(!myLeads.length) return
+    draftRestoredRef.current=true
+    const draft=loadCallLogDraft()
+    if(!draft?.leadId) return
+    const lead=myLeads.find(l=>l.id===draft.leadId)
+    if(!lead){ clearCallLogDraft(); return }
+    setCallLogLead(lead)
+    setCallLogDisposition(draft.disposition||'')
+    setCallLogStage(draft.stage||lead.status||'New')
+    setCallLogNotes(draft.notes||'')
+    setCallLogCallbackDate(draft.callbackDate||istToday())
+    setCallLogCallbackTime(draft.callbackTime||'10:00')
+    setShowCallLogModal(true)
+    showToast('Restored your unsaved call log for '+(lead.full_name||'this lead'))
+  },[myLeads])
+
+  // Keep the draft in sync with whatever the agent has typed so far, while the
+  // modal is open. Cleared on a successful save or an explicit close.
+  useEffect(()=>{
+    if(!showCallLogModal||!callLogLead) return
+    try{
+      localStorage.setItem(CALLLOG_DRAFT_KEY, JSON.stringify({
+        leadId:callLogLead.id,
+        disposition:callLogDisposition,
+        stage:callLogStage,
+        notes:callLogNotes,
+        callbackDate:callLogCallbackDate,
+        callbackTime:callLogCallbackTime,
+        savedAt:Date.now()
+      }))
+    }catch{}
+  },[showCallLogModal,callLogLead,callLogDisposition,callLogStage,callLogNotes,callLogCallbackDate,callLogCallbackTime])
+
   const [previousOutcomes,setPreviousOutcomes]   = useState([])
   const [savingCallLog,setSavingCallLog]         = useState(false)
   const [viewLead,setViewLead]                   = useState(null)
@@ -1781,6 +1843,7 @@ function AgentDashboard({ userId }) {
       setShowCallLogModal(false)
       setCallLogDisposition('')
       setCallLogNotes('')
+      clearCallLogDraft()
 
       // Refresh in background after modal is already closed
       setTimeout(()=>fetchAll(),500)
@@ -2493,7 +2556,7 @@ function AgentDashboard({ userId }) {
                   <div style={{fontSize:12,opacity:0.82}}>{callLogLead.mobile}</div>
                 </div>
               </div>
-              <button onClick={()=>setShowCallLogModal(false)} style={{background:'rgba(255,255,255,0.18)',border:'none',color:'white',width:30,height:30,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={14}/></button>
+              <button onClick={()=>{ setShowCallLogModal(false); clearCallLogDraft() }} style={{background:'rgba(255,255,255,0.18)',border:'none',color:'white',width:30,height:30,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={14}/></button>
             </div>
             {/* Body */}
             <div style={{padding:'16px 18px',overflowY:'auto',flex:1}}>
@@ -2567,7 +2630,7 @@ function AgentDashboard({ userId }) {
                   style={{flex:1,padding:'12px',background:savingCallLog?'#93C5FD':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingCallLog?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
                   <IconDeviceFloppy size={15}/>{savingCallLog?'Saving…':'Save Call Log'}
                 </button>
-                <button onClick={()=>setShowCallLogModal(false)}
+                <button onClick={()=>{ setShowCallLogModal(false); clearCallLogDraft() }}
                   style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
                   Cancel
                 </button>
