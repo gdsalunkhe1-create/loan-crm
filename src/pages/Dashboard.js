@@ -1937,7 +1937,16 @@ function AgentDashboard({ userId }) {
   const isISTToday=(v)=>parseIST(v)?.slice(0,10)===istToday()
 
   // Dynamic stage helpers — fall back to module-level constants when table not yet loaded
-  const stageNames=leadStages.length>0?leadStages.map(s=>s.name):STATUS_OPTIONS
+  // Union with STAGE_OPTIONS (not just the org-configured leadStages list) so the
+  // dropdown can never silently mismatch what the app actually writes to
+  // leads.status. A <select> with no matching <option> for its current value
+  // falls back to displaying the FIRST option in the list — which happened to
+  // be "Callback" here — making an unrelated lead look like it's stuck on
+  // Callback even though the real saved status was something else entirely
+  // (e.g. a "Call Cut" vs "Call cut" casing mismatch against the configured
+  // stage list). Deduping a merged list closes that whole class of bug even if
+  // the configured names drift again in the future.
+  const stageNames=Array.from(new Set([...(leadStages.length>0?leadStages.map(s=>s.name):STATUS_OPTIONS),...STAGE_OPTIONS]))
   const stageStyle=name=>{const s=leadStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return STATUS_STYLE[name]||{bg:'#F3F4F6',color:'#6B7280'}}
 
   const pendingTasks  =myTasks.filter(t=>t.status!=='Completed')
