@@ -1807,6 +1807,25 @@ function AgentDashboard({ userId }) {
       if(callLogStage) leadsUpdate.status=callLogStage
       if(callLogStage==='Disbursed'&&disbursedAmountOverride!=null) leadsUpdate.disbursed_amount=disbursedAmountOverride
 
+      // Also append the call note into the lead's shared Notes field — the same field
+      // shown via the Note button, the View page, and the Obligations modal. Previously
+      // these notes only went into the calls table's per-call record, so a note typed
+      // here never showed up anywhere else the agent looks for a lead's notes.
+      if(callLogNotes && callLogNotes.trim()){
+        const now=new Date()
+        const dd=String(now.getDate()).padStart(2,'0')
+        const mon=now.toLocaleString('en-US',{month:'short'})
+        const yyyy=now.getFullYear()
+        const hh=String(now.getHours()).padStart(2,'0')
+        const mi=String(now.getMinutes()).padStart(2,'0')
+        const agentName=profile?.full_name||'Agent'
+        const tag=callLogDisposition?` (${callLogDisposition})`:''
+        const stamp=`[${dd}/${mon}/${yyyy} ${hh}:${mi} - ${agentName}${tag}]`
+        const newEntry=`${stamp}: ${callLogNotes.trim()}`
+        const existingNotes=callLogLead.notes||''
+        leadsUpdate.notes=existingNotes?(existingNotes+'\n'+newEntry):newEntry
+      }
+
       // Run calls insert and leads update in parallel - both fire at same time
       await Promise.all([
         supabase.from('calls').insert({
