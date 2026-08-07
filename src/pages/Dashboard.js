@@ -525,6 +525,14 @@ function AgentDashboard({ userId }) {
   const [savingDisbursedAmount,setSavingDisbursedAmount]       = useState(false)
   const [disbursedAmountOnConfirm,setDisbursedAmountOnConfirm] = useState(null)
 
+  // ── Login-amount manual edit — kept fully separate from the disbursed-amount state/handlers
+  // above so a future change to one can't accidentally affect the other.
+  const [showLoginAmountModal,setShowLoginAmountModal] = useState(false)
+  const [loginAmountLead,setLoginAmountLead]           = useState(null)
+  const [loginAmountInput,setLoginAmountInput]         = useState('')
+  const [savingLoginAmount,setSavingLoginAmount]       = useState(false)
+  const [loginAmountOnConfirm,setLoginAmountOnConfirm] = useState(null)
+
   // ── Monthly target widget (Parts 3 & 4) ──
   const [monthlyTarget,setMonthlyTarget]         = useState(null)   // agent_monthly_targets row for this month, or null
   const [targetLoading,setTargetLoading]         = useState(true)
@@ -1287,6 +1295,35 @@ function AgentDashboard({ userId }) {
     setShowDisbursedAmountModal(true)
   }
 
+  const confirmLoginAmount=async()=>{
+    const amt=Number(loginAmountInput)
+    if(!amt||amt<=0){ showToast('Enter a valid login amount','error'); return }
+    setSavingLoginAmount(true)
+    await loginAmountOnConfirm?.(amt)
+    setSavingLoginAmount(false)
+    setShowLoginAmountModal(false)
+    setLoginAmountLead(null)
+    setLoginAmountInput('')
+    setLoginAmountOnConfirm(null)
+  }
+
+  // Manual correction path for login_amount — separate column, separate update call from disbursed_amount above.
+  const saveLoginAmountEdit=async(leadId,amt)=>{
+    const{error}=await supabase.from('leads').update({login_amount:amt}).eq('id',leadId)
+    if(error){ showToast('Could not save amount: '+error.message,'error'); return }
+    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,login_amount:amt,updated_at:new Date().toISOString()}:l)
+    setMyLeads(updatedLeads)
+    setViewLead(prev=>prev&&prev.id===leadId?{...prev,login_amount:amt}:prev)
+    showToast('Login amount updated')
+  }
+
+  const editLoginAmount=(lead)=>{
+    setLoginAmountLead(lead)
+    setLoginAmountInput(lead.login_amount?String(lead.login_amount):'')
+    setLoginAmountOnConfirm(()=>(amt)=>saveLoginAmountEdit(lead.id,amt))
+    setShowLoginAmountModal(true)
+  }
+
   const saveNote=async()=>{
     if(!noteText.trim())return
     const now=new Date()
@@ -2020,7 +2057,19 @@ function AgentDashboard({ userId }) {
   const amountInHandAfterBT = Math.max(0, (obligationTotals.eligibleLoan||0) - btPosTotal)
 
   const fmtAmt  =n=>n?'₹'+Number(n).toLocaleString('en-IN'):'-'
-  const loanAmtDisplay=lead=>(lead.status==='Disbursed'&&lead.disbursed_amount)?fmtCompactCurrency(lead.disbursed_amount):fmtAmt(lead.loan_amount)
+  // Precedence for the single amount shown in the Leads list / detail modal: disbursed > login > raw import.
+  // 'raw' means neither a confirmed disbursed_amount nor login_amount exists yet — it's unverified sheet data.
+  const loanAmtTier=lead=>{
+    if(lead.status==='Disbursed'&&lead.disbursed_amount) return 'disbursed'
+    if(lead.login_amount) return 'login'
+    return 'raw'
+  }
+  const loanAmtDisplay=lead=>{
+    const tier=loanAmtTier(lead)
+    if(tier==='disbursed') return fmtCompactCurrency(lead.disbursed_amount)
+    if(tier==='login') return fmtCompactCurrency(lead.login_amount)
+    return fmtAmt(lead.loan_amount)
+  }
   const initials=name=>name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)||'?'
 
   const bg0=darkMode?'#0f172a':'#F8FAFC'
@@ -2544,6 +2593,47 @@ function AgentDashboard({ userId }) {
                   {savingDisbursedAmount?'Saving…':'Confirm Disbursed'}
                 </button>
                 <button onClick={()=>{setShowDisbursedAmountModal(false);setDisbursedAmountLead(null);setDisbursedAmountOnConfirm(null)}}
+                  style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* LOGIN AMOUNT MODAL — separate from the Disbursed Amount modal above; edits login_amount only */}
+      {showLoginAmountModal&&loginAmountLead&&(
+        <>
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:300}} onClick={()=>{setShowLoginAmountModal(false);setLoginAmountLead(null);setLoginAmountOnConfirm(null)}}/>
+          <div style={{position:'fixed',top:isMobile?'auto':'50%',bottom:isMobile?0:'auto',left:isMobile?0:'50%',transform:isMobile?'none':'translate(-50%,-50%)',background:'white',borderRadius:isMobile?'16px 16px 0 0':16,boxShadow:'0 24px 60px rgba(0,0,0,0.2)',zIndex:400,width:isMobile?'100%':'90%',maxWidth:420,overflow:'hidden'}}>
+            <div style={{background:'linear-gradient(135deg,#92400E,#B45309)',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,color:'white'}}>
+                <div style={{width:34,height:34,borderRadius:'50%',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <IconEdit size={17}/>
+                </div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:15}}>Edit Login Amount</div>
+                  <div style={{fontSize:12,opacity:0.8}}>{loginAmountLead.full_name} · {loginAmountLead.mobile}</div>
+                </div>
+              </div>
+              <button onClick={()=>{setShowLoginAmountModal(false);setLoginAmountLead(null);setLoginAmountOnConfirm(null)}} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
+            </div>
+            <div style={{padding:'16px 18px'}}>
+              <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Login Amount (₹) *</label>
+              <input type="number" min="1" autoFocus value={loginAmountInput} onChange={e=>setLoginAmountInput(e.target.value)}
+                placeholder="e.g. 500000"
+                className="mobile-input"
+                style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box',color:'#111827',marginBottom:14}}
+                onFocus={e=>e.target.style.borderColor='#92400E'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}
+                onKeyDown={e=>{ if(e.key==='Enter') confirmLoginAmount() }}/>
+              <div style={{display:'flex',gap:8}}>
+                <button onClick={confirmLoginAmount} disabled={savingLoginAmount||!loginAmountInput}
+                  className="mobile-button"
+                  style={{flex:1,padding:'12px',background:(savingLoginAmount||!loginAmountInput)?'#CBD5E0':'#92400E',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:(savingLoginAmount||!loginAmountInput)?'not-allowed':'pointer'}}>
+                  {savingLoginAmount?'Saving…':'Save Login Amount'}
+                </button>
+                <button onClick={()=>{setShowLoginAmountModal(false);setLoginAmountLead(null);setLoginAmountOnConfirm(null)}}
                   style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
                   Cancel
                 </button>
@@ -3661,11 +3751,20 @@ function AgentDashboard({ userId }) {
                       {/* Loan amount + stage */}
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                         <div>
-                          <div style={{fontWeight:700,color:'#185FA5',fontSize:15,display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{fontWeight:700,color:loanAmtTier(lead)==='raw'?txt2:'#185FA5',fontSize:15,display:'flex',alignItems:'center',gap:6}}>
                             {loanAmtDisplay(lead)}
-                            {lead.status==='Disbursed'&&(
+                            {loanAmtTier(lead)==='raw'&&(
+                              <span style={{fontSize:9,fontWeight:600,color:txt2,background:bg2,padding:'1px 5px',borderRadius:4,textTransform:'uppercase',letterSpacing:'0.3px'}}>from sheet</span>
+                            )}
+                            {loanAmtTier(lead)==='disbursed'&&(
                               <button onClick={e=>{e.stopPropagation();editDisbursedAmount(lead)}} title="Edit disbursed amount"
                                 style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
+                                <IconEdit size={13}/>
+                              </button>
+                            )}
+                            {loanAmtTier(lead)==='login'&&(
+                              <button onClick={e=>{e.stopPropagation();editLoginAmount(lead)}} title="Edit login amount"
+                                style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                                 <IconEdit size={13}/>
                               </button>
                             )}
@@ -3774,11 +3873,20 @@ function AgentDashboard({ userId }) {
                               </div>
                             </td>
                             <td style={{padding:'12px 14px'}}>
-                              <div style={{fontWeight:600,color:'#185FA5',fontSize:13,display:'flex',alignItems:'center',gap:5}}>
+                              <div style={{fontWeight:600,color:loanAmtTier(lead)==='raw'?txt2:'#185FA5',fontSize:13,display:'flex',alignItems:'center',gap:5}}>
                                 {loanAmtDisplay(lead)}
-                                {lead.status==='Disbursed'&&(
+                                {loanAmtTier(lead)==='raw'&&(
+                                  <span style={{fontSize:9,fontWeight:600,color:txt2,background:bg2,padding:'1px 5px',borderRadius:4,textTransform:'uppercase',letterSpacing:'0.3px'}}>from sheet</span>
+                                )}
+                                {loanAmtTier(lead)==='disbursed'&&(
                                   <button onClick={()=>editDisbursedAmount(lead)} title="Edit disbursed amount"
                                     style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
+                                    <IconEdit size={12}/>
+                                  </button>
+                                )}
+                                {loanAmtTier(lead)==='login'&&(
+                                  <button onClick={()=>editLoginAmount(lead)} title="Edit login amount"
+                                    style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                                     <IconEdit size={12}/>
                                   </button>
                                 )}
@@ -4005,20 +4113,32 @@ function AgentDashboard({ userId }) {
                 ['Loan Amount',loanAmtDisplay(viewLead)],
                 ['Company',viewLead.company||'—'],
                 ['App ID',viewLead.application_id||'—'],
-              ].map(([label,val])=>(
+              ].map(([label,val])=>{
+                const isAmt=label==='Loan Amount'
+                const tier=isAmt?loanAmtTier(viewLead):null
+                return (
                 <div key={label} style={{background:bg0,borderRadius:8,padding:'10px 12px'}}>
                   <div style={{fontSize:11,color:txt2,marginBottom:3}}>{label}</div>
-                  <div style={{fontSize:13,fontWeight:600,color:txt1,wordBreak:'break-word',display:'flex',alignItems:'center',gap:6}}>
+                  <div style={{fontSize:13,fontWeight:600,color:isAmt&&tier==='raw'?txt2:txt1,wordBreak:'break-word',display:'flex',alignItems:'center',gap:6}}>
                     {val}
-                    {label==='Loan Amount'&&viewLead.status==='Disbursed'&&(
+                    {isAmt&&tier==='raw'&&(
+                      <span style={{fontSize:9,fontWeight:600,color:txt2,background:bg2,padding:'1px 5px',borderRadius:4,textTransform:'uppercase',letterSpacing:'0.3px'}}>from sheet</span>
+                    )}
+                    {isAmt&&tier==='disbursed'&&(
                       <button onClick={()=>editDisbursedAmount(viewLead)} title="Edit disbursed amount"
                         style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
                         <IconEdit size={13}/>
                       </button>
                     )}
+                    {isAmt&&tier==='login'&&(
+                      <button onClick={()=>editLoginAmount(viewLead)} title="Edit login amount"
+                        style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
+                        <IconEdit size={13}/>
+                      </button>
+                    )}
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
             {viewLead.notes&&(
               <div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}>
