@@ -2070,6 +2070,10 @@ function AgentDashboard({ userId }) {
     if(tier==='login') return fmtCompactCurrency(lead.login_amount)
     return fmtAmt(lead.loan_amount)
   }
+  // Whether the login-amount pencil should be offered at all — true for any lead that has ever
+  // reached Login per stage_history, independent of whether login_amount has been filled in yet
+  // (so the pencil is also how it gets set the first time, not just edited afterward).
+  const hasLoggedIn=lead=>!!getStatusChangeTime(lead,'Login')
   const initials=name=>name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)||'?'
 
   const bg0=darkMode?'#0f172a':'#F8FAFC'
@@ -3762,7 +3766,7 @@ function AgentDashboard({ userId }) {
                                 <IconEdit size={13}/>
                               </button>
                             )}
-                            {loanAmtTier(lead)==='login'&&(
+                            {hasLoggedIn(lead)&&(
                               <button onClick={e=>{e.stopPropagation();editLoginAmount(lead)}} title="Edit login amount"
                                 style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                                 <IconEdit size={13}/>
@@ -3884,7 +3888,7 @@ function AgentDashboard({ userId }) {
                                     <IconEdit size={12}/>
                                   </button>
                                 )}
-                                {loanAmtTier(lead)==='login'&&(
+                                {hasLoggedIn(lead)&&(
                                   <button onClick={()=>editLoginAmount(lead)} title="Edit login amount"
                                     style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                                     <IconEdit size={12}/>
@@ -4130,7 +4134,7 @@ function AgentDashboard({ userId }) {
                         <IconEdit size={13}/>
                       </button>
                     )}
-                    {isAmt&&tier==='login'&&(
+                    {isAmt&&hasLoggedIn(viewLead)&&(
                       <button onClick={()=>editLoginAmount(viewLead)} title="Edit login amount"
                         style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                         <IconEdit size={13}/>
