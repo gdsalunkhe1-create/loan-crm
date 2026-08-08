@@ -5218,10 +5218,13 @@ export default function Dashboard({ session }) {
         const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString()
         const [{data:agentProfile},{data:monthRows}]=await Promise.all([
           supabase.from('profiles').select('full_name').eq('id',upd.assigned_to).single(),
-          supabase.from('leads').select('assigned_to,disbursed_amount').eq('status','Disbursed').gte('updated_at',monthStart)
+          supabase.from('leads').select('id,assigned_to,disbursed_amount').eq('status','Disbursed').gte('updated_at',monthStart)
         ])
         const totals={}
         ;(monthRows||[]).forEach(r=>{ totals[r.assigned_to]=(totals[r.assigned_to]||0)+(parseFloat(r.disbursed_amount)||0) })
+        if(!(monthRows||[]).some(r=>r.id===upd.id)){
+          totals[upd.assigned_to]=(totals[upd.assigned_to]||0)+(parseFloat(upd.disbursed_amount)||0)
+        }
         const ranked=Object.entries(totals).sort((a,b)=>b[1]-a[1])
         const isTopNow=ranked.length>0&&ranked[0][0]===upd.assigned_to
         const token=Date.now()
@@ -5233,7 +5236,6 @@ export default function Dashboard({ session }) {
           isTopNow,
           monthTotal:totals[upd.assigned_to]||upd.disbursed_amount
         })
-        setTimeout(()=>setOrgBlast(cur=>cur?.token===token?null:cur),6000)
       })
       .subscribe()
     return ()=>{ supabase.removeChannel(channel) }
