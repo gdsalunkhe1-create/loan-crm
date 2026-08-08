@@ -5390,15 +5390,16 @@ export default function Dashboard({ session }) {
     }
 
     const fetchLeads=async()=>{
-      let all=[],from=0,ok=true
+      let all=[],from=0
       while(true){
         const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
-        if(error||!data){ ok=false; break }
+        if(error){ console.error('[fetchLeads] page failed at offset',from,error); showApToast?.('Leads list failed to load: '+error.message,'error'); break }
+        if(!data) break
         all=[...all,...data]
+        setAdminLeads(all)
         if(data.length<1000) break
         from+=1000
       }
-      if(ok) setAdminLeads(all)
       const{data:obls}=await supabase.from('loan_obligations').select('*')
       if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
     }
