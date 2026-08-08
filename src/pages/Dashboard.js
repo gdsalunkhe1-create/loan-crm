@@ -5390,8 +5390,15 @@ export default function Dashboard({ session }) {
     }
 
     const fetchLeads=async()=>{
-      const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
-      if(data) setAdminLeads(data)
+      let all=[],from=0,ok=true
+      while(true){
+        const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+        if(error||!data){ ok=false; break }
+        all=[...all,...data]
+        if(data.length<1000) break
+        from+=1000
+      }
+      if(ok) setAdminLeads(all)
       const{data:obls}=await supabase.from('loan_obligations').select('*')
       if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
     }
@@ -6192,8 +6199,15 @@ export default function Dashboard({ session }) {
                 <div className="card-header"><h3>Export Data</h3></div>
                 <div className="card-body" style={{display:'flex',flexDirection:'column',gap:8}}>
                   <button className="btn btn-outline" style={{justifyContent:'flex-start'}} onClick={async()=>{
-                    const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
-                    if(!data||!data.length)return
+                    let data=[],from=0
+                    while(true){
+                      const{data:batch,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+                      if(error||!batch) break
+                      data=[...data,...batch]
+                      if(batch.length<1000) break
+                      from+=1000
+                    }
+                    if(!data.length)return
                     const keys=Object.keys(data[0])
                     exportToExcel('leads_export',[keys,...data.map(r=>keys.map(k=>r[k]??''))],'Leads')
                   }}><IconDownload size={14} style={{marginRight:6}}/>Export Leads Excel</button>
