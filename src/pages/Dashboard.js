@@ -525,14 +525,6 @@ function AgentDashboard({ userId }) {
   const [savingDisbursedAmount,setSavingDisbursedAmount]       = useState(false)
   const [disbursedAmountOnConfirm,setDisbursedAmountOnConfirm] = useState(null)
 
-  // ── Login-amount manual edit — kept fully separate from the disbursed-amount state/handlers
-  // above so a future change to one can't accidentally affect the other.
-  const [showLoginAmountModal,setShowLoginAmountModal] = useState(false)
-  const [loginAmountLead,setLoginAmountLead]           = useState(null)
-  const [loginAmountInput,setLoginAmountInput]         = useState('')
-  const [savingLoginAmount,setSavingLoginAmount]       = useState(false)
-  const [loginAmountOnConfirm,setLoginAmountOnConfirm] = useState(null)
-
   // ── Monthly target widget (Parts 3 & 4) ──
   const [monthlyTarget,setMonthlyTarget]         = useState(null)   // agent_monthly_targets row for this month, or null
   const [targetLoading,setTargetLoading]         = useState(true)
@@ -1295,35 +1287,6 @@ function AgentDashboard({ userId }) {
     setShowDisbursedAmountModal(true)
   }
 
-  const confirmLoginAmount=async()=>{
-    const amt=Number(loginAmountInput)
-    if(!amt||amt<=0){ showToast('Enter a valid login amount','error'); return }
-    setSavingLoginAmount(true)
-    await loginAmountOnConfirm?.(amt)
-    setSavingLoginAmount(false)
-    setShowLoginAmountModal(false)
-    setLoginAmountLead(null)
-    setLoginAmountInput('')
-    setLoginAmountOnConfirm(null)
-  }
-
-  // Manual correction path for login_amount — separate column, separate update call from disbursed_amount above.
-  const saveLoginAmountEdit=async(leadId,amt)=>{
-    const{error}=await supabase.from('leads').update({login_amount:amt}).eq('id',leadId)
-    if(error){ showToast('Could not save amount: '+error.message,'error'); return }
-    const updatedLeads=myLeads.map(l=>l.id===leadId?{...l,login_amount:amt,updated_at:new Date().toISOString()}:l)
-    setMyLeads(updatedLeads)
-    setViewLead(prev=>prev&&prev.id===leadId?{...prev,login_amount:amt}:prev)
-    showToast('Login amount updated')
-  }
-
-  const editLoginAmount=(lead)=>{
-    setLoginAmountLead(lead)
-    setLoginAmountInput(lead.login_amount?String(lead.login_amount):'')
-    setLoginAmountOnConfirm(()=>(amt)=>saveLoginAmountEdit(lead.id,amt))
-    setShowLoginAmountModal(true)
-  }
-
   const saveNote=async()=>{
     if(!noteText.trim())return
     const now=new Date()
@@ -1870,8 +1833,7 @@ function AgentDashboard({ userId }) {
           agent_id: userId,
           call_outcome: callLogDisposition||null,
           notes: callLogNotes||null,
-          created_at: new Date().toISOString(),
-          org_id: profile?.org_id
+          created_at: new Date().toISOString()
         }),
         Object.keys(leadsUpdate).length>0
           ? supabase.from('leads').update(leadsUpdate).eq('id',callLogLead.id)
@@ -2058,23 +2020,7 @@ function AgentDashboard({ userId }) {
   const amountInHandAfterBT = Math.max(0, (obligationTotals.eligibleLoan||0) - btPosTotal)
 
   const fmtAmt  =n=>n?'₹'+Number(n).toLocaleString('en-IN'):'-'
-  // Precedence for the single amount shown in the Leads list / detail modal: disbursed > login > raw import.
-  // 'raw' means neither a confirmed disbursed_amount nor login_amount exists yet — it's unverified sheet data.
-  const loanAmtTier=lead=>{
-    if(lead.status==='Disbursed'&&lead.disbursed_amount) return 'disbursed'
-    if(lead.login_amount) return 'login'
-    return 'raw'
-  }
-  const loanAmtDisplay=lead=>{
-    const tier=loanAmtTier(lead)
-    if(tier==='disbursed') return fmtCompactCurrency(lead.disbursed_amount)
-    if(tier==='login') return fmtCompactCurrency(lead.login_amount)
-    return fmtAmt(lead.loan_amount)
-  }
-  // Whether the login-amount pencil should be offered at all — true for any lead that has ever
-  // reached Login per stage_history, independent of whether login_amount has been filled in yet
-  // (so the pencil is also how it gets set the first time, not just edited afterward).
-  const hasLoggedIn=lead=>!!getStatusChangeTime(lead,'Login')
+  const loanAmtDisplay=lead=>(lead.status==='Disbursed'&&lead.disbursed_amount)?fmtCompactCurrency(lead.disbursed_amount):fmtAmt(lead.loan_amount)
   const initials=name=>name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)||'?'
 
   const bg0=darkMode?'#0f172a':'#F8FAFC'
@@ -2598,47 +2544,6 @@ function AgentDashboard({ userId }) {
                   {savingDisbursedAmount?'Saving…':'Confirm Disbursed'}
                 </button>
                 <button onClick={()=>{setShowDisbursedAmountModal(false);setDisbursedAmountLead(null);setDisbursedAmountOnConfirm(null)}}
-                  style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* LOGIN AMOUNT MODAL — separate from the Disbursed Amount modal above; edits login_amount only */}
-      {showLoginAmountModal&&loginAmountLead&&(
-        <>
-          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:300}} onClick={()=>{setShowLoginAmountModal(false);setLoginAmountLead(null);setLoginAmountOnConfirm(null)}}/>
-          <div style={{position:'fixed',top:isMobile?'auto':'50%',bottom:isMobile?0:'auto',left:isMobile?0:'50%',transform:isMobile?'none':'translate(-50%,-50%)',background:'white',borderRadius:isMobile?'16px 16px 0 0':16,boxShadow:'0 24px 60px rgba(0,0,0,0.2)',zIndex:400,width:isMobile?'100%':'90%',maxWidth:420,overflow:'hidden'}}>
-            <div style={{background:'linear-gradient(135deg,#92400E,#B45309)',padding:'14px 18px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,color:'white'}}>
-                <div style={{width:34,height:34,borderRadius:'50%',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                  <IconEdit size={17}/>
-                </div>
-                <div>
-                  <div style={{fontWeight:700,fontSize:15}}>Edit Login Amount</div>
-                  <div style={{fontSize:12,opacity:0.8}}>{loginAmountLead.full_name} · {loginAmountLead.mobile}</div>
-                </div>
-              </div>
-              <button onClick={()=>{setShowLoginAmountModal(false);setLoginAmountLead(null);setLoginAmountOnConfirm(null)}} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',width:28,height:28,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><IconX size={13}/></button>
-            </div>
-            <div style={{padding:'16px 18px'}}>
-              <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Login Amount (₹) *</label>
-              <input type="number" min="1" autoFocus value={loginAmountInput} onChange={e=>setLoginAmountInput(e.target.value)}
-                placeholder="e.g. 500000"
-                className="mobile-input"
-                style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box',color:'#111827',marginBottom:14}}
-                onFocus={e=>e.target.style.borderColor='#92400E'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}
-                onKeyDown={e=>{ if(e.key==='Enter') confirmLoginAmount() }}/>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={confirmLoginAmount} disabled={savingLoginAmount||!loginAmountInput}
-                  className="mobile-button"
-                  style={{flex:1,padding:'12px',background:(savingLoginAmount||!loginAmountInput)?'#CBD5E0':'#92400E',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:(savingLoginAmount||!loginAmountInput)?'not-allowed':'pointer'}}>
-                  {savingLoginAmount?'Saving…':'Save Login Amount'}
-                </button>
-                <button onClick={()=>{setShowLoginAmountModal(false);setLoginAmountLead(null);setLoginAmountOnConfirm(null)}}
                   style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
                   Cancel
                 </button>
@@ -3756,17 +3661,11 @@ function AgentDashboard({ userId }) {
                       {/* Loan amount + stage */}
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                         <div>
-                          <div style={{fontWeight:700,color:loanAmtTier(lead)==='raw'?txt2:'#185FA5',fontSize:15,display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{fontWeight:700,color:'#185FA5',fontSize:15,display:'flex',alignItems:'center',gap:6}}>
                             {loanAmtDisplay(lead)}
-                            {loanAmtTier(lead)==='disbursed'&&(
+                            {lead.status==='Disbursed'&&(
                               <button onClick={e=>{e.stopPropagation();editDisbursedAmount(lead)}} title="Edit disbursed amount"
                                 style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
-                                <IconEdit size={13}/>
-                              </button>
-                            )}
-                            {hasLoggedIn(lead)&&(
-                              <button onClick={e=>{e.stopPropagation();editLoginAmount(lead)}} title="Edit login amount"
-                                style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                                 <IconEdit size={13}/>
                               </button>
                             )}
@@ -3833,7 +3732,7 @@ function AgentDashboard({ userId }) {
                     <thead>
                       <tr style={{background:darkMode?'#0f172a':'#F9FAFB'}}>
                         {['Lead','Loan Amt','Stage','Temp','Pipeline','Actions'].map(h=>(
-                          <th key={h} style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:txt2,textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap',width:h==='Lead'?240:undefined,display:(h==='Temp'||h==='Pipeline')?'none':undefined}}>{h}</th>
+                          <th key={h} style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:txt2,textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap',display:(h==='Temp'||h==='Pipeline')?'none':undefined}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -3854,7 +3753,7 @@ function AgentDashboard({ userId }) {
                           <tr key={lead.id} style={{borderBottom:'1px solid '+bdr,transition:'background 0.1s'}}
                             onMouseEnter={e=>e.currentTarget.style.background=bg2}
                             onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                            <td style={{padding:'12px 14px',width:240,maxWidth:240}}>
+                            <td style={{padding:'12px 14px'}}>
                               <div style={{display:'flex',alignItems:'center',gap:9}}>
                                 <div style={{width:34,height:34,borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,color:'#185FA5',fontSize:12,flexShrink:0}}>{initials(lead.full_name)}</div>
                                 <div>
@@ -3875,17 +3774,11 @@ function AgentDashboard({ userId }) {
                               </div>
                             </td>
                             <td style={{padding:'12px 14px'}}>
-                              <div style={{fontWeight:600,color:loanAmtTier(lead)==='raw'?txt2:'#185FA5',fontSize:13,display:'flex',alignItems:'center',gap:5}}>
+                              <div style={{fontWeight:600,color:'#185FA5',fontSize:13,display:'flex',alignItems:'center',gap:5}}>
                                 {loanAmtDisplay(lead)}
-                                {loanAmtTier(lead)==='disbursed'&&(
+                                {lead.status==='Disbursed'&&(
                                   <button onClick={()=>editDisbursedAmount(lead)} title="Edit disbursed amount"
                                     style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
-                                    <IconEdit size={12}/>
-                                  </button>
-                                )}
-                                {hasLoggedIn(lead)&&(
-                                  <button onClick={()=>editLoginAmount(lead)} title="Edit login amount"
-                                    style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
                                     <IconEdit size={12}/>
                                   </button>
                                 )}
@@ -4112,29 +4005,20 @@ function AgentDashboard({ userId }) {
                 ['Loan Amount',loanAmtDisplay(viewLead)],
                 ['Company',viewLead.company||'—'],
                 ['App ID',viewLead.application_id||'—'],
-              ].map(([label,val])=>{
-                const isAmt=label==='Loan Amount'
-                const tier=isAmt?loanAmtTier(viewLead):null
-                return (
+              ].map(([label,val])=>(
                 <div key={label} style={{background:bg0,borderRadius:8,padding:'10px 12px'}}>
                   <div style={{fontSize:11,color:txt2,marginBottom:3}}>{label}</div>
-                  <div style={{fontSize:13,fontWeight:600,color:isAmt&&tier==='raw'?txt2:txt1,wordBreak:'break-word',display:'flex',alignItems:'center',gap:6}}>
+                  <div style={{fontSize:13,fontWeight:600,color:txt1,wordBreak:'break-word',display:'flex',alignItems:'center',gap:6}}>
                     {val}
-                    {isAmt&&tier==='disbursed'&&(
+                    {label==='Loan Amount'&&viewLead.status==='Disbursed'&&(
                       <button onClick={()=>editDisbursedAmount(viewLead)} title="Edit disbursed amount"
                         style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
                         <IconEdit size={13}/>
                       </button>
                     )}
-                    {isAmt&&hasLoggedIn(viewLead)&&(
-                      <button onClick={()=>editLoginAmount(viewLead)} title="Edit login amount"
-                        style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#92400E',display:'inline-flex'}}>
-                        <IconEdit size={13}/>
-                      </button>
-                    )}
                   </div>
                 </div>
-              )})}
+              ))}
             </div>
             {viewLead.notes&&(
               <div style={{marginTop:10,background:bg0,borderRadius:8,padding:'10px 12px'}}>
@@ -5192,6 +5076,53 @@ export default function Dashboard({ session }) {
   const [viewLead,setViewLead]=useState(null)
   const isMobile=useIsMobile()
 
+  // Small local currency formatter — mirrors AgentDashboard's fmtCompactCurrency, but that
+  // one lives inside AgentDashboard's own scope and this component sits above/outside all
+  // four role dashboards (agent/manager/team_leader/admin), which is exactly why the
+  // org-wide disbursement blast below is mounted here — one subscription reaches everyone
+  // regardless of role, instead of duplicating it into all four child components.
+  const fmtBlastCurrency=(v)=>{
+    const n=Number(v)
+    if(!n) return '-'
+    if(n>=10000000){ const c=n/10000000; return `₹${c%1===0?c:c.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')}Cr` }
+    if(n>=100000){ const l=n/100000; return `₹${l%1===0?l:l.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')}L` }
+    return `₹${n.toLocaleString('en-IN')}`
+  }
+
+  // Org-wide disbursement blast — fires for every disbursement, org-wide, for every
+  // role (agents, managers, admin all render inside this component). Deliberately its
+  // own dedicated realtime subscription rather than piggybacking on any role dashboard's
+  // existing (already complex) leads subscription, to keep this low-risk and independent.
+  const [orgBlast,setOrgBlast]=useState(null)
+  useEffect(()=>{
+    const channel=supabase.channel('org-disbursement-blast')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},async(payload)=>{
+        const upd=payload.new, prev=payload.old
+        if(upd?.status!=='Disbursed'||prev?.status==='Disbursed') return
+        const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString()
+        const [{data:agentProfile},{data:monthRows}]=await Promise.all([
+          supabase.from('profiles').select('full_name').eq('id',upd.assigned_to).single(),
+          supabase.from('leads').select('assigned_to,disbursed_amount').eq('status','Disbursed').gte('updated_at',monthStart)
+        ])
+        const totals={}
+        ;(monthRows||[]).forEach(r=>{ totals[r.assigned_to]=(totals[r.assigned_to]||0)+(parseFloat(r.disbursed_amount)||0) })
+        const ranked=Object.entries(totals).sort((a,b)=>b[1]-a[1])
+        const isTopNow=ranked.length>0&&ranked[0][0]===upd.assigned_to
+        const token=Date.now()
+        setOrgBlast({
+          token,
+          agentName:agentProfile?.full_name||'An agent',
+          amount:upd.disbursed_amount,
+          leadName:upd.full_name,
+          isTopNow,
+          monthTotal:totals[upd.assigned_to]||upd.disbursed_amount
+        })
+        setTimeout(()=>setOrgBlast(cur=>cur?.token===token?null:cur),6000)
+      })
+      .subscribe()
+    return ()=>{ supabase.removeChannel(channel) }
+  },[])
+
   useEffect(()=>{ getProfile() },[session?.user?.id])
   useEffect(()=>{ fetchSettings(); fetchDashboardStats() },[])
 
@@ -5390,16 +5321,8 @@ export default function Dashboard({ session }) {
     }
 
     const fetchLeads=async()=>{
-      let all=[],from=0
-      while(true){
-        const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
-        if(error){ console.error('[fetchLeads] page failed at offset',from,error); showApToast?.('Leads list failed to load: '+error.message,'error'); break }
-        if(!data) break
-        all=[...all,...data]
-        setAdminLeads(all)
-        if(data.length<1000) break
-        from+=1000
-      }
+      const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
+      if(data) setAdminLeads(data)
       const{data:obls}=await supabase.from('loan_obligations').select('*')
       if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
     }
@@ -6200,15 +6123,8 @@ export default function Dashboard({ session }) {
                 <div className="card-header"><h3>Export Data</h3></div>
                 <div className="card-body" style={{display:'flex',flexDirection:'column',gap:8}}>
                   <button className="btn btn-outline" style={{justifyContent:'flex-start'}} onClick={async()=>{
-                    let data=[],from=0
-                    while(true){
-                      const{data:batch,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
-                      if(error||!batch) break
-                      data=[...data,...batch]
-                      if(batch.length<1000) break
-                      from+=1000
-                    }
-                    if(!data.length)return
+                    const{data}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false})
+                    if(!data||!data.length)return
                     const keys=Object.keys(data[0])
                     exportToExcel('leads_export',[keys,...data.map(r=>keys.map(k=>r[k]??''))],'Leads')
                   }}><IconDownload size={14} style={{marginRight:6}}/>Export Leads Excel</button>
@@ -6419,7 +6335,6 @@ export default function Dashboard({ session }) {
             assigned_to:    resolvedAgent,
             assigned_at:    resolvedAgent?now:null,
             source:         'Excel Import',
-            org_id:         profile?.org_id,
           }
         })
         const{error,data}=await supabase.from('leads').insert(chunk).select('id')
@@ -6742,25 +6657,6 @@ export default function Dashboard({ session }) {
                 ))}
               </div>
             )}
-            {(()=>{
-              const reassignments=activityFull
-                .filter(a=>a.lead_id===viewLead.id&&a.action==='Reassigned')
-                .sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))
-              return reassignments.length>0&&(
-                <div style={{gridColumn:'1 / -1'}}>
-                  <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Reassignment History</div>
-                  {reassignments.map((a,i)=>(
-                    <div key={a.id||i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #F1F5F9',fontSize:13,color:'#334155'}}>
-                      <span>{a.previous_agent_name||'—'} → {a.assigned_to_name||'—'}</span>
-                      <span style={{fontWeight:600}}>
-                        {a.created_at?new Date(a.created_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short',timeZone:IST_TZ}):'—'}
-                        {a.assigned_by_name?' by '+a.assigned_by_name:''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
           </div>
         </div>
       </div>
@@ -6824,6 +6720,31 @@ export default function Dashboard({ session }) {
           </div>
           <div className='user-avatar' style={{background:'#185FA5',width:32,height:32,fontSize:12}}>{(profile?.full_name||'U')[0].toUpperCase()}</div>
         </div>
+
+        {orgBlast&&(
+          <>
+            <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:900}} onClick={()=>setOrgBlast(null)}/>
+            <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:18,boxShadow:'0 24px 60px rgba(0,0,0,0.3)',zIndex:901,width:isMobile?'92%':420,overflow:'hidden',textAlign:'center'}}>
+              <div style={{background:'linear-gradient(135deg,#B45309,#F59E0B)',padding:'28px 20px 22px',color:'white'}}>
+                <div style={{fontSize:42,marginBottom:6}}>{orgBlast.isTopNow?'🏆':'💰'}</div>
+                <div style={{fontWeight:700,fontSize:18}}>{orgBlast.agentName} just disbursed {fmtBlastCurrency(orgBlast.amount)}!</div>
+                {orgBlast.leadName&&<div style={{fontSize:13,opacity:0.9,marginTop:4}}>{orgBlast.leadName}</div>}
+              </div>
+              <div style={{padding:'18px 20px'}}>
+                {orgBlast.isTopNow?(
+                  <div style={{fontSize:14,color:'#92400E',fontWeight:700}}>🎉 Now leading this month with {fmtBlastCurrency(orgBlast.monthTotal)}!</div>
+                ):(
+                  <div style={{fontSize:14,color:'#374151'}}>{fmtBlastCurrency(orgBlast.monthTotal)} disbursed this month so far. Keep it up! 🚀</div>
+                )}
+                <button onClick={()=>setOrgBlast(null)}
+                  className="mobile-button"
+                  style={{marginTop:16,width:'100%',padding:'11px',background:'#92400E',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:'pointer'}}>
+                  Nice! 🎊
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
         {activePage==='dashboard'&&role==='admin'       &&<ErrorBoundary><AdminDashboardHome userId={profile?.id}/></ErrorBoundary>}
         {activePage==='admin'    &&role==='admin'       &&<ErrorBoundary><AdminPanel/></ErrorBoundary>}
