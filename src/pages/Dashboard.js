@@ -3832,7 +3832,7 @@ function AgentDashboard({ userId }) {
                     <thead>
                       <tr style={{background:darkMode?'#0f172a':'#F9FAFB'}}>
                         {['Lead','Loan Amt','Stage','Temp','Pipeline','Actions'].map(h=>(
-                          <th key={h} style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:txt2,textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap',display:(h==='Temp'||h==='Pipeline')?'none':undefined}}>{h}</th>
+                          <th key={h} style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:txt2,textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap',width:h==='Lead'?240:undefined,display:(h==='Temp'||h==='Pipeline')?'none':undefined}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -3853,7 +3853,7 @@ function AgentDashboard({ userId }) {
                           <tr key={lead.id} style={{borderBottom:'1px solid '+bdr,transition:'background 0.1s'}}
                             onMouseEnter={e=>e.currentTarget.style.background=bg2}
                             onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                            <td style={{padding:'12px 14px'}}>
+                            <td style={{padding:'12px 14px',width:240,maxWidth:240}}>
                               <div style={{display:'flex',alignItems:'center',gap:9}}>
                                 <div style={{width:34,height:34,borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,color:'#185FA5',fontSize:12,flexShrink:0}}>{initials(lead.full_name)}</div>
                                 <div>
