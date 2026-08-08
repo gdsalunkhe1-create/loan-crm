@@ -6741,6 +6741,25 @@ export default function Dashboard({ session }) {
                 ))}
               </div>
             )}
+            {(()=>{
+              const reassignments=activityFull
+                .filter(a=>a.lead_id===viewLead.id&&a.action==='Reassigned')
+                .sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))
+              return reassignments.length>0&&(
+                <div style={{gridColumn:'1 / -1'}}>
+                  <div style={{fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:6}}>Reassignment History</div>
+                  {reassignments.map((a,i)=>(
+                    <div key={a.id||i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid #F1F5F9',fontSize:13,color:'#334155'}}>
+                      <span>{a.previous_agent_name||'—'} → {a.assigned_to_name||'—'}</span>
+                      <span style={{fontWeight:600}}>
+                        {a.created_at?new Date(a.created_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short',timeZone:IST_TZ}):'—'}
+                        {a.assigned_by_name?' by '+a.assigned_by_name:''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         </div>
       </div>
