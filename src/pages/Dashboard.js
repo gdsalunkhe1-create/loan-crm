@@ -3757,9 +3757,6 @@ function AgentDashboard({ userId }) {
                         <div>
                           <div style={{fontWeight:700,color:loanAmtTier(lead)==='raw'?txt2:'#185FA5',fontSize:15,display:'flex',alignItems:'center',gap:6}}>
                             {loanAmtDisplay(lead)}
-                            {loanAmtTier(lead)==='raw'&&(
-                              <span style={{fontSize:9,fontWeight:600,color:txt2,background:bg2,padding:'1px 5px',borderRadius:4,textTransform:'uppercase',letterSpacing:'0.3px'}}>from sheet</span>
-                            )}
                             {loanAmtTier(lead)==='disbursed'&&(
                               <button onClick={e=>{e.stopPropagation();editDisbursedAmount(lead)}} title="Edit disbursed amount"
                                 style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
@@ -3879,9 +3876,6 @@ function AgentDashboard({ userId }) {
                             <td style={{padding:'12px 14px'}}>
                               <div style={{fontWeight:600,color:loanAmtTier(lead)==='raw'?txt2:'#185FA5',fontSize:13,display:'flex',alignItems:'center',gap:5}}>
                                 {loanAmtDisplay(lead)}
-                                {loanAmtTier(lead)==='raw'&&(
-                                  <span style={{fontSize:9,fontWeight:600,color:txt2,background:bg2,padding:'1px 5px',borderRadius:4,textTransform:'uppercase',letterSpacing:'0.3px'}}>from sheet</span>
-                                )}
                                 {loanAmtTier(lead)==='disbursed'&&(
                                   <button onClick={()=>editDisbursedAmount(lead)} title="Edit disbursed amount"
                                     style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
@@ -4125,9 +4119,6 @@ function AgentDashboard({ userId }) {
                   <div style={{fontSize:11,color:txt2,marginBottom:3}}>{label}</div>
                   <div style={{fontSize:13,fontWeight:600,color:isAmt&&tier==='raw'?txt2:txt1,wordBreak:'break-word',display:'flex',alignItems:'center',gap:6}}>
                     {val}
-                    {isAmt&&tier==='raw'&&(
-                      <span style={{fontSize:9,fontWeight:600,color:txt2,background:bg2,padding:'1px 5px',borderRadius:4,textTransform:'uppercase',letterSpacing:'0.3px'}}>from sheet</span>
-                    )}
                     {isAmt&&tier==='disbursed'&&(
                       <button onClick={()=>editDisbursedAmount(viewLead)} title="Edit disbursed amount"
                         style={{background:'none',border:'none',cursor:'pointer',padding:0,color:'#185FA5',display:'inline-flex'}}>
