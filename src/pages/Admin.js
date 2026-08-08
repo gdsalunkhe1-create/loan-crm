@@ -890,7 +890,7 @@ function ActivityLog({ activityLog, users, reload }) {
 }
 
 // ─── CSV IMPORT ──────────────────────────────────────────────────────────────
-function CSVImport({ users, leads, onImported, showToast }) {
+function CSVImport({ users, leads, onImported, showToast, orgId }) {
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState([])
   const [errors, setErrors] = useState([])
@@ -1007,6 +1007,7 @@ function CSVImport({ users, leads, onImported, showToast }) {
             status: 'New',
             assigned_to: assignTo || null,
             created_at: createdAt,
+            org_id: orgId || null,
           })
         })
         let count = 0
@@ -1239,7 +1240,7 @@ function DuplicateLeadsFinder({ leads, reload, showToast }) {
 }
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
-function Config({ users, onImported, showToast, leads, reload }) {
+function Config({ users, onImported, showToast, leads, reload, orgId }) {
   const [sources,setSources]     = useState([])
   const [newSource,setNewSource] = useState('')
   const [saving,setSaving]       = useState(false)
@@ -1253,7 +1254,7 @@ function Config({ users, onImported, showToast, leads, reload }) {
     <div>
       <h2 style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:16}}>Configuration</h2>
       <Card style={{padding:20,marginBottom:20}}>
-        <CSVImport users={users||[]} leads={leads||[]} onImported={onImported} showToast={showToast} />
+        <CSVImport users={users||[]} leads={leads||[]} onImported={onImported} showToast={showToast} orgId={orgId} />
       </Card>
       <Card style={{padding:20,marginBottom:16}}>
         <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>🔍 Find Duplicate Leads</div>
@@ -2308,7 +2309,7 @@ export default function FullAdminPanel() {
               )}
               {active==='config' && (
                 <ErrorBoundary>
-                  <Config users={users} leads={leads} reload={fetchData} onImported={()=>{ fetchData(); showToast('Leads imported!') }} showToast={showToast}/>
+                  <Config users={users} leads={leads} reload={fetchData} onImported={()=>{ fetchData(); showToast('Leads imported!') }} showToast={showToast} orgId={adminProfile?.org_id}/>
                 </ErrorBoundary>
               )}
               {active==='bsa' && (

@@ -1870,7 +1870,8 @@ function AgentDashboard({ userId }) {
           agent_id: userId,
           call_outcome: callLogDisposition||null,
           notes: callLogNotes||null,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          org_id: profile?.org_id
         }),
         Object.keys(leadsUpdate).length>0
           ? supabase.from('leads').update(leadsUpdate).eq('id',callLogLead.id)
@@ -6403,6 +6404,7 @@ export default function Dashboard({ session }) {
             assigned_to:    resolvedAgent,
             assigned_at:    resolvedAgent?now:null,
             source:         'Excel Import',
+            org_id:         profile?.org_id,
           }
         })
         const{error,data}=await supabase.from('leads').insert(chunk).select('id')
