@@ -1130,7 +1130,7 @@ function AgentDashboard({ userId }) {
     const loggedThisMonth=leads.reduce((sum,l)=>{
       const t=getStatusChangeTime(l,'Login')
       if(!t||t<monthStart||t>=monthEndExclusive) return sum
-      return sum+(Number(l.required_loan_amount)||Number(l.eligible_amount)||0)
+      return sum+(Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0)
     },0)
 
     const todayDay=Number(istToday().slice(8,10))
@@ -1166,7 +1166,7 @@ function AgentDashboard({ userId }) {
       monthlyLogins:   monthLoginLeads.length,
       monthlyDisbursed:monthDisbLeads.length,
     }
-    const loginAmt=l=>Number(l.required_loan_amount)||Number(l.eligible_amount)||0
+    const loginAmt=l=>Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0
     const disbAmt =l=>Number(l.disbursed_amount)||0
     setPipelineAmounts({
       todayLogins:     todayLoginLeads.reduce((s,l)=>s+loginAmt(l),0),
@@ -1209,7 +1209,7 @@ function AgentDashboard({ userId }) {
     }catch(e){console.error('[notifyAdmins]',e)}
   }
 
-  const updateLeadStatus=async(leadId,newStatus,disbursedAmountValue)=>{
+  const updateLeadStatus=async(leadId,newStatus,disbursedAmountValue,loginAmountValue)=>{
     const lead=myLeads.find(l=>l.id===leadId)
     const isMirrorLead=lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
     if(newStatus==='Callback'){
@@ -1235,9 +1235,17 @@ function AgentDashboard({ userId }) {
       setShowDisbursedAmountModal(true)
       return
     }
+    if(newStatus==='Login'&&!lead?.login_amount&&loginAmountValue==null){
+      setLoginAmountLead(lead)
+      setLoginAmountInput('')
+      setLoginAmountOnConfirm(()=>(amt)=>updateLeadStatus(leadId,'Login',disbursedAmountValue,amt))
+      setShowLoginAmountModal(true)
+      return
+    }
     console.log('[Action] updateLeadStatus → DB write:', leadId, newStatus)
     const updatePayload={status:newStatus}
     if(newStatus==='Disbursed'&&disbursedAmountValue!=null) updatePayload.disbursed_amount=disbursedAmountValue
+    if(newStatus==='Login'&&loginAmountValue!=null) updatePayload.login_amount=loginAmountValue
     const {data,error}=await supabase.from('leads').update(updatePayload).eq('id',leadId).select()
     if(error){ console.error('[Action] updateLeadStatus DB error:', error); showToast('Could not update stage: '+error.message,'error'); return }
     if(!data||data.length===0){ console.warn('[Action] updateLeadStatus hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.(); return }
@@ -1825,7 +1833,7 @@ function AgentDashboard({ userId }) {
 
   const openCallingWorkspace=(lead)=>{ handleCall(lead) }
 
-  const saveCallLog=async(disbursedAmountOverride)=>{
+  const saveCallLog=async(disbursedAmountOverride,loginAmountOverride)=>{
     if(!callLogLead) return
     if(callLogStage==='Disbursed'&&!callLogLead.disbursed_amount&&disbursedAmountOverride==null){
       setDisbursedAmountLead(callLogLead)
@@ -1833,6 +1841,14 @@ function AgentDashboard({ userId }) {
       setDisbursedAmountOnConfirm(()=>(amt)=>saveCallLog(amt))
       setShowCallLogModal(false)
       setShowDisbursedAmountModal(true)
+      return
+    }
+    if(callLogStage==='Login'&&!callLogLead.login_amount&&loginAmountOverride==null){
+      setLoginAmountLead(callLogLead)
+      setLoginAmountInput('')
+      setLoginAmountOnConfirm(()=>(amt)=>saveCallLog(disbursedAmountOverride,amt))
+      setShowCallLogModal(false)
+      setShowLoginAmountModal(true)
       return
     }
     setSavingCallLog(true)
@@ -1843,6 +1859,7 @@ function AgentDashboard({ userId }) {
       if(callLogDisposition) leadsUpdate.disposition=callLogDisposition
       if(callLogStage) leadsUpdate.status=callLogStage
       if(callLogStage==='Disbursed'&&disbursedAmountOverride!=null) leadsUpdate.disbursed_amount=disbursedAmountOverride
+      if(callLogStage==='Login'&&loginAmountOverride!=null) leadsUpdate.login_amount=loginAmountOverride
 
       // Also append the call note into the lead's shared Notes field — the same field
       // shown via the Note button, the View page, and the Obligations modal. Previously
@@ -5374,6 +5391,7 @@ export default function Dashboard({ session }) {
     const [reassigning,setReassigning]     =useState(false)
     const [showDupOnly,setShowDupOnly]     =useState(false)
     const fetchLeadsRef                    =useRef(null)
+    const fetchLeadsInFlightRef            =useRef(false)
 
     useEffect(()=>{ (async()=>{ await supabase.auth.getSession(); fetchUsers(); fetchDispositions(); fetchLeadSources(); fetchLeads(); fetchAuthUsers(); fetchSettings(); fetchActivityFull(); fetchAdminStages() })() },[])
 
@@ -5439,18 +5457,24 @@ export default function Dashboard({ session }) {
     }
 
     const fetchLeads=async()=>{
-      let all=[],from=0
-      while(true){
-        const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
-        if(error){ console.error('[fetchLeads] page failed at offset',from,error); showApToast?.('Leads list failed to load: '+error.message,'error'); break }
-        if(!data) break
-        all=[...all,...data]
-        setAdminLeads(all)
-        if(data.length<1000) break
-        from+=1000
+      if(fetchLeadsInFlightRef.current) return
+      fetchLeadsInFlightRef.current=true
+      try{
+        let all=[],from=0
+        while(true){
+          const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+          if(error){ console.error('[fetchLeads] page failed at offset',from,error); showApToast?.('Leads list failed to load: '+error.message,'error'); break }
+          if(!data) break
+          all=[...all,...data]
+          setAdminLeads(all)
+          if(data.length<1000) break
+          from+=1000
+        }
+        const{data:obls}=await supabase.from('loan_obligations').select('*')
+        if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
+      } finally {
+        fetchLeadsInFlightRef.current=false
       }
-      const{data:obls}=await supabase.from('loan_obligations').select('*')
-      if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
     }
     fetchLeadsRef.current=fetchLeads
     const fetchAuthUsers=async()=>{
