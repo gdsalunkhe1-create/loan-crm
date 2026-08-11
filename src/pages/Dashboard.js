@@ -6354,7 +6354,7 @@ export default function Dashboard({ session }) {
       const monthStr=istToday().slice(0,7)
       const[leadsR,agentsR,targetsR]=await Promise.all([
         supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,stage_history,updated_at,created_at'),
-        supabase.from('profiles').select('id,full_name,role,status').eq('role','agent'),
+        supabase.from('profiles').select('id,full_name,role,status').eq('role','agent').eq('status','active'),
         supabase.from('agent_monthly_targets').select('*').eq('month',monthStr),
       ])
       setTargetLeads(leadsR.data||[])
@@ -6387,26 +6387,32 @@ export default function Dashboard({ session }) {
       return Math.min(e,totalWorkingDays)
     }
 
+    // BUGFIX: previously computed disbursed/login with local reducers that filtered
+    // leads by CURRENT status (e.g. login only counted leads still sitting in
+    // 'Login') — a lead that progressed to 'Disbursed' this month vanished from
+    // Login MTD entirely, even though it genuinely logged in this month. Routing
+    // through computeTargetProgress (the same function the agent-side widget
+    // uses) fixes this: its loggedThisMonth reducer keys off getStatusChangeTime
+    // alone, independent of the lead's current status.
     const agentTargetRows=targetAgents.map(agent=>{
       const leads=targetLeads.filter(l=>l.assigned_to===agent.id)
-      const disbursed=leads.reduce((sum,l)=>{
-        if(l.status!=='Disbursed') return sum
-        const t=getStatusChangeTime(l,'Disbursed')
-        if(!t||t<tgtMonthStart||t>=tgtMonthEndExclusive) return sum
-        return sum+disbAmt(l)
-      },0)
-      const login=leads.reduce((sum,l)=>{
-        if(l.status!=='Login') return sum
-        const t=getStatusChangeTime(l,'Login')
-        if(!t||t<tgtMonthStart||t>=tgtMonthEndExclusive) return sum
-        return sum+loginAmt(l)
-      },0)
       const targetRow=allTargets[agent.id]||null
-      const target=Number(targetRow?.monthly_disbursement_target)||0
-      const workingDays=Number(targetRow?.working_days)||0
-      const canCompute=target>0 // guards division by zero when no target / target is 0
+      const hasTargetRow=!!targetRow
+      // computeTargetProgress returns null when targetRow is falsy, but we still
+      // need disbursed/login totals for agents with no target set — pass a
+      // synthetic zero target/workingDays row so the reducers still run; the
+      // target-dependent fields (shortfalls, daily-needed) come out as 0 for
+      // those agents and are overridden to '—' below via canCompute.
+      const progress=computeTargetProgress(leads, targetRow||{monthly_disbursement_target:0,working_days:0})
+      const target=progress.target
+      const workingDays=progress.workingDays
+      const disbursed=progress.disbursedThisMonth
+      const login=progress.loggedThisMonth
+      const canCompute=hasTargetRow&&target>0 // guards division by zero when no target / target is 0
       const achievementPct=canCompute?(disbursed/target*100):null
       const pending=canCompute?Math.max(target-disbursed,0):null
+      const dailyLoginNeeded=canCompute?progress.requiredDailyLogin:null
+      const dailyDisbNeeded=canCompute?progress.requiredDailyDisbursement:null
       let pacePct=null
       if(canCompute&&workingDays>0) pacePct=(workingDaysElapsed(workingDays)/workingDays)*100
       let barColor='#CBD5E1' // grey — no target set
@@ -6416,8 +6422,19 @@ export default function Dashboard({ session }) {
         else if((pacePct-achievementPct)<=15) barColor='#D97706' // within 15pts behind
         else barColor='#DC2626' // more than 15pts behind
       }
-      return {agent,hasTargetRow:!!targetRow,target,canCompute,disbursed,login,achievementPct,pending,barColor}
+      return {agent,hasTargetRow,target,canCompute,disbursed,login,achievementPct,pending,barColor,dailyLoginNeeded,dailyDisbNeeded}
     })
+
+    // Rank by achievement % descending — independent of whatever column the table
+    // is currently sorted by. Agents with no target set are excluded (unranked).
+    const achievementRanked=[...agentTargetRows].sort((a,b)=>{
+      if(a.canCompute&&!b.canCompute) return -1
+      if(!a.canCompute&&b.canCompute) return 1
+      if(!a.canCompute&&!b.canCompute) return 0
+      return b.achievementPct-a.achievementPct
+    })
+    const targetRankMap={}
+    achievementRanked.forEach((row,i)=>{ if(row.canCompute) targetRankMap[row.agent.id]=i+1 })
 
     const targetSortValue=(row,key)=>{
       switch(key){
@@ -6807,6 +6824,9 @@ export default function Dashboard({ session }) {
       )}
 
       <div className="page-body">
+        {/* Hidden per request — visual only, `stats` state/fetch above is still live
+            and untouched for later reuse/redesign. */}
+        {false && (
         <div className="stats-grid">
           {[
             {icon:<IconUsers size={18} color="#185FA5"/>,label:'Total Leads',value:stats.totalLeads,color:'#185FA5',bg:'#E6F1FB'},
@@ -6820,8 +6840,12 @@ export default function Dashboard({ session }) {
             </div>
           ))}
         </div>
+        )}
 
         {/* ══════════ TEAM TARGETS ══════════ */}
+        {/* Hidden per request — visual only, orgTarget/orgDisbursed/orgPending/
+            orgAchievementPct below are still live and used by the chart+table. */}
+        {false && (
         <div className="stats-grid" style={{marginBottom:20}}>
           {[
             {icon:<IconChartBar size={18} color="#185FA5"/>,label:'Total Org Target',value:'₹'+orgTarget.toLocaleString('en-IN'),color:'#185FA5',bg:'#E6F1FB'},
@@ -6836,6 +6860,7 @@ export default function Dashboard({ session }) {
             </div>
           ))}
         </div>
+        )}
 
         <div className="card" style={{marginBottom:20}}>
           <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><IconChartBar size={15} strokeWidth={1.6}/>Team Targets — {tgtMonthStr}</h3></div>
@@ -6843,10 +6868,29 @@ export default function Dashboard({ session }) {
             ?<div className="empty-state" style={{padding:24}}><p>Loading team targets…</p></div>
             :agentTargetRows.length===0
               ?<div className="empty-state" style={{padding:24}}><p>No agents found</p></div>
-              :<div style={{overflowX:'auto'}}>
+              :<>
+                {/* ── Horizontal bar chart: Disbursed MTD vs Target, one bar per active agent ── */}
+                <div style={{padding:'16px 20px 4px'}}>
+                  {achievementRanked.map(row=>{
+                    const pct=row.canCompute?Math.min(100,Math.max(0,row.achievementPct)):0
+                    return (
+                      <div key={row.agent.id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                        <div style={{width:130,fontSize:12,color:'#4A5568',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:0}} title={row.agent.full_name}>{row.agent.full_name}</div>
+                        <div style={{flex:1,background:'#F1F5F9',borderRadius:6,height:14,overflow:'hidden'}}>
+                          <div style={{width:pct+'%',height:'100%',background:row.barColor,borderRadius:6,transition:'width 0.3s'}}/>
+                        </div>
+                        <div style={{width:170,fontSize:11,color:'#718096',textAlign:'right',flexShrink:0,whiteSpace:'nowrap'}}>
+                          {row.canCompute?`₹${row.disbursed.toLocaleString('en-IN')} / ₹${row.target.toLocaleString('en-IN')}`:'No target set'}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead>
                     <tr style={{background:'#F9FAFB'}}>
+                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Rank</th>
                       {[
                         {key:'name',label:'Agent'},
                         {key:'target',label:'Target'},
@@ -6860,12 +6904,23 @@ export default function Dashboard({ session }) {
                           {col.label}{targetSortKey===col.key?(targetSortDir==='asc'?' ▲':' ▼'):''}
                         </th>
                       ))}
+                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Login Needed</th>
+                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Disbursement Needed</th>
                       <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Progress</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedTargetRows.map(row=>(
+                    {sortedTargetRows.map(row=>{
+                      const rank=targetRankMap[row.agent.id]||null
+                      return(
                       <tr key={row.agent.id} style={{borderBottom:'1px solid #F7FAFC'}}>
+                        <td style={{padding:'11px 14px',fontSize:13}}>
+                          {rank===1&&<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥇 #1</span>}
+                          {rank===2&&<span style={{background:'#F3F4F6',color:'#374151',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥈 #2</span>}
+                          {rank===3&&<span style={{background:'#FBEAD9',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥉 #3</span>}
+                          {rank>3&&<span style={{color:'#A0AEC0',fontSize:12}}>#{rank}</span>}
+                          {!rank&&<span style={{color:'#CBD5E1',fontSize:12}}>—</span>}
+                        </td>
                         <td style={{padding:'11px 14px',fontSize:13,color:'#2D3748',fontWeight:500}}>{row.agent.full_name}</td>
                         <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>
                           {row.hasTargetRow
@@ -6876,16 +6931,20 @@ export default function Dashboard({ session }) {
                         <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>₹{row.login.toLocaleString('en-IN')}</td>
                         <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.achievementPct==null?'—':row.achievementPct.toFixed(1)+'%'}</td>
                         <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.pending==null?'—':'₹'+row.pending.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.dailyLoginNeeded==null?'—':'₹'+Math.round(row.dailyLoginNeeded).toLocaleString('en-IN')}</td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.dailyDisbNeeded==null?'—':'₹'+Math.round(row.dailyDisbNeeded).toLocaleString('en-IN')}</td>
                         <td style={{padding:'11px 14px',minWidth:140}}>
                           <div style={{background:'#F1F5F9',borderRadius:6,height:8,overflow:'hidden'}}>
                             <div style={{width:Math.min(100,Math.max(0,row.achievementPct||0))+'%',height:'100%',background:row.barColor,borderRadius:6}}/>
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
           }
         </div>
 
