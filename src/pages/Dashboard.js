@@ -86,6 +86,71 @@ const STATUS_OPTIONS = ['New','Interested','Callback','Login','Approved','Disbur
 // reminder engine's notion of "now".
 const istToday = () => nowIST().slice(0,10)
 
+// Finds when a lead entered `status`, using the most recent matching stage_history
+// entry; falls back to updated_at for pre-trigger leads currently sitting in that status.
+// Module-level (not just AgentDashboard-local) so admin-side aggregations can reuse
+// the exact same status-change logic instead of re-deriving it and drifting.
+const getStatusChangeTime=(lead,status)=>{
+  const hist=Array.isArray(lead.stage_history)?lead.stage_history:[]
+  for(let i=hist.length-1;i>=0;i--){
+    if(hist[i]&&hist[i].to===status&&hist[i].at) return new Date(hist[i].at)
+  }
+  if(lead.status===status) return new Date(lead.updated_at||lead.created_at)
+  return null
+}
+
+// Amount helpers shared between the agent-side pipeline stats and the admin-side
+// Team Targets rollup — keep these in one place so the two never drift again
+// (they did once already: login/disbursed totals disagreed between agent and admin views).
+const loginAmt=l=>Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0
+const disbAmt =l=>Number(l.disbursed_amount)||0
+
+// Computes the current month's target-vs-achieved numbers for the agent target widget
+// (Part 4) and the disbursement celebration popup (Part 5) — both read from the same
+// source of truth. Module-level so the admin Team Targets section can reuse it too.
+const computeTargetProgress=(leads,targetRow)=>{
+  if(!targetRow) return null
+  const monthStr=istToday().slice(0,7)
+  const [yy,mm]=monthStr.split('-').map(Number)
+  const monthStart=new Date(yy,mm-1,1)
+  const monthEndExclusive=new Date(yy,mm,1)
+  const target=Number(targetRow.monthly_disbursement_target)||0
+  const workingDays=Number(targetRow.working_days)||0
+  const monthlyLoginTarget=target*1.3
+
+  const disbursedThisMonth=leads.reduce((sum,l)=>{
+    if(l.status!=='Disbursed') return sum
+    const t=getStatusChangeTime(l,'Disbursed')
+    if(!t||t<monthStart||t>=monthEndExclusive) return sum
+    return sum+disbAmt(l)
+  },0)
+
+  const loggedThisMonth=leads.reduce((sum,l)=>{
+    const t=getStatusChangeTime(l,'Login')
+    if(!t||t<monthStart||t>=monthEndExclusive) return sum
+    return sum+loginAmt(l)
+  },0)
+
+  const todayDay=Number(istToday().slice(8,10))
+  let elapsedWorkingDays=0
+  for(let day=1;day<todayDay;day++){
+    if(new Date(yy,mm-1,day).getDay()!==0) elapsedWorkingDays++
+  }
+  elapsedWorkingDays=Math.min(elapsedWorkingDays,workingDays)
+  const remainingWorkingDays=Math.max(workingDays-elapsedWorkingDays,1)
+
+  const disbursementShortfall=Math.max(target-disbursedThisMonth,0)
+  const loginShortfall=Math.max(monthlyLoginTarget-loggedThisMonth,0)
+  const requiredDailyDisbursement=disbursementShortfall/remainingWorkingDays
+  const requiredDailyLogin=loginShortfall/remainingWorkingDays
+
+  return {
+    target,workingDays,monthlyLoginTarget,disbursedThisMonth,loggedThisMonth,
+    elapsedWorkingDays,remainingWorkingDays,disbursementShortfall,loginShortfall,
+    requiredDailyDisbursement,requiredDailyLogin,
+  }
+}
+
 const TIME_OPTIONS = (()=>{
   const opts=[]
   for(let h=9;h<=21;h++){
@@ -1097,62 +1162,6 @@ function AgentDashboard({ userId }) {
   checkRemindersRef.current = checkReminders
   fetchCallbackTasksRef.current = fetchCallbackTasks
 
-  // Finds when a lead entered `status`, using the most recent matching stage_history
-  // entry; falls back to updated_at for pre-trigger leads currently sitting in that status.
-  const getStatusChangeTime=(lead,status)=>{
-    const hist=Array.isArray(lead.stage_history)?lead.stage_history:[]
-    for(let i=hist.length-1;i>=0;i--){
-      if(hist[i]&&hist[i].to===status&&hist[i].at) return new Date(hist[i].at)
-    }
-    if(lead.status===status) return new Date(lead.updated_at||lead.created_at)
-    return null
-  }
-
-  // Computes the current month's target-vs-achieved numbers for the target widget (Part 4)
-  // and the disbursement celebration popup (Part 5) — both read from the same source of truth.
-  const computeTargetProgress=(leads,targetRow)=>{
-    if(!targetRow) return null
-    const monthStr=istToday().slice(0,7)
-    const [yy,mm]=monthStr.split('-').map(Number)
-    const monthStart=new Date(yy,mm-1,1)
-    const monthEndExclusive=new Date(yy,mm,1)
-    const target=Number(targetRow.monthly_disbursement_target)||0
-    const workingDays=Number(targetRow.working_days)||0
-    const monthlyLoginTarget=target*1.3
-
-    const disbursedThisMonth=leads.reduce((sum,l)=>{
-      if(l.status!=='Disbursed') return sum
-      const t=getStatusChangeTime(l,'Disbursed')
-      if(!t||t<monthStart||t>=monthEndExclusive) return sum
-      return sum+(Number(l.disbursed_amount)||0)
-    },0)
-
-    const loggedThisMonth=leads.reduce((sum,l)=>{
-      const t=getStatusChangeTime(l,'Login')
-      if(!t||t<monthStart||t>=monthEndExclusive) return sum
-      return sum+(Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0)
-    },0)
-
-    const todayDay=Number(istToday().slice(8,10))
-    let elapsedWorkingDays=0
-    for(let day=1;day<todayDay;day++){
-      if(new Date(yy,mm-1,day).getDay()!==0) elapsedWorkingDays++
-    }
-    elapsedWorkingDays=Math.min(elapsedWorkingDays,workingDays)
-    const remainingWorkingDays=Math.max(workingDays-elapsedWorkingDays,1)
-
-    const disbursementShortfall=Math.max(target-disbursedThisMonth,0)
-    const loginShortfall=Math.max(monthlyLoginTarget-loggedThisMonth,0)
-    const requiredDailyDisbursement=disbursementShortfall/remainingWorkingDays
-    const requiredDailyLogin=loginShortfall/remainingWorkingDays
-
-    return {
-      target,workingDays,monthlyLoginTarget,disbursedThisMonth,loggedThisMonth,
-      elapsedWorkingDays,remainingWorkingDays,disbursementShortfall,loginShortfall,
-      requiredDailyDisbursement,requiredDailyLogin,
-    }
-  }
-
   const computePipelineStats=(leads)=>{
     const todayStart=new Date(); todayStart.setHours(0,0,0,0)
     const monthStart=new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0)
@@ -1166,8 +1175,6 @@ function AgentDashboard({ userId }) {
       monthlyLogins:   monthLoginLeads.length,
       monthlyDisbursed:monthDisbLeads.length,
     }
-    const loginAmt=l=>Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0
-    const disbAmt =l=>Number(l.disbursed_amount)||0
     setPipelineAmounts({
       todayLogins:     todayLoginLeads.reduce((s,l)=>s+loginAmt(l),0),
       todayDisbursed:  todayDisbLeads.reduce((s,l)=>s+disbAmt(l),0),
@@ -6330,6 +6337,115 @@ export default function Dashboard({ session }) {
     const [showBell,setShowBell]         = useState(false)
     const [adminToast,setAdminToast]     = useState(null)
 
+    // ── Team Targets (org-wide) ── dedicated fetch: the existing allLeads/stats
+    // fetch above only selects id/status/full_name (stats-only, intentionally lean),
+    // so it can't drive per-agent disbursed/login totals. This pulls the fields
+    // Team Targets actually needs, plus all agent profiles and this month's
+    // agent_monthly_targets rows (org-wide, not filtered by agent_id).
+    const [targetLeads,setTargetLeads]   = useState([])
+    const [targetAgents,setTargetAgents] = useState([])
+    const [allTargets,setAllTargets]     = useState({})
+    const [targetsLoading,setTargetsLoading] = useState(true)
+    const [targetSortKey,setTargetSortKey] = useState('pending')
+    const [targetSortDir,setTargetSortDir] = useState('desc')
+
+    const fetchTeamTargets=async()=>{
+      setTargetsLoading(true)
+      const monthStr=istToday().slice(0,7)
+      const[leadsR,agentsR,targetsR]=await Promise.all([
+        supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,stage_history,updated_at,created_at'),
+        supabase.from('profiles').select('id,full_name,role,status').eq('role','agent'),
+        supabase.from('agent_monthly_targets').select('*').eq('month',monthStr),
+      ])
+      setTargetLeads(leadsR.data||[])
+      setTargetAgents(agentsR.data||[])
+      const tMap={}
+      ;(targetsR.data||[]).forEach(t=>{ tMap[t.agent_id]=t })
+      setAllTargets(tMap)
+      setTargetsLoading(false)
+    }
+
+    useEffect(()=>{ fetchTeamTargets() },[])
+
+    const toggleTargetSort=(key)=>{
+      if(targetSortKey===key) setTargetSortDir(d=>d==='asc'?'desc':'asc')
+      else { setTargetSortKey(key); setTargetSortDir('desc') }
+    }
+
+    // Derived Team Targets numbers — recomputed from state on every render (same
+    // un-memoized pattern computeTargetProgress already uses on the agent side).
+    const tgtMonthStr=istToday().slice(0,7)
+    const [tgtYY,tgtMM]=tgtMonthStr.split('-').map(Number)
+    const tgtMonthStart=new Date(tgtYY,tgtMM-1,1)
+    const tgtMonthEndExclusive=new Date(tgtYY,tgtMM,1)
+    const tgtDaysInMonth=new Date(tgtYY,tgtMM,0).getDate()
+    const tgtTodayDate=Number(istToday().slice(8,10))
+    const calendarDaysLeft=Math.max(tgtDaysInMonth-tgtTodayDate,0)
+    const workingDaysElapsed=(totalWorkingDays)=>{
+      let e=0
+      for(let day=1;day<tgtTodayDate;day++){ if(new Date(tgtYY,tgtMM-1,day).getDay()!==0) e++ }
+      return Math.min(e,totalWorkingDays)
+    }
+
+    const agentTargetRows=targetAgents.map(agent=>{
+      const leads=targetLeads.filter(l=>l.assigned_to===agent.id)
+      const disbursed=leads.reduce((sum,l)=>{
+        if(l.status!=='Disbursed') return sum
+        const t=getStatusChangeTime(l,'Disbursed')
+        if(!t||t<tgtMonthStart||t>=tgtMonthEndExclusive) return sum
+        return sum+disbAmt(l)
+      },0)
+      const login=leads.reduce((sum,l)=>{
+        if(l.status!=='Login') return sum
+        const t=getStatusChangeTime(l,'Login')
+        if(!t||t<tgtMonthStart||t>=tgtMonthEndExclusive) return sum
+        return sum+loginAmt(l)
+      },0)
+      const targetRow=allTargets[agent.id]||null
+      const target=Number(targetRow?.monthly_disbursement_target)||0
+      const workingDays=Number(targetRow?.working_days)||0
+      const canCompute=target>0 // guards division by zero when no target / target is 0
+      const achievementPct=canCompute?(disbursed/target*100):null
+      const pending=canCompute?Math.max(target-disbursed,0):null
+      let pacePct=null
+      if(canCompute&&workingDays>0) pacePct=(workingDaysElapsed(workingDays)/workingDays)*100
+      let barColor='#CBD5E1' // grey — no target set
+      if(canCompute){
+        if(pacePct==null) barColor='#185FA5' // target set but no working days to pace against
+        else if(achievementPct>=pacePct) barColor='#16A34A' // on/ahead of pace
+        else if((pacePct-achievementPct)<=15) barColor='#D97706' // within 15pts behind
+        else barColor='#DC2626' // more than 15pts behind
+      }
+      return {agent,hasTargetRow:!!targetRow,target,canCompute,disbursed,login,achievementPct,pending,barColor}
+    })
+
+    const targetSortValue=(row,key)=>{
+      switch(key){
+        case 'name':        return row.agent.full_name||''
+        case 'target':      return row.target
+        case 'disbursed':   return row.disbursed
+        case 'login':       return row.login
+        case 'achievement': return row.achievementPct==null?-1:row.achievementPct
+        case 'pending':     return row.pending==null?-1:row.pending
+        default:            return 0
+      }
+    }
+    const sortedTargetRows=[...agentTargetRows].sort((a,b)=>{
+      const av=targetSortValue(a,targetSortKey), bv=targetSortValue(b,targetSortKey)
+      if(typeof av==='string') return targetSortDir==='asc'?av.localeCompare(bv):bv.localeCompare(av)
+      return targetSortDir==='asc'?av-bv:bv-av
+    })
+
+    const orgTarget=Object.values(allTargets).reduce((s,t)=>s+(Number(t.monthly_disbursement_target)||0),0)
+    const orgDisbursed=targetLeads.reduce((sum,l)=>{
+      if(l.status!=='Disbursed') return sum
+      const t=getStatusChangeTime(l,'Disbursed')
+      if(!t||t<tgtMonthStart||t>=tgtMonthEndExclusive) return sum
+      return sum+disbAmt(l)
+    },0)
+    const orgPending=Math.max(orgTarget-orgDisbursed,0)
+    const orgAchievementPct=orgTarget>0?(orgDisbursed/orgTarget*100):null
+
     const showAdminToast=(msg)=>{ setAdminToast(msg); setTimeout(()=>setAdminToast(null),5000) }
 
     const fetchAdminNotifs=async()=>{
@@ -6704,6 +6820,75 @@ export default function Dashboard({ session }) {
             </div>
           ))}
         </div>
+
+        {/* ══════════ TEAM TARGETS ══════════ */}
+        <div className="stats-grid" style={{marginBottom:20}}>
+          {[
+            {icon:<IconChartBar size={18} color="#185FA5"/>,label:'Total Org Target',value:'₹'+orgTarget.toLocaleString('en-IN'),color:'#185FA5',bg:'#E6F1FB'},
+            {icon:<IconCircleCheck size={18} color="#0F6E56"/>,label:'Total Disbursed MTD',value:'₹'+orgDisbursed.toLocaleString('en-IN'),color:'#0F6E56',bg:'#E1F5EE'},
+            {icon:<IconAlertTriangle size={18} color="#854F0B"/>,label:'Total Pending',value:'₹'+orgPending.toLocaleString('en-IN'),color:'#854F0B',bg:'#FAEEDA'},
+            {icon:<IconChartBar size={18} color="#534AB7"/>,label:'Org Achievement %',value:orgAchievementPct==null?'—':orgAchievementPct.toFixed(1)+'%',color:'#534AB7',bg:'#EEEDFE'},
+            {icon:<IconClockHour4 size={18} color="#A32D2D"/>,label:'Calendar Days Left',value:calendarDaysLeft,color:'#A32D2D',bg:'#FCEBEB'},
+          ].map(s=>(
+            <div key={s.label} className="stat-card">
+              <div className='stat-icon' style={{background:s.bg}}>{s.icon}</div>
+              <div className='stat-info'><h3 style={{color:s.color}}>{s.value}</h3><p>{s.label}</p></div>
+            </div>
+          ))}
+        </div>
+
+        <div className="card" style={{marginBottom:20}}>
+          <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><IconChartBar size={15} strokeWidth={1.6}/>Team Targets — {tgtMonthStr}</h3></div>
+          {targetsLoading
+            ?<div className="empty-state" style={{padding:24}}><p>Loading team targets…</p></div>
+            :agentTargetRows.length===0
+              ?<div className="empty-state" style={{padding:24}}><p>No agents found</p></div>
+              :<div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse'}}>
+                  <thead>
+                    <tr style={{background:'#F9FAFB'}}>
+                      {[
+                        {key:'name',label:'Agent'},
+                        {key:'target',label:'Target'},
+                        {key:'disbursed',label:'Disbursed MTD'},
+                        {key:'login',label:'Login MTD'},
+                        {key:'achievement',label:'Achievement %'},
+                        {key:'pending',label:'Pending ₹'},
+                      ].map(col=>(
+                        <th key={col.key} onClick={()=>toggleTargetSort(col.key)}
+                          style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>
+                          {col.label}{targetSortKey===col.key?(targetSortDir==='asc'?' ▲':' ▼'):''}
+                        </th>
+                      ))}
+                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Progress</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedTargetRows.map(row=>(
+                      <tr key={row.agent.id} style={{borderBottom:'1px solid #F7FAFC'}}>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#2D3748',fontWeight:500}}>{row.agent.full_name}</td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>
+                          {row.hasTargetRow
+                            ?'₹'+row.target.toLocaleString('en-IN')
+                            :<span style={{background:'#F3F4F6',color:'#6B7280',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:500}}>Not set</span>}
+                        </td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>₹{row.disbursed.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>₹{row.login.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.achievementPct==null?'—':row.achievementPct.toFixed(1)+'%'}</td>
+                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.pending==null?'—':'₹'+row.pending.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'11px 14px',minWidth:140}}>
+                          <div style={{background:'#F1F5F9',borderRadius:6,height:8,overflow:'hidden'}}>
+                            <div style={{width:Math.min(100,Math.max(0,row.achievementPct||0))+'%',height:'100%',background:row.barColor,borderRadius:6}}/>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          }
+        </div>
+
         <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
           <div className="card">
             <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><IconPhoneIncoming size={15} strokeWidth={1.6}/>Recent Calls</h3></div>
