@@ -32,6 +32,13 @@ const BANKS = [
 
 const UPSERT_BATCH_SIZE = 500;
 
+function dbNormalize(name) {
+  return String(name || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .trim();
+}
+
 function scoreNameHeader(h) {
   h = String(h || '').toLowerCase();
   if (/sr\.?\s*no|^no$|s\.\s*no/.test(h)) return -1;
@@ -289,13 +296,16 @@ function BankUploadCard({ bank }) {
     setErrorText(null);
     try {
       const { nameIdx, catIdx, dataRows, sheetName } = mapping;
-      const clean = [];
+      const seen = new Map(); // normalized name -> row
       for (const r of dataRows) {
         const name = String(r[nameIdx] || '').trim();
         if (!name) continue;
         const cat = String(r[catIdx] || '').trim();
-        clean.push({ bank: bank.id, company_name: name, category: cat, source_sheet: sheetName });
+        const key = dbNormalize(name);
+        if (!key) continue;
+        seen.set(key, { bank: bank.id, company_name: name, category: cat, source_sheet: sheetName });
       }
+      const clean = Array.from(seen.values());
 
       const total = clean.length;
       let done = 0;
