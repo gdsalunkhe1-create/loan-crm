@@ -152,6 +152,60 @@ const computeTargetProgress=(leads,targetRow)=>{
   }
 }
 
+// Compact ₹ formatter (₹1.2Cr / ₹44.99L / ₹12K) — module-level so the agent-side
+// "🏆 Top Performers" widget and the admin Team Targets leaderboard render amounts
+// identically instead of drifting into two slightly different formatters.
+const fmtCompactCurrency=(v)=>{
+  const n=Number(v)
+  if(!n) return '-'
+  if(n>=10000000){
+    const c=n/10000000
+    const s=c%1===0?String(c):c.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
+    return `₹${s}Cr`
+  }
+  if(n>=100000){
+    const l=n/100000
+    const s=l%1===0?String(l):l.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
+    return `₹${s}L`
+  }
+  if(n>=1000){
+    const k=n/1000
+    const s=k%1===0?String(k):k.toFixed(1).replace(/\.0$/,'')
+    return `₹${s}K`
+  }
+  return `₹${n}`
+}
+
+// This month's Disbursed-leads leaderboard, org-wide, active agents only, sorted by
+// amount descending — the exact query/aggregation the agent-side "🏆 Top Performers"
+// widget already uses (fetchLeaderboard). Module-level so the admin Team Targets
+// section can reuse it verbatim instead of reimplementing it and drifting.
+const fetchLeaderboardRows=async()=>{
+  const monthStr=istToday().slice(0,7)
+  const [yy,mm]=monthStr.split('-').map(Number)
+  const monthStart=new Date(yy,mm-1,1)
+  const monthEndExclusive=new Date(yy,mm,1)
+  const{data:disbursedLeads}=await supabase.from('leads').select('assigned_to,disbursed_amount,status,stage_history,updated_at').eq('status','Disbursed').not('disbursed_amount','is',null)
+  if(!disbursedLeads) return null // query failed — callers should leave prior state untouched, matching the original inline implementation
+  const totals={}
+  disbursedLeads.forEach(l=>{
+    if(!l.assigned_to) return
+    const t=getStatusChangeTime(l,'Disbursed')
+    if(!t||t<monthStart||t>=monthEndExclusive) return
+    totals[l.assigned_to]=(totals[l.assigned_to]||0)+(Number(l.disbursed_amount)||0)
+  })
+  const agentIds=Object.keys(totals)
+  if(agentIds.length===0) return []
+  const{data:profs}=await supabase.from('profiles').select('id,full_name').eq('role','agent').eq('status','active').in('id',agentIds)
+  return agentIds
+    .filter(id=>profs?.some(p=>p.id===id))
+    .map(id=>({
+      agentId:id,
+      name:profs.find(p=>p.id===id)?.full_name||'Agent',
+      amount:totals[id],
+    })).sort((a,b)=>b.amount-a.amount)
+}
+
 const TIME_OPTIONS = (()=>{
   const opts=[]
   for(let h=9;h<=21;h++){
@@ -1078,30 +1132,8 @@ function AgentDashboard({ userId }) {
 
   const fetchLeaderboard=async()=>{
     setLeaderboardLoading(true)
-    const monthStr=istToday().slice(0,7)
-    const [yy,mm]=monthStr.split('-').map(Number)
-    const monthStart=new Date(yy,mm-1,1)
-    const monthEndExclusive=new Date(yy,mm,1)
-    const{data:disbursedLeads}=await supabase.from('leads').select('assigned_to,disbursed_amount,status,stage_history,updated_at').eq('status','Disbursed').not('disbursed_amount','is',null)
-    if(!disbursedLeads){ setLeaderboardLoading(false); return }
-    const totals={}
-    disbursedLeads.forEach(l=>{
-      if(!l.assigned_to) return
-      const t=getStatusChangeTime(l,'Disbursed')
-      if(!t||t<monthStart||t>=monthEndExclusive) return
-      totals[l.assigned_to]=(totals[l.assigned_to]||0)+(Number(l.disbursed_amount)||0)
-    })
-    const agentIds=Object.keys(totals)
-    if(agentIds.length===0){ setLeaderboard([]); setLeaderboardLoading(false); return }
-    const{data:profs}=await supabase.from('profiles').select('id,full_name').eq('role','agent').eq('status','active').in('id',agentIds)
-    const rows=agentIds
-      .filter(id=>profs?.some(p=>p.id===id))
-      .map(id=>({
-        agentId:id,
-        name:profs.find(p=>p.id===id)?.full_name||'Agent',
-        amount:totals[id],
-      })).sort((a,b)=>b.amount-a.amount)
-    setLeaderboard(rows)
+    const rows=await fetchLeaderboardRows()
+    if(rows) setLeaderboard(rows)
     setLeaderboardLoading(false)
   }
 
@@ -1672,27 +1704,6 @@ function AgentDashboard({ userId }) {
     const title=ob.obligation_type||'New Obligation'
     const bank=ob.bank_name?` — ${ob.bank_name}`:''
     return title+bank
-  }
-
-  const fmtCompactCurrency=(v)=>{
-    const n=Number(v)
-    if(!n) return '-'
-    if(n>=10000000){
-      const c=n/10000000
-      const s=c%1===0?String(c):c.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
-      return `₹${s}Cr`
-    }
-    if(n>=100000){
-      const l=n/100000
-      const s=l%1===0?String(l):l.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')
-      return `₹${s}L`
-    }
-    if(n>=1000){
-      const k=n/1000
-      const s=k%1===0?String(k):k.toFixed(1).replace(/\.0$/,'')
-      return `₹${s}K`
-    }
-    return `₹${n}`
   }
 
   const obligationTypeAbbrev=(t)=>{
@@ -6351,15 +6362,45 @@ export default function Dashboard({ session }) {
     const [targetSortKey,setTargetSortKey] = useState('pending')
     const [targetSortDir,setTargetSortDir] = useState('desc')
 
+    // Same leaderboard the agent-side "🏆 Top Performers" widget shows — sourced
+    // from the shared fetchLeaderboardRows() so the two can never disagree.
+    const [orgLeaderboard,setOrgLeaderboard] = useState([])
+    const [orgLeaderboardLoading,setOrgLeaderboardLoading] = useState(true)
+    const fetchOrgLeaderboard=async()=>{
+      setOrgLeaderboardLoading(true)
+      const rows=await fetchLeaderboardRows()
+      if(rows) setOrgLeaderboard(rows)
+      setOrgLeaderboardLoading(false)
+    }
+    useEffect(()=>{ fetchOrgLeaderboard() },[])
+
+    // Supabase's REST API caps unpaginated selects at 1000 rows — this was already
+    // hit and fixed once for AdminPanel's own fetchLeads (see git history: "fix:
+    // paginate admin leads fetch past Supabase's 1000-row default cap"). Same
+    // pagination pattern here: loop on .range(from,from+999), accumulate, stop
+    // once a page comes back short. Without this, agent disbursed/login MTD
+    // totals silently undercount past the 1000th lead.
+    const fetchAllTargetLeads=async()=>{
+      let all=[],from=0,ok=true
+      while(true){
+        const{data,error}=await supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,stage_history,updated_at,created_at').range(from,from+999)
+        if(error||!data){ ok=false; break }
+        all=[...all,...data]
+        if(data.length<1000) break
+        from+=1000
+      }
+      return ok?all:[]
+    }
+
     const fetchTeamTargets=async()=>{
       setTargetsLoading(true)
       const monthStr=istToday().slice(0,7)
-      const[leadsR,agentsR,targetsR]=await Promise.all([
-        supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,stage_history,updated_at,created_at'),
+      const[leadsAll,agentsR,targetsR]=await Promise.all([
+        fetchAllTargetLeads(),
         supabase.from('profiles').select('id,full_name,role,status').eq('role','agent').eq('status','active'),
         supabase.from('agent_monthly_targets').select('*').eq('month',monthStr),
       ])
-      setTargetLeads(leadsR.data||[])
+      setTargetLeads(leadsAll)
       setTargetAgents(agentsR.data||[])
       const tMap={}
       ;(targetsR.data||[]).forEach(t=>{ tMap[t.agent_id]=t })
@@ -6383,6 +6424,7 @@ export default function Dashboard({ session }) {
     const tgtDaysInMonth=new Date(tgtYY,tgtMM,0).getDate()
     const tgtTodayDate=Number(istToday().slice(8,10))
     const calendarDaysLeft=Math.max(tgtDaysInMonth-tgtTodayDate,0)
+    const orgMonthNameLabel=new Date(tgtYY,tgtMM-1,1).toLocaleString('en-US',{month:'long'})
     const workingDaysElapsed=(totalWorkingDays)=>{
       let e=0
       for(let day=1;day<tgtTodayDate;day++){ if(new Date(tgtYY,tgtMM-1,day).getDay()!==0) e++ }
@@ -6864,7 +6906,35 @@ export default function Dashboard({ session }) {
         </div>
         )}
 
-        <div className="card" style={{marginBottom:20}}>
+        {/* ── TOP PERFORMERS — same leaderboard agents see on their own dashboard ── */}
+        {!orgLeaderboardLoading && orgLeaderboard.length>0 && (
+          <div className="card" style={{marginBottom:24}}>
+            <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}>🏆 Top Performers — {orgMonthNameLabel}</h3></div>
+            <div style={{padding:'20px 22px'}}>
+              <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:14,marginBottom:orgLeaderboard.length>3?16:0}}>
+                {orgLeaderboard.slice(0,3).map((row,i)=>(
+                  <div key={row.agentId} style={{background:i===0?'#FEF3C7':i===1?'#F1F5F9':'#FBEAD9',border:'1px solid '+(i===0?'#FDE68A':i===1?'#E2E8F0':'#F3D5B5'),borderRadius:12,padding:'18px',textAlign:'center'}}>
+                    <div style={{fontSize:28,marginBottom:6}}>{i===0?'🥇':i===1?'🥈':'🥉'}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:'#111827',marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.name}</div>
+                    <div style={{fontSize:17,fontWeight:700,color:'#065F46'}}>{fmtCompactCurrency(row.amount)}</div>
+                  </div>
+                ))}
+              </div>
+              {orgLeaderboard.length>3&&(
+                <div>
+                  {orgLeaderboard.slice(3).map((row,i)=>(
+                    <div key={row.agentId} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 6px',borderTop:'1px solid #E2E8F0',fontSize:13}}>
+                      <span style={{color:'#6B7280'}}>#{i+4} {row.name}</span>
+                      <span style={{color:'#111827',fontWeight:600}}>{fmtCompactCurrency(row.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="card" style={{marginBottom:24}}>
           <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><IconChartBar size={15} strokeWidth={1.6}/>Team Targets — {tgtMonthStr}</h3></div>
           {targetsLoading
             ?<div className="empty-state" style={{padding:24}}><p>Loading team targets…</p></div>
@@ -6872,13 +6942,13 @@ export default function Dashboard({ session }) {
               ?<div className="empty-state" style={{padding:24}}><p>No agents found</p></div>
               :<>
                 {/* ── Horizontal bar chart: Disbursed MTD vs Target, one bar per active agent ── */}
-                <div style={{padding:'16px 20px 4px'}}>
+                <div style={{padding:'22px 24px 10px'}}>
                   {achievementRanked.map(row=>{
                     const pct=row.canCompute?Math.min(100,Math.max(0,row.achievementPct)):0
                     return (
-                      <div key={row.agent.id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                      <div key={row.agent.id} style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
                         <div style={{width:130,fontSize:12,color:'#4A5568',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:0}} title={row.agent.full_name}>{row.agent.full_name}</div>
-                        <div style={{flex:1,background:'#F1F5F9',borderRadius:6,height:14,overflow:'hidden'}}>
+                        <div style={{flex:1,background:'#F1F5F9',borderRadius:6,height:16,overflow:'hidden'}}>
                           <div style={{width:pct+'%',height:'100%',background:row.barColor,borderRadius:6,transition:'width 0.3s'}}/>
                         </div>
                         <div style={{width:170,fontSize:11,color:'#718096',textAlign:'right',flexShrink:0,whiteSpace:'nowrap'}}>
@@ -6888,11 +6958,11 @@ export default function Dashboard({ session }) {
                     )
                   })}
                 </div>
-                <div style={{overflowX:'auto'}}>
+                <div style={{overflowX:'auto',padding:'8px 4px 4px'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
                   <thead>
                     <tr style={{background:'#F9FAFB'}}>
-                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Rank</th>
+                      <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Rank</th>
                       {[
                         {key:'name',label:'Agent'},
                         {key:'target',label:'Target'},
@@ -6902,13 +6972,13 @@ export default function Dashboard({ session }) {
                         {key:'pending',label:'Pending ₹'},
                       ].map(col=>(
                         <th key={col.key} onClick={()=>toggleTargetSort(col.key)}
-                          style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>
+                          style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'}}>
                           {col.label}{targetSortKey===col.key?(targetSortDir==='asc'?' ▲':' ▼'):''}
                         </th>
                       ))}
-                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Login Needed</th>
-                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Disbursement Needed</th>
-                      <th style={{padding:'10px 14px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Progress</th>
+                      <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Login Needed</th>
+                      <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Disbursement Needed</th>
+                      <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Progress</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -6916,26 +6986,26 @@ export default function Dashboard({ session }) {
                       const rank=targetRankMap[row.agent.id]||null
                       return(
                       <tr key={row.agent.id} style={{borderBottom:'1px solid #F7FAFC'}}>
-                        <td style={{padding:'11px 14px',fontSize:13}}>
+                        <td style={{padding:'14px 16px',fontSize:13}}>
                           {rank===1&&<span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥇 #1</span>}
                           {rank===2&&<span style={{background:'#F3F4F6',color:'#374151',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥈 #2</span>}
                           {rank===3&&<span style={{background:'#FBEAD9',color:'#92400E',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600}}>🥉 #3</span>}
                           {rank>3&&<span style={{color:'#A0AEC0',fontSize:12}}>#{rank}</span>}
                           {!rank&&<span style={{color:'#CBD5E1',fontSize:12}}>—</span>}
                         </td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#2D3748',fontWeight:500}}>{row.agent.full_name}</td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#2D3748',fontWeight:500}}>{row.agent.full_name}</td>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>
                           {row.hasTargetRow
                             ?'₹'+row.target.toLocaleString('en-IN')
                             :<span style={{background:'#F3F4F6',color:'#6B7280',padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:500}}>Not set</span>}
                         </td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>₹{row.disbursed.toLocaleString('en-IN')}</td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>₹{row.login.toLocaleString('en-IN')}</td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.achievementPct==null?'—':row.achievementPct.toFixed(1)+'%'}</td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.pending==null?'—':'₹'+row.pending.toLocaleString('en-IN')}</td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.dailyLoginNeeded==null?'—':'₹'+Math.round(row.dailyLoginNeeded).toLocaleString('en-IN')}</td>
-                        <td style={{padding:'11px 14px',fontSize:13,color:'#4A5568'}}>{row.dailyDisbNeeded==null?'—':'₹'+Math.round(row.dailyDisbNeeded).toLocaleString('en-IN')}</td>
-                        <td style={{padding:'11px 14px',minWidth:140}}>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>₹{row.disbursed.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>₹{row.login.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.achievementPct==null?'—':row.achievementPct.toFixed(1)+'%'}</td>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.pending==null?'—':'₹'+row.pending.toLocaleString('en-IN')}</td>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.dailyLoginNeeded==null?'—':'₹'+Math.round(row.dailyLoginNeeded).toLocaleString('en-IN')}</td>
+                        <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.dailyDisbNeeded==null?'—':'₹'+Math.round(row.dailyDisbNeeded).toLocaleString('en-IN')}</td>
+                        <td style={{padding:'14px 16px',minWidth:140}}>
                           <div style={{background:'#F1F5F9',borderRadius:6,height:8,overflow:'hidden'}}>
                             <div style={{width:Math.min(100,Math.max(0,row.achievementPct||0))+'%',height:'100%',background:row.barColor,borderRadius:6}}/>
                           </div>
