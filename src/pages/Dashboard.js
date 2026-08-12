@@ -7,6 +7,9 @@ import * as XLSX from 'xlsx'
 import { exportToExcel, parseSpreadsheet, autoMapHeaders } from '../utils/spreadsheet'
 import { IST_TZ, nowIST, parseIST, formatIST, addMinutes, compareIST, buildIST, toDbTimestamp } from '../utils/timeUtils'
 import { isOverdue, isReminderActive, isResolved, getReminderWindowStart, shouldTriggerReminder } from '../utils/reminderEngine'
+// Used only by the AdminDashboardHome Team Targets section (donut + bar charts) — no other
+// hand-rolled visual in this file should be migrated to recharts as part of this.
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 import Leads from './Leads'
 import Tasks from './Tasks'
@@ -6359,7 +6362,9 @@ export default function Dashboard({ session }) {
     const [targetAgents,setTargetAgents] = useState([])
     const [allTargets,setAllTargets]     = useState({})
     const [targetsLoading,setTargetsLoading] = useState(true)
-    const [targetSortKey,setTargetSortKey] = useState('pending')
+    // Defaults to 'achievement' desc — the same ordering targetRankMap ranks by, so the
+    // table opens with #1/#2/#3/#4 already in top-to-bottom order without a header click.
+    const [targetSortKey,setTargetSortKey] = useState('achievement')
     const [targetSortDir,setTargetSortDir] = useState('desc')
 
     // Same leaderboard the agent-side "🏆 Top Performers" widget shows — sourced
@@ -6383,7 +6388,7 @@ export default function Dashboard({ session }) {
     const fetchAllTargetLeads=async()=>{
       let all=[],from=0,ok=true
       while(true){
-        const{data,error}=await supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,stage_history,updated_at,created_at').range(from,from+999)
+        const{data,error}=await supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,loan_amount,stage_history,updated_at,created_at').range(from,from+999)
         if(error||!data){ ok=false; break }
         all=[...all,...data]
         if(data.length<1000) break
@@ -6506,6 +6511,17 @@ export default function Dashboard({ session }) {
     },0)
     const orgPending=Math.max(orgTarget-orgDisbursed,0)
     const orgAchievementPct=orgTarget>0?(orgDisbursed/orgTarget*100):null
+    // Login MTD summed the same way the per-agent rows already compute it (computeTargetProgress's
+    // loggedThisMonth), so the org total and the sum of what the table shows can never drift.
+    const orgLogin=agentTargetRows.reduce((s,r)=>s+r.login,0)
+    const orgDailyLoginNeeded=agentTargetRows.reduce((s,r)=>s+(r.dailyLoginNeeded||0),0)
+    const orgDailyDisbNeeded=agentTargetRows.reduce((s,r)=>s+(r.dailyDisbNeeded||0),0)
+    // Open pipeline — leads not yet resolved either way (excludes Disbursed/Not Interested/DND),
+    // org-wide. Sourced from the same paginated targetLeads fetch, not a new query.
+    const pipelineValue=targetLeads.reduce((sum,l)=>{
+      if(['Disbursed','Not Interested','DND'].includes(l.status)) return sum
+      return sum+(Number(l.loan_amount)||Number(l.required_loan_amount)||0)
+    },0)
 
     const showAdminToast=(msg)=>{ setAdminToast(msg); setTimeout(()=>setAdminToast(null),5000) }
 
@@ -6887,62 +6903,115 @@ export default function Dashboard({ session }) {
         )}
 
         {/* ══════════ TEAM TARGETS ══════════ */}
-        {/* Hidden per request — visual only, orgTarget/orgDisbursed/orgPending/
-            orgAchievementPct below are still live and used by the chart+table. */}
-        {false && (
-        <div className="stats-grid" style={{marginBottom:20}}>
-          {[
-            {icon:<IconChartBar size={18} color="#185FA5"/>,label:'Total Org Target',value:'₹'+orgTarget.toLocaleString('en-IN'),color:'#185FA5',bg:'#E6F1FB'},
-            {icon:<IconCircleCheck size={18} color="#0F6E56"/>,label:'Total Disbursed MTD',value:'₹'+orgDisbursed.toLocaleString('en-IN'),color:'#0F6E56',bg:'#E1F5EE'},
-            {icon:<IconAlertTriangle size={18} color="#854F0B"/>,label:'Total Pending',value:'₹'+orgPending.toLocaleString('en-IN'),color:'#854F0B',bg:'#FAEEDA'},
-            {icon:<IconChartBar size={18} color="#534AB7"/>,label:'Org Achievement %',value:orgAchievementPct==null?'—':orgAchievementPct.toFixed(1)+'%',color:'#534AB7',bg:'#EEEDFE'},
-            {icon:<IconClockHour4 size={18} color="#A32D2D"/>,label:'Calendar Days Left',value:calendarDaysLeft,color:'#A32D2D',bg:'#FCEBEB'},
-          ].map(s=>(
-            <div key={s.label} className="stat-card">
-              <div className='stat-icon' style={{background:s.bg}}>{s.icon}</div>
-              <div className='stat-info'><h3 style={{color:s.color}}>{s.value}</h3><p>{s.label}</p></div>
-            </div>
-          ))}
-        </div>
-        )}
-
-        {/* ── TOP PERFORMERS — same leaderboard agents see on their own dashboard ── */}
-        {!orgLeaderboardLoading && orgLeaderboard.length>0 && (
-          <div className="card" style={{marginBottom:24}}>
-            <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}>🏆 Top Performers — {orgMonthNameLabel}</h3></div>
-            <div style={{padding:'20px 22px'}}>
-              <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:14,marginBottom:orgLeaderboard.length>3?16:0}}>
-                {orgLeaderboard.slice(0,3).map((row,i)=>(
-                  <div key={row.agentId} style={{background:i===0?'#FEF3C7':i===1?'#F1F5F9':'#FBEAD9',border:'1px solid '+(i===0?'#FDE68A':i===1?'#E2E8F0':'#F3D5B5'),borderRadius:12,padding:'18px',textAlign:'center'}}>
-                    <div style={{fontSize:28,marginBottom:6}}>{i===0?'🥇':i===1?'🥈':'🥉'}</div>
-                    <div style={{fontSize:14,fontWeight:700,color:'#111827',marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{row.name}</div>
-                    <div style={{fontSize:17,fontWeight:700,color:'#065F46'}}>{fmtCompactCurrency(row.amount)}</div>
-                  </div>
-                ))}
-              </div>
-              {orgLeaderboard.length>3&&(
-                <div>
-                  {orgLeaderboard.slice(3).map((row,i)=>(
-                    <div key={row.agentId} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 6px',borderTop:'1px solid #E2E8F0',fontSize:13}}>
-                      <span style={{color:'#6B7280'}}>#{i+4} {row.name}</span>
-                      <span style={{color:'#111827',fontWeight:600}}>{fmtCompactCurrency(row.amount)}</span>
-                    </div>
-                  ))}
+        {/* orgTarget/orgDisbursed/orgPending/orgAchievementPct/orgLogin/pipelineValue are the
+            single source of truth (computed above from targetLeads/allTargets/agentTargetRows) —
+            everything below is a visual layer on top of them, nothing here re-derives the numbers. */}
+        <div className="stats-grid" style={{marginBottom:20,gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)'}}>
+          <div className="card" style={{margin:0}}>
+            <div className="card-header"><h3 style={{fontSize:13}}>Organizational Target (MTD)</h3></div>
+            <div style={{padding:'18px 20px',display:'flex',flexDirection:'column',alignItems:'center'}}>
+              <div style={{position:'relative',width:170,height:170}}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={orgTarget>0?[{name:'Disbursed',value:orgDisbursed},{name:'Remaining',value:orgPending}]:[{name:'No target set',value:1}]}
+                      dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={58} outerRadius={78}
+                      startAngle={90} endAngle={-270} stroke="none">
+                      {orgTarget>0?[<Cell key="d" fill="#185FA5"/>,<Cell key="r" fill="#E2E8F0"/>]:[<Cell key="n" fill="#E2E8F0"/>]}
+                    </Pie>
+                    <Tooltip formatter={v=>fmtCompactCurrency(v)}/>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',pointerEvents:'none'}}>
+                  <div style={{fontSize:21,fontWeight:700,color:'#111827'}}>{orgAchievementPct==null?'—':orgAchievementPct.toFixed(1)+'%'}</div>
+                  <div style={{fontSize:10,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.4px'}}>Achieved</div>
                 </div>
-              )}
+              </div>
+              <div style={{marginTop:12,textAlign:'center',fontSize:13,color:'#4A5568',lineHeight:1.7}}>
+                <div>Disbursed MTD: <strong style={{color:'#111827'}}>{fmtCompactCurrency(orgDisbursed)}</strong></div>
+                <div>Total Target: <strong style={{color:'#111827'}}>{fmtCompactCurrency(orgTarget)}</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{margin:0}}>
+            <div className="card-header"><h3 style={{fontSize:13}}>Team Target (MTD)</h3></div>
+            <div style={{padding:'18px 20px',height:230}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  {name:'Disbursed',value:orgDisbursed,fill:'#0F6E56'},
+                  {name:'Login',value:orgLogin,fill:'#185FA5'},
+                  {name:'Pending',value:orgPending,fill:'#DC2626'},
+                  {name:'Target',value:orgTarget,fill:'#854F0B'},
+                ]} margin={{top:6,right:6,left:0,bottom:0}}>
+                  <XAxis dataKey="name" tick={{fontSize:11}} axisLine={{stroke:'#E2E8F0'}} tickLine={false}/>
+                  <YAxis tick={{fontSize:10}} tickFormatter={v=>fmtCompactCurrency(v)} axisLine={false} tickLine={false} width={48}/>
+                  <Tooltip formatter={v=>fmtCompactCurrency(v)}/>
+                  <Bar dataKey="value" radius={[4,4,0,0]}>
+                    {[{fill:'#0F6E56'},{fill:'#185FA5'},{fill:'#DC2626'},{fill:'#854F0B'}].map((c,i)=><Cell key={i} fill={c.fill}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card" style={{margin:0}}>
+            <div className="card-header"><h3 style={{fontSize:13}}>Pipeline Value</h3></div>
+            <div style={{padding:'18px 20px',height:230,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+              <IconChartBar size={30} color="#534AB7" strokeWidth={1.6}/>
+              <div style={{fontSize:13,color:'#4A5568',marginTop:14,textAlign:'center'}}>
+                Open Opportunities: <strong style={{fontSize:20,color:'#111827',display:'block',marginTop:4}}>{fmtCompactCurrency(pipelineValue)}</strong>
+              </div>
+              <div style={{fontSize:11,color:'#94A3B8',marginTop:10,textAlign:'center'}}>Leads not yet Disbursed, Not Interested, or DND</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── TOP PERFORMERS — same leaderboard data as the agent-side widget (fetchLeaderboardRows),
+             restyled as a compact dark banner for this admin instance only. The agent-side
+             large-card medal grid is a separate component/style and is untouched. ── */}
+        {!orgLeaderboardLoading && orgLeaderboard.length>0 && (
+          <div style={{background:'linear-gradient(135deg,#0F172A 0%,#0F766E 100%)',borderRadius:12,padding:'16px 22px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,color:'#fff'}}>
+            <div style={{fontSize:14,fontWeight:700,display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}>🏆 Top Performers — {orgMonthNameLabel}</div>
+            <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+              {orgLeaderboard.slice(0,3).map((row,i)=>(
+                <div key={row.agentId} style={{display:'flex',alignItems:'center',gap:8,background:'rgba(255,255,255,0.12)',borderRadius:20,padding:'6px 14px'}}>
+                  <span style={{fontSize:16}}>{i===0?'🥇':i===1?'🥈':'🥉'}</span>
+                  <span style={{fontSize:13,fontWeight:600,whiteSpace:'nowrap'}}>{row.name}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:'#FDE68A',whiteSpace:'nowrap'}}>{fmtCompactCurrency(row.amount)}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
+        {/* ── TEAM TARGETS banner — same dark treatment as Top Performers above, org
+             Disbursed MTD / Achievement % as a compact glance directly above the table. ── */}
+        <div style={{background:'linear-gradient(135deg,#0F172A 0%,#0F766E 100%)',borderRadius:12,padding:'16px 22px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,color:'#fff'}}>
+          <div style={{fontSize:14,fontWeight:700,display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}><IconChartBar size={15} strokeWidth={1.8}/>Team Targets — {tgtMonthStr}</div>
+          <div style={{display:'flex',gap:22,flexWrap:'wrap'}}>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:10,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.4px'}}>Disbursed MTD</div>
+              <div style={{fontSize:16,fontWeight:700}}>{fmtCompactCurrency(orgDisbursed)}</div>
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontSize:10,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.4px'}}>Achievement %</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#FDE68A'}}>{orgAchievementPct==null?'—':orgAchievementPct.toFixed(1)+'%'}</div>
+            </div>
+          </div>
+        </div>
+
         <div className="card" style={{marginBottom:24}}>
-          <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><IconChartBar size={15} strokeWidth={1.6}/>Team Targets — {tgtMonthStr}</h3></div>
+          <div className="card-header"><h3 style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><IconChartBar size={15} strokeWidth={1.6}/>Per-Agent Breakdown — {tgtMonthStr}</h3></div>
           {targetsLoading
             ?<div className="empty-state" style={{padding:24}}><p>Loading team targets…</p></div>
             :agentTargetRows.length===0
               ?<div className="empty-state" style={{padding:24}}><p>No agents found</p></div>
               :<>
-                {/* ── Horizontal bar chart: Disbursed MTD vs Target, one bar per active agent ── */}
-                <div style={{padding:'22px 24px 10px'}}>
+                {/* ── Horizontal bar chart: Disbursed MTD vs Target, one bar per active agent —
+                     per-agent detail, distinct from the org-level aggregate "Team Target (MTD)"
+                     bar chart above (Disbursed/Login/Pending/Target summed across the whole team). ── */}
+                <div style={{padding:'18px 24px 4px',fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.4px'}}>Per-Agent Progress</div>
+                <div style={{padding:'6px 24px 10px'}}>
                   {achievementRanked.map(row=>{
                     const pct=row.canCompute?Math.min(100,Math.max(0,row.achievementPct)):0
                     return (
@@ -7014,6 +7083,24 @@ export default function Dashboard({ session }) {
                       )
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr style={{background:'#EDF2F7',borderTop:'2px solid #CBD5E1'}}>
+                      <td style={{padding:'14px 16px',fontSize:13}}></td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>Total</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{orgTarget.toLocaleString('en-IN')}</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{orgDisbursed.toLocaleString('en-IN')}</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{orgLogin.toLocaleString('en-IN')}</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>{orgAchievementPct==null?'—':orgAchievementPct.toFixed(1)+'%'}</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{orgPending.toLocaleString('en-IN')}</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{Math.round(orgDailyLoginNeeded).toLocaleString('en-IN')}</td>
+                      <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{Math.round(orgDailyDisbNeeded).toLocaleString('en-IN')}</td>
+                      <td style={{padding:'14px 16px',minWidth:140}}>
+                        <div style={{background:'#E2E8F0',borderRadius:6,height:8,overflow:'hidden'}}>
+                          <div style={{width:Math.min(100,Math.max(0,orgAchievementPct||0))+'%',height:'100%',background:'#0F172A',borderRadius:6}}/>
+                        </div>
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
                 </div>
               </>
