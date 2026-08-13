@@ -6388,7 +6388,7 @@ export default function Dashboard({ session }) {
     const fetchAllTargetLeads=async()=>{
       let all=[],from=0,ok=true
       while(true){
-        const{data,error}=await supabase.from('leads').select('id,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,loan_amount,stage_history,updated_at,created_at').range(from,from+999)
+        const{data,error}=await supabase.from('leads').select('id,full_name,mobile,assigned_to,status,disbursed_amount,login_amount,required_loan_amount,eligible_amount,loan_amount,stage_history,updated_at,created_at').range(from,from+999)
         if(error||!data){ ok=false; break }
         all=[...all,...data]
         if(data.length<1000) break
@@ -6471,7 +6471,7 @@ export default function Dashboard({ session }) {
         else if((pacePct-achievementPct)<=15) barColor='#D97706' // within 15pts behind
         else barColor='#DC2626' // more than 15pts behind
       }
-      return {agent,hasTargetRow,target,canCompute,disbursed,login,achievementPct,pending,barColor,dailyLoginNeeded,dailyDisbNeeded}
+      return {agent,hasTargetRow,target,canCompute,disbursed,login,achievementPct,pending,barColor,dailyLoginNeeded,dailyDisbNeeded,pacePct}
     })
 
     // Rank by achievement % descending — independent of whatever column the table
@@ -6516,12 +6516,73 @@ export default function Dashboard({ session }) {
     const orgLogin=agentTargetRows.reduce((s,r)=>s+r.login,0)
     const orgDailyLoginNeeded=agentTargetRows.reduce((s,r)=>s+(r.dailyLoginNeeded||0),0)
     const orgDailyDisbNeeded=agentTargetRows.reduce((s,r)=>s+(r.dailyDisbNeeded||0),0)
-    // Open pipeline — leads not yet resolved either way (excludes Disbursed/Not Interested/DND),
-    // org-wide. Sourced from the same paginated targetLeads fetch, not a new query.
-    const pipelineValue=targetLeads.reduce((sum,l)=>{
-      if(['Disbursed','Not Interested','DND'].includes(l.status)) return sum
-      return sum+(Number(l.loan_amount)||Number(l.required_loan_amount)||0)
+    // STALE_STAGES (also used by checkStaleLeads below) tracks pre-Login funnel
+    // positions, not "dead" leads — New/Callback/Approved/Lead are genuinely still
+    // open, so they're carved back out for the Pipeline Value dead-status list.
+    // Declared here (rather than next to checkStaleLeads) so it's available before
+    // pipelineValue, which is computed above checkStaleLeads in this component.
+    const STALE_STAGES=['Callback','New','Approved','Ringing','Busy','Call cut','Not Required Hup','Not Required Polite','Switched Off','Lead','Voice Mail','Disbursed Other']
+
+    // Pipeline Value investigation (₹539.96Cr, see chat) found three compounding bugs:
+    //  1. Exclusion list was too narrow (Disbursed/Not Interested/DND only) — dead/
+    //     declined/no-contact statuses (Ringing, Not Required Hup, etc.), including
+    //     case/spacing variants of the same status, were still counted as "open."
+    //  2. The Transfer-reassignment flow clones a new lead row per agent by design,
+    //     so the same real customer can legitimately have multiple rows — summing
+    //     all of them double/triple-counts the same opportunity.
+    //  3. loan_amount is unvalidated free text — at least 2 rows have a date typed
+    //     in (e.g. "18072026" = 18-Jul-2026 misread as ₹1.8Cr).
+    const PIPELINE_OPEN_EXEMPT=['New','Callback','Approved','Lead'] // funnel-position, not dead — stay counted as open
+    const PIPELINE_DEAD_STAGES=[
+      ...STALE_STAGES.filter(s=>!PIPELINE_OPEN_EXEMPT.includes(s)),
+      'Disbursed','Not Interested','DND',
+      'Not Doable','Wrong Number/ Invalid Number','Wrong Number / Invalid Number','Police',
+      'Call Cut','Disbursed  Other', // case/spacing variants STALE_STAGES doesn't already cover
+    ]
+
+    // Dedupe to one row per real customer (name + normalized mobile — same
+    // normalization the CSV import dup-check already uses elsewhere in this file),
+    // keeping only the most recently updated row per group.
+    const dedupedPipelineLeads=(()=>{
+      const groups={}
+      targetLeads.forEach(l=>{
+        const key=(l.full_name||'').trim().toLowerCase()+'|'+(l.mobile||'').replace(/\D/g,'').slice(-10)
+        const existing=groups[key]
+        if(!existing){ groups[key]=l; return }
+        const lTime=new Date(l.updated_at||l.created_at||0).getTime()
+        const eTime=new Date(existing.updated_at||existing.created_at||0).getTime()
+        if(lTime>eTime) groups[key]=l
+      })
+      return Object.values(groups)
+    })()
+
+    // Flags obvious date-typo values (e.g. "18072026" parses as a finite number but
+    // is really 18-Jul-2026 in DDMMYYYY) that Number.isFinite alone wouldn't catch.
+    const isSuspectDateAmount=(raw)=>{
+      const s=String(raw||'').trim()
+      if(!/^\d{8}$/.test(s)) return false
+      const dd=parseInt(s.slice(0,2),10),mm=parseInt(s.slice(2,4),10),yyyy=parseInt(s.slice(4,8),10)
+      return dd>=1&&dd<=31&&mm>=1&&mm<=12&&yyyy>=2000&&yyyy<=2100
+    }
+    // Returns a valid parsed loan_amount, or null (nulled in-memory only, never
+    // written back to the DB) if it's non-numeric or looks like a date typo —
+    // logs which lead was affected so bad entries don't silently distort the total.
+    const parsedLoanAmount=(l)=>{
+      const raw=l.loan_amount
+      if(raw==null||raw==='') return null
+      const n=Number(raw)
+      if(!Number.isFinite(n)||isSuspectDateAmount(raw)){
+        console.warn('[Pipeline Value] skipping invalid loan_amount for lead',l.id,'value:',raw)
+        return null
+      }
+      return n>0?n:null
+    }
+
+    const pipelineValue=dedupedPipelineLeads.reduce((sum,l)=>{
+      if(PIPELINE_DEAD_STAGES.includes(l.status)) return sum
+      return sum+(parsedLoanAmount(l)??(Number(l.required_loan_amount)||0))
     },0)
+    const pipelineLeadCount=dedupedPipelineLeads.filter(l=>!PIPELINE_DEAD_STAGES.includes(l.status)).length
 
     const showAdminToast=(msg)=>{ setAdminToast(msg); setTimeout(()=>setAdminToast(null),5000) }
 
@@ -6543,8 +6604,6 @@ export default function Dashboard({ session }) {
       setAdminNotifs(prev=>prev.map(n=>n.id===id?{...n,read:true}:n))
       setUnreadCount(c=>Math.max(0,c-1))
     }
-
-    const STALE_STAGES=['Callback','New','Approved','Ringing','Busy','Call cut','Not Required Hup','Not Required Polite','Switched Off','Lead','Voice Mail','Disbursed Other']
 
     const checkStaleLeads=async()=>{
       try{
@@ -6941,13 +7000,13 @@ export default function Dashboard({ session }) {
                   {name:'Disbursed',value:orgDisbursed,fill:'#0F6E56'},
                   {name:'Login',value:orgLogin,fill:'#185FA5'},
                   {name:'Pending',value:orgPending,fill:'#DC2626'},
-                  {name:'Target',value:orgTarget,fill:'#854F0B'},
+                  {name:'Target',value:orgTarget,fill:'#6D28D9'},
                 ]} margin={{top:6,right:6,left:0,bottom:0}}>
                   <XAxis dataKey="name" tick={{fontSize:11}} axisLine={{stroke:'#E2E8F0'}} tickLine={false}/>
                   <YAxis tick={{fontSize:10}} tickFormatter={v=>fmtCompactCurrency(v)} axisLine={false} tickLine={false} width={48}/>
                   <Tooltip formatter={v=>fmtCompactCurrency(v)}/>
                   <Bar dataKey="value" radius={[4,4,0,0]}>
-                    {[{fill:'#0F6E56'},{fill:'#185FA5'},{fill:'#DC2626'},{fill:'#854F0B'}].map((c,i)=><Cell key={i} fill={c.fill}/>)}
+                    {[{fill:'#0F6E56'},{fill:'#185FA5'},{fill:'#DC2626'},{fill:'#6D28D9'}].map((c,i)=><Cell key={i} fill={c.fill}/>)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -6961,7 +7020,8 @@ export default function Dashboard({ session }) {
               <div style={{fontSize:13,color:'#4A5568',marginTop:14,textAlign:'center'}}>
                 Open Opportunities: <strong style={{fontSize:20,color:'#111827',display:'block',marginTop:4}}>{fmtCompactCurrency(pipelineValue)}</strong>
               </div>
-              <div style={{fontSize:11,color:'#94A3B8',marginTop:10,textAlign:'center'}}>Leads not yet Disbursed, Not Interested, or DND</div>
+              <div style={{fontSize:12,color:'#6B7280',marginTop:4,textAlign:'center'}}>{pipelineLeadCount.toLocaleString('en-IN')} leads</div>
+              <div style={{fontSize:11,color:'#94A3B8',marginTop:8,textAlign:'center'}}>Leads not yet Disbursed, Not Interested, or DND</div>
             </div>
           </div>
         </div>
@@ -6970,7 +7030,7 @@ export default function Dashboard({ session }) {
              restyled as a compact dark banner for this admin instance only. The agent-side
              large-card medal grid is a separate component/style and is untouched. ── */}
         {!orgLeaderboardLoading && orgLeaderboard.length>0 && (
-          <div style={{background:'linear-gradient(135deg,#0F172A 0%,#0F766E 100%)',borderRadius:12,padding:'16px 22px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,color:'#fff'}}>
+          <div style={{background:'linear-gradient(135deg,#0F172A 0%,#0F766E 100%)',borderLeft:'4px solid #FDE68A',borderRadius:12,padding:'16px 22px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,color:'#fff'}}>
             <div style={{fontSize:14,fontWeight:700,display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}>🏆 Top Performers — {orgMonthNameLabel}</div>
             <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
               {orgLeaderboard.slice(0,3).map((row,i)=>(
@@ -6986,7 +7046,7 @@ export default function Dashboard({ session }) {
 
         {/* ── TEAM TARGETS banner — same dark treatment as Top Performers above, org
              Disbursed MTD / Achievement % as a compact glance directly above the table. ── */}
-        <div style={{background:'linear-gradient(135deg,#0F172A 0%,#0F766E 100%)',borderRadius:12,padding:'16px 22px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,color:'#fff'}}>
+        <div style={{background:'linear-gradient(135deg,#0F172A 0%,#0F766E 100%)',borderLeft:'4px solid #38BDF8',borderRadius:12,padding:'16px 22px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,color:'#fff'}}>
           <div style={{fontSize:14,fontWeight:700,display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap'}}><IconChartBar size={15} strokeWidth={1.8}/>Team Targets — {tgtMonthStr}</div>
           <div style={{display:'flex',gap:22,flexWrap:'wrap'}}>
             <div style={{textAlign:'right'}}>
@@ -7014,11 +7074,20 @@ export default function Dashboard({ session }) {
                 <div style={{padding:'6px 24px 10px'}}>
                   {achievementRanked.map(row=>{
                     const pct=row.canCompute?Math.min(100,Math.max(0,row.achievementPct)):0
+                    const pacePct=row.canCompute&&row.pacePct!=null?Math.min(100,Math.max(0,row.pacePct)):null
                     return (
                       <div key={row.agent.id} style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
                         <div style={{width:130,fontSize:12,color:'#4A5568',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flexShrink:0}} title={row.agent.full_name}>{row.agent.full_name}</div>
-                        <div style={{flex:1,background:'#F1F5F9',borderRadius:6,height:16,overflow:'hidden'}}>
+                        <div style={{flex:1,background:'#F1F5F9',borderRadius:6,height:16,overflow:'hidden',position:'relative'}}>
                           <div style={{width:pct+'%',height:'100%',background:row.barColor,borderRadius:6,transition:'width 0.3s'}}/>
+                          {/* Pacing marker — where achievement % "should" be today, given elapsed
+                              working days / total working days. Read the fill against this line
+                              rather than in isolation, so a same-color-everywhere month doesn't
+                              read as uniform alarm. */}
+                          {pacePct!=null&&(
+                            <div title={`Expected by today: ${pacePct.toFixed(0)}%`}
+                              style={{position:'absolute',top:0,bottom:0,left:pacePct+'%',width:2,background:'rgba(15,23,42,0.55)'}}/>
+                          )}
                         </div>
                         <div style={{width:170,fontSize:11,color:'#718096',textAlign:'right',flexShrink:0,whiteSpace:'nowrap'}}>
                           {row.canCompute?`₹${row.disbursed.toLocaleString('en-IN')} / ₹${row.target.toLocaleString('en-IN')}`:'No target set'}
@@ -7047,7 +7116,6 @@ export default function Dashboard({ session }) {
                       ))}
                       <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Login Needed</th>
                       <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px',whiteSpace:'nowrap'}}>Daily Disbursement Needed</th>
-                      <th style={{padding:'13px 16px',fontSize:11,fontWeight:600,color:'#718096',textAlign:'left',textTransform:'uppercase',letterSpacing:'0.4px'}}>Progress</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7074,11 +7142,6 @@ export default function Dashboard({ session }) {
                         <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.pending==null?'—':'₹'+row.pending.toLocaleString('en-IN')}</td>
                         <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.dailyLoginNeeded==null?'—':'₹'+Math.round(row.dailyLoginNeeded).toLocaleString('en-IN')}</td>
                         <td style={{padding:'14px 16px',fontSize:13,color:'#4A5568'}}>{row.dailyDisbNeeded==null?'—':'₹'+Math.round(row.dailyDisbNeeded).toLocaleString('en-IN')}</td>
-                        <td style={{padding:'14px 16px',minWidth:140}}>
-                          <div style={{background:'#F1F5F9',borderRadius:6,height:8,overflow:'hidden'}}>
-                            <div style={{width:Math.min(100,Math.max(0,row.achievementPct||0))+'%',height:'100%',background:row.barColor,borderRadius:6}}/>
-                          </div>
-                        </td>
                       </tr>
                       )
                     })}
@@ -7094,11 +7157,6 @@ export default function Dashboard({ session }) {
                       <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{orgPending.toLocaleString('en-IN')}</td>
                       <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{Math.round(orgDailyLoginNeeded).toLocaleString('en-IN')}</td>
                       <td style={{padding:'14px 16px',fontSize:13,color:'#1A202C',fontWeight:700}}>₹{Math.round(orgDailyDisbNeeded).toLocaleString('en-IN')}</td>
-                      <td style={{padding:'14px 16px',minWidth:140}}>
-                        <div style={{background:'#E2E8F0',borderRadius:6,height:8,overflow:'hidden'}}>
-                          <div style={{width:Math.min(100,Math.max(0,orgAchievementPct||0))+'%',height:'100%',background:'#0F172A',borderRadius:6}}/>
-                        </div>
-                      </td>
                     </tr>
                   </tfoot>
                 </table>
