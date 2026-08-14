@@ -2148,44 +2148,71 @@ export default function FullAdminPanel() {
         } else if(payload.eventType==='DELETE'&&payload.old?.id){
           setLeads(prev=>prev.filter(l=>l.id!==payload.old.id))
         } else {
-          fetchData()
+          clearTimeout(fetchDataDebounceRef.current)
+          fetchDataDebounceRef.current = setTimeout(()=>fetchData(),800)
         }
       })
       .subscribe()
-    return ()=>{ supabase.removeChannel(ch) }
+    return ()=>{ supabase.removeChannel(ch); clearTimeout(fetchDataDebounceRef.current) }
   },[])
 
   const showToast = (msg,type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3500) }
 
   const didInitialLoadRef = useRef(false)
+  const fetchSeqRef = useRef(0)
+  const fetchDataDebounceRef = useRef(null)
+
+  // Supabase/PostgREST caps unpaginated selects at 1000 rows — loop on
+  // .range(from,from+999) like Dashboard.js's fetchLeads does, so the leads
+  // count admin sees always reflects the full table.
+  const fetchLeadsPaginated = async () => {
+    let all=[],from=0
+    while(true){
+      const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+      if(error){ console.error('[fetchData] leads page failed at offset',from,error); break }
+      if(!data) break
+      all=[...all,...data]
+      if(data.length<1000) break
+      from+=1000
+    }
+    return all
+  }
+
   const fetchData = async () => {
+    const seq = ++fetchSeqRef.current
     const silent = didInitialLoadRef.current
     if(!silent) setLoading(true)
     try {
-      const [uR,lR,cR,dR] = await Promise.all([
+      const [uR,lD,cR,dR] = await Promise.all([
         supabase.from('profiles').select('*').order('role'),
-        supabase.from('leads').select('*').order('created_at',{ascending:false}),
+        fetchLeadsPaginated(),
         supabase.from('calls').select('id,agent_id,lead_id,created_at,call_status,call_outcome').order('created_at',{ascending:false}),
         supabase.from('dispositions').select('*').order('sort_order'),
       ])
-      setUsers(uR.data||[]);setLeads(lR.data||[]);setCallLogs(cR.data||[]);setDispositions(dR.data||[])
+      if(fetchSeqRef.current!==seq) return
+      setUsers(uR.data||[]);setLeads(lD||[]);setCallLogs(cR.data||[]);setDispositions(dR.data||[])
 
       const aR = await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500)
+      if(fetchSeqRef.current!==seq) return
       setActivityLog(aR.data||[])
 
       const sR = await supabase.from('settings').select('key,value')
+      if(fetchSeqRef.current!==seq) return
       if(!sR.error&&sR.data){ const m={}; sR.data.forEach(s=>{m[s.key]=s.value}); setSettings(m) }
 
       try {
         const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=1000`,{headers:{'Authorization':`Bearer ${SERVICE_KEY}`,'apikey':SERVICE_KEY}})
         const data = await res.json()
+        if(fetchSeqRef.current!==seq) return
         setAuthUsers(data.users||[])
       } catch{}
     } catch(err) {
-      setRenderError('Failed to load data: '+err.message)
+      if(fetchSeqRef.current===seq) setRenderError('Failed to load data: '+err.message)
     } finally {
-      if(!silent) setLoading(false)
-      didInitialLoadRef.current = true
+      if(fetchSeqRef.current===seq){
+        if(!silent) setLoading(false)
+        didInitialLoadRef.current = true
+      }
     }
   }
 

@@ -1201,10 +1201,14 @@ function AgentDashboard({ userId }) {
   const computePipelineStats=(leads)=>{
     const todayStart=new Date(); todayStart.setHours(0,0,0,0)
     const monthStart=new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0)
-    const todayLoginLeads=leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart })
-    const todayDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
-    const monthLoginLeads=leads.filter(l=>{ if(l.status!=='Login')return false; const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart })
-    const monthDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed')return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
+    // Stage-history-based, not current-status-based — a lead that passed through
+    // Login/Disbursed in the window still counts even if it has since progressed
+    // past that stage (e.g. Login → Disbursed later the same month). Same fix
+    // already applied to computeTargetProgress and the admin Team Targets table.
+    const todayLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart })
+    const todayDisbLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
+    const monthLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart })
+    const monthDisbLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
     const targets={
       todayLogins:     todayLoginLeads.length,
       todayDisbursed:  todayDisbLeads.length,
@@ -5304,18 +5308,30 @@ export default function Dashboard({ session }) {
     const{data}=await supabase.from('settings').select('*')
     if(data) data.forEach(s=>{if(s.key==='crm_name')setCrmName(s.value);if(s.key==='crm_tagline')setCrmTagline(s.value)})
   }
+  const fetchAllLeadsPaginated=async()=>{
+    let all=[],from=0
+    while(true){
+      const{data,error}=await supabase.from('leads').select('id,status,full_name').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+      if(error){ console.error('[fetchDashboardStats] leads page failed at offset',from,error); break }
+      if(!data) break
+      all=[...all,...data]
+      if(data.length<1000) break
+      from+=1000
+    }
+    return all
+  }
   const fetchDashboardStats=async()=>{
     const today=new Date().toISOString().split('T')[0]
-    const[lR,recentR,tR,allR]=await Promise.all([
-      supabase.from('leads').select('id,status,full_name'),
+    const[lD,recentR,tR,allR]=await Promise.all([
+      fetchAllLeadsPaginated(),
       supabase.from('calls').select('*').gte('created_at',today+'T00:00:00').order('created_at',{ascending:false}).limit(5),
       supabase.from('tasks').select('id,status').eq('status','Pending'),
       supabase.from('calls').select('*').order('created_at',{ascending:false})
     ])
-    setStats({totalLeads:lR.data?.length||0,todayCalls:recentR.data?.length||0,pendingTasks:tR.data?.length||0,converted:lR.data?.filter(l=>['Disbursed','Approved'].includes(l.status)).length||0})
+    setStats({totalLeads:lD.length||0,todayCalls:recentR.data?.length||0,pendingTasks:tR.data?.length||0,converted:lD.filter(l=>['Disbursed','Approved'].includes(l.status)).length||0})
     setRecentCalls(recentR.data||[])
     setAllCalls(allR.data||[])
-    setAllLeads(lR.data||[])
+    setAllLeads(lD)
   }
 
   const handleLogout=async()=>{ await supabase.auth.signOut() }
