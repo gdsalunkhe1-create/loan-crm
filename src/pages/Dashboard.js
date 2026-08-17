@@ -6426,9 +6426,10 @@ export default function Dashboard({ session }) {
     const [targetAgents,setTargetAgents] = useState([])
     const [allTargets,setAllTargets]     = useState({})
     const [targetsLoading,setTargetsLoading] = useState(true)
-    // Defaults to 'achievement' desc — the same ordering targetRankMap ranks by, so the
-    // table opens with #1/#2/#3/#4 already in top-to-bottom order without a header click.
-    const [targetSortKey,setTargetSortKey] = useState('achievement')
+    // Defaults to 'disbursed' desc — the same ordering targetRankMap ranks by, so the rank
+    // badges and row order agree by default. Clicking a column header still re-sorts the
+    // rows normally; only the initial/default view is affected.
+    const [targetSortKey,setTargetSortKey] = useState('disbursed')
     const [targetSortDir,setTargetSortDir] = useState('desc')
 
     // Same leaderboard the agent-side "🏆 Top Performers" widget shows — sourced
