@@ -473,6 +473,9 @@ function AgentDashboard({ userId }) {
   // saved — so a killed tab loses at most a few seconds of typing, not the
   // whole call log.
   const CALLLOG_DRAFT_KEY = 'cqp_callLogDraft_'+(userId||'anon')
+  // Show the "Daily Pace" popup at most once per calendar day per agent —
+  // localStorage remembers today's date (istToday()) once it's been shown.
+  const DAILY_PACE_KEY = 'cqp_dailyPaceShown_'+(userId||'anon')
   const loadCallLogDraft=()=>{
     try{
       const raw=localStorage.getItem(CALLLOG_DRAFT_KEY)
@@ -666,6 +669,9 @@ function AgentDashboard({ userId }) {
   // ── Motivational disbursement popup (Part 5) ──
   const [disbursementCelebration,setDisbursementCelebration] = useState(null)
 
+  // ── Daily Pace popup — once/day, only if a monthly target is set ──
+  const [showDailyPace,setShowDailyPace]         = useState(false)
+
   // ── Leaderboard (Part 6) ──
   const [leaderboard,setLeaderboard]             = useState([])
   const [leaderboardLoading,setLeaderboardLoading] = useState(true)
@@ -687,6 +693,21 @@ function AgentDashboard({ userId }) {
   useEffect(()=>{ if(userId) fetchAll() },[dateRange, userId])
   useEffect(()=>{ fetchLeadStages() },[])
   useEffect(()=>{ if(userId) fetchMonthlyTarget() },[userId])
+
+  // Daily Pace popup — first load of the day, only when the agent has a monthly
+  // target set. Marks today as "shown" in localStorage as soon as it fires, so
+  // it won't reappear on a refresh later the same day (independent of the
+  // callback reminder popup — both can be open at once).
+  useEffect(()=>{
+    if(!userId||targetLoading||!monthlyTarget) return
+    const today=istToday()
+    try{
+      if(localStorage.getItem(DAILY_PACE_KEY)===today) return
+      localStorage.setItem(DAILY_PACE_KEY,today)
+    }catch{ return }
+    setShowDailyPace(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[userId,targetLoading,monthlyTarget])
   useEffect(()=>{ fetchLeaderboard() },[])
 
   useEffect(()=>{
@@ -2718,6 +2739,33 @@ function AgentDashboard({ userId }) {
                 className="mobile-button"
                 style={{marginTop:16,width:'100%',padding:'11px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:'pointer'}}>
                 Keep Going 🚀
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* DAILY PACE POPUP — once/day, only when a monthly target is set */}
+      {showDailyPace&&targetProgress&&(
+        <>
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:600}} onClick={()=>setShowDailyPace(false)}/>
+          <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:18,boxShadow:'0 24px 60px rgba(0,0,0,0.25)',zIndex:700,width:isMobile?'92%':420,overflow:'hidden',textAlign:'center'}}>
+            <div style={{background:'linear-gradient(135deg,#185FA5,#2B6CB0)',padding:'26px 20px 20px',color:'white'}}>
+              <div style={{fontSize:38,marginBottom:6}}>🎯</div>
+              <div style={{fontWeight:700,fontSize:17}}>Today's Pace</div>
+              <div style={{fontSize:13,opacity:0.9,marginTop:2}}>
+                {targetProgress.remainingWorkingDays} working day{targetProgress.remainingWorkingDays>1?'s':''} left this month
+              </div>
+            </div>
+            <div style={{padding:'18px 20px'}}>
+              <div style={{fontSize:14,color:'#374151',lineHeight:1.6}}>
+                Hit <strong style={{color:'#185FA5'}}>{fmtCompactCurrency(targetProgress.requiredDailyLogin)}/day</strong> login and{' '}
+                <strong style={{color:'#185FA5'}}>{fmtCompactCurrency(targetProgress.requiredDailyDisbursement)}/day</strong> disbursement to stay on track for your monthly target.
+              </div>
+              <button onClick={()=>setShowDailyPace(false)}
+                className="mobile-button"
+                style={{marginTop:16,width:'100%',padding:'11px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:'pointer'}}>
+                Let's Go 🚀
               </button>
             </div>
           </div>
