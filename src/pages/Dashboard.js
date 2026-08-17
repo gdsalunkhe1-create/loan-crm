@@ -6538,16 +6538,16 @@ export default function Dashboard({ session }) {
       return {agent,hasTargetRow,target,canCompute,disbursed,login,achievementPct,pending,barColor,dailyLoginNeeded,dailyDisbNeeded,pacePct}
     })
 
-    // Rank by achievement % descending — independent of whatever column the table
+    // Rank by disbursed amount (₹) descending — independent of whatever column the table
     // is currently sorted by. Agents with no target set are excluded (unranked).
-    const achievementRanked=[...agentTargetRows].sort((a,b)=>{
+    const disbursedRanked=[...agentTargetRows].sort((a,b)=>{
       if(a.canCompute&&!b.canCompute) return -1
       if(!a.canCompute&&b.canCompute) return 1
       if(!a.canCompute&&!b.canCompute) return 0
-      return b.achievementPct-a.achievementPct
+      return b.disbursed-a.disbursed
     })
     const targetRankMap={}
-    achievementRanked.forEach((row,i)=>{ if(row.canCompute) targetRankMap[row.agent.id]=i+1 })
+    disbursedRanked.forEach((row,i)=>{ if(row.canCompute) targetRankMap[row.agent.id]=i+1 })
 
     const targetSortValue=(row,key)=>{
       switch(key){
@@ -7136,7 +7136,7 @@ export default function Dashboard({ session }) {
                      bar chart above (Disbursed/Login/Pending/Target summed across the whole team). ── */}
                 <div style={{padding:'18px 24px 4px',fontSize:11,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.4px'}}>Per-Agent Progress</div>
                 <div style={{padding:'6px 24px 10px'}}>
-                  {achievementRanked.map(row=>{
+                  {disbursedRanked.map(row=>{
                     const pct=row.canCompute?Math.min(100,Math.max(0,row.achievementPct)):0
                     const pacePct=row.canCompute&&row.pacePct!=null?Math.min(100,Math.max(0,row.pacePct)):null
                     return (
