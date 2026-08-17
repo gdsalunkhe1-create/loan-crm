@@ -1209,14 +1209,18 @@ function AgentDashboard({ userId }) {
   const computePipelineStats=(leads)=>{
     const todayStart=new Date(); todayStart.setHours(0,0,0,0)
     const monthStart=new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0)
-    // Stage-history-based, not current-status-based — a lead that passed through
-    // Login/Disbursed in the window still counts even if it has since progressed
-    // past that stage (e.g. Login → Disbursed later the same month). Same fix
-    // already applied to computeTargetProgress and the admin Team Targets table.
+    // Login stays stage-history-based, not current-status-based — a lead that passed
+    // through Login in the window still counts toward Login totals even if it has
+    // since progressed past that stage (Approved/Disbursed/Rejected/ABND), by design
+    // (login_amount counts for ratio purposes regardless of later outcome).
+    // Disbursed additionally requires CURRENT status==='Disbursed' — unlike Login, a
+    // disbursement can be reversed/corrected (lead moved off Disbursed later), and a
+    // stale stage_history transition shouldn't keep counting it. Same guard already
+    // used by computeTargetProgress's disbursedThisMonth reducer.
     const todayLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart })
-    const todayDisbLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
+    const todayDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed') return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
     const monthLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart })
-    const monthDisbLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
+    const monthDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed') return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
     const targets={
       todayLogins:     todayLoginLeads.length,
       todayDisbursed:  todayDisbLeads.length,
