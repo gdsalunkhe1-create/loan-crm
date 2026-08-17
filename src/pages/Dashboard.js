@@ -188,25 +188,12 @@ const fetchLeaderboardRows=async()=>{
   const [yy,mm]=monthStr.split('-').map(Number)
   const monthStart=new Date(yy,mm-1,1)
   const monthEndExclusive=new Date(yy,mm,1)
-  const{data:disbursedLeads}=await supabase.from('leads').select('assigned_to,disbursed_amount,status,stage_history,updated_at').eq('status','Disbursed').not('disbursed_amount','is',null)
-  if(!disbursedLeads) return null // query failed — callers should leave prior state untouched, matching the original inline implementation
-  const totals={}
-  disbursedLeads.forEach(l=>{
-    if(!l.assigned_to) return
-    const t=getStatusChangeTime(l,'Disbursed')
-    if(!t||t<monthStart||t>=monthEndExclusive) return
-    totals[l.assigned_to]=(totals[l.assigned_to]||0)+(Number(l.disbursed_amount)||0)
+  const{data,error}=await supabase.rpc('get_monthly_leaderboard',{
+    month_start: monthStart.toISOString(),
+    month_end: monthEndExclusive.toISOString(),
   })
-  const agentIds=Object.keys(totals)
-  if(agentIds.length===0) return []
-  const{data:profs}=await supabase.from('profiles').select('id,full_name').eq('role','agent').eq('status','active').in('id',agentIds)
-  return agentIds
-    .filter(id=>profs?.some(p=>p.id===id))
-    .map(id=>({
-      agentId:id,
-      name:profs.find(p=>p.id===id)?.full_name||'Agent',
-      amount:totals[id],
-    })).sort((a,b)=>b.amount-a.amount)
+  if(error||!data) return null // query failed — callers should leave prior state untouched, matching the original inline implementation
+  return data.map(r=>({agentId:r.agent_id,name:r.agent_name,amount:Number(r.total_amount)}))
 }
 
 const TIME_OPTIONS = (()=>{
