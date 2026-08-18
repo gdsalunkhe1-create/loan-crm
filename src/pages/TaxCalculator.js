@@ -1,12 +1,13 @@
 /* eslint-disable */
 import React, { useState } from 'react'
-import { IconCalculator, IconInfoCircle, IconUpload, IconFileText, IconLoader2, IconCircleCheck } from '@tabler/icons-react'
+import { IconCalculator, IconInfoCircle, IconUpload, IconFileText, IconLoader2, IconCircleCheck, IconCoin } from '@tabler/icons-react'
 
 /*
   Income Tax & Net Take-Home — New Regime (FY 2025-26 / 2026-27)
-  Two input modes:
-    1. Manual entry
-    2. Upload CTC / Payslip (PDF) — read 100% IN-BROWSER via pdf.js (same as CibilParser). No API, no key.
+  Three input modes:
+    1. Manual entry (annual figures)
+    2. Monthly Gross — enter monthly figures, auto-annualised (x12)
+    3. Upload CTC / Payslip (PDF) — read 100% IN-BROWSER via pdf.js (same as CibilParser). No API, no key.
   Verified against a real payslip: gross 18,31,855 -> tax 1,57,426; net monthly (excl bonus) 1,22,387.
 */
 
@@ -49,10 +50,17 @@ async function extractTextFromPDF(file) {
 }
 
 // ── payslip / CTC text parser (in-browser) ───────────────────────────────
+// NOTE: `after()` caps the gap between a label and its number at 40 non-digit
+// chars. Earlier this was unbounded ([^0-9]*), which let a label with no
+// nearby value (e.g. a blank "Professional Tax" field before the "Under
+// Chapter VI-A ... Taxable Income 44,62,550" section) reach across the whole
+// document and grab a completely unrelated number many lines away. Capping
+// the gap makes a field resolve to "not found" instead of a wrong number.
+const GAP = 40
 function parseSalaryText(text) {
   const num = (s) => parseFloat(String(s).replace(/,/g, '')) || 0
   const after = (label) => {
-    const re = new RegExp(label + '[^0-9]*([0-9][0-9,]*\\.?[0-9]*)', 'i')
+    const re = new RegExp(label + `[^0-9]{0,${GAP}}([0-9][0-9,]*\\.?[0-9]*)`, 'i')
     const m = text.match(re)
     return m ? num(m[1]) : 0
   }
@@ -61,21 +69,45 @@ function parseSalaryText(text) {
   const basic = after('Basic\\s*Salary') || after('Basic')
   const hra = after('HRA') || after('House\\s*Rent')
   const spl = after('Special\\s*Allowance') || after('Other\\s*Allowance')
-  const pf = after('Employee\\s*PF') || after('Provident\\s*Fund') || after('PF\\s*contribu')
-  const pt = after('Prof\\s*Tax') || after('Professional\\s*Tax')
+  // PF: try explicit labels first; fall back to a bare "PF" (common in payslip
+  // deduction tables, e.g. "PF 29,867") but never match "PF No." field labels.
+  const pf = after('Employee\\s*PF') || after('Provident\\s*Fund') || after('PF\\s*contribu') || after('PF(?!\\s*No)')
+  // Professional tax: added the "PTAX" abbreviation used on many payslips.
+  const pt = after('Prof\\s*Tax') || after('PTAX') || after('Professional\\s*Tax')
   const bonus = after('Annual\\s*Bonus') || after('Bonus') || after('Incentive')
   const nps = after('Employer\\s*NPS') || after('NPS')
+
+  // Payslip earnings tables often have more line items than Basic/HRA/Special
+  // (e.g. "Professional Development", "Conveyance", "LTA" ...). Summing only
+  // those three named heads silently drops the rest and undercounts gross.
+  // Instead, generically sum every row in the Earnings block that has the
+  // "<Label> Actual Earned Arrear Total" 4-number shape, using the Actual
+  // (recurring, non-arrear) column — this naturally includes any extra
+  // earning heads a specific org's template adds.
+  let regularFromRows = 0
+  if (isPayslip) {
+    const blockMatch = text.match(/Earnings[\s\S]{0,2000}?(?:GROSS\s*PAY|NET\s*PAY)/i)
+    const block = blockMatch ? blockMatch[0] : ''
+    const rowRe = /([A-Za-z][A-Za-z ]{2,30}?)\s+([0-9][0-9,]*\.?[0-9]*)\s+([0-9][0-9,]*\.?[0-9]*)\s+([0-9][0-9,]*\.?[0-9]*)\s+([0-9][0-9,]*\.?[0-9]*)/g
+    let m
+    while ((m = rowRe.exec(block))) {
+      const label = m[1].trim()
+      if (/gross|deduction|net\s*pay/i.test(label)) continue
+      regularFromRows += num(m[2]) // "Actual" column — recurring monthly, excludes one-time arrears
+    }
+  }
+  const regularMonthly = Math.max(basic + hra + spl, regularFromRows)
 
   // Payslip figures are monthly -> annualise x12. "Annual Bonus" is already annual.
   const mult = isPayslip ? 12 : 1
   return {
-    regularGrossAnnual: Math.round((basic + hra + spl) * mult),
+    regularGrossAnnual: Math.round(isPayslip ? regularMonthly * mult : regularMonthly),
     basicAnnual: Math.round(basic * mult),
     employeePFAnnual: Math.round(pf * mult),
     professionalTaxAnnual: Math.round(pt * mult),
     employerNPSAnnual: Math.round(nps * mult),
     bonusAnnual: Math.round(bonus), // annual as-is
-    ok: (basic + hra + spl) > 0,
+    ok: regularMonthly > 0,
     isPayslip,
   }
 }
@@ -128,14 +160,33 @@ export default function TaxCalculator() {
   const [employerNPS, setEmployerNPS] = useState('')
   const [empPF, setEmpPF] = useState('')
   const [profTax, setProfTax] = useState('')
+  // Monthly-gross mode inputs — annualised (x12) into the same calc as above.
+  const [monthlyRegular, setMonthlyRegular] = useState('')
+  const [monthlyBasic, setMonthlyBasic] = useState('')
+  const [monthlyEmpPF, setMonthlyEmpPF] = useState('')
+  const [monthlyProfTax, setMonthlyProfTax] = useState('')
   const [reading, setReading] = useState(false)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
 
-  const nums = {
-    regular: parseFloat(regular) || 0, bonus: parseFloat(bonus) || 0, basic: parseFloat(basic) || 0,
-    employerNPS: parseFloat(employerNPS) || 0, empPF: parseFloat(empPF) || 0, profTax: parseFloat(profTax) || 0,
-  }
+  const monthlyRegularNum = parseFloat(monthlyRegular) || 0
+  const monthlyBasicNum = parseFloat(monthlyBasic) || 0
+  const monthlyEmpPFNum = parseFloat(monthlyEmpPF) || 0
+  const monthlyProfTaxNum = parseFloat(monthlyProfTax) || 0
+
+  const nums = mode === 'monthly'
+    ? {
+        regular: monthlyRegularNum * 12,
+        bonus: parseFloat(bonus) || 0,
+        basic: monthlyBasicNum * 12,
+        employerNPS: parseFloat(employerNPS) || 0,
+        empPF: monthlyEmpPFNum * 12,
+        profTax: monthlyProfTaxNum * 12,
+      }
+    : {
+        regular: parseFloat(regular) || 0, bonus: parseFloat(bonus) || 0, basic: parseFloat(basic) || 0,
+        employerNPS: parseFloat(employerNPS) || 0, empPF: parseFloat(empPF) || 0, profTax: parseFloat(profTax) || 0,
+      }
   const r = nums.regular > 0 ? compute(nums) : null
 
   const handleFile = async (file) => {
@@ -172,8 +223,12 @@ export default function TaxCalculator() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, margin: '18px 0' }}>
-        {[{ k: 'manual', t: 'Enter manually', ic: <IconCalculator size={15} /> }, { k: 'upload', t: 'Upload CTC / Payslip (PDF)', ic: <IconUpload size={15} /> }].map((m) => (
+      <div style={{ display: 'flex', gap: 8, margin: '18px 0', flexWrap: 'wrap' }}>
+        {[
+          { k: 'manual', t: 'Enter manually', ic: <IconCalculator size={15} /> },
+          { k: 'monthly', t: 'Monthly Gross', ic: <IconCoin size={15} /> },
+          { k: 'upload', t: 'Upload CTC / Payslip (PDF)', ic: <IconUpload size={15} /> },
+        ].map((m) => (
           <button key={m.k} onClick={() => setMode(m.k)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: mode === m.k ? `1px solid ${BRAND}` : '1px solid #e2e8f0', background: mode === m.k ? BRAND : '#fff', color: mode === m.k ? '#fff' : '#334155' }}>{m.ic} {m.t}</button>
         ))}
       </div>
@@ -191,21 +246,44 @@ export default function TaxCalculator() {
         </div>
       )}
 
-      <div style={{ ...card, marginBottom: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-          <Field label="Regular Gross Annual (excl. bonus) *" val={regular} set={setRegular} ph="1690296" />
-          <Field label="Annual Bonus / One-time" val={bonus} set={setBonus} ph="141558" />
-          <Field label="Annual Basic (for NPS cap)" val={basic} set={setBasic} ph="760634" />
-          <Field label="Employee PF (annual)" val={empPF} set={setEmpPF} ph="91272" />
-          <Field label="Professional Tax (annual)" val={profTax} set={setProfTax} ph="2400" />
-          <Field label="Employer NPS 80CCD(2) (annual)" val={employerNPS} set={setEmployerNPS} ph="0" />
+      {mode === 'monthly' && (
+        <div style={{ ...card, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            <Field label="Monthly Gross Salary *" val={monthlyRegular} set={setMonthlyRegular} ph="140858" />
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6, display: 'block' }}>Yearly Gross (auto-calculated)</label>
+              <div style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: '#f8fafc', color: '#0f172a', fontWeight: 600 }}>{inr(monthlyRegularNum * 12)}</div>
+            </div>
+            <Field label="Annual Bonus / One-time" val={bonus} set={setBonus} ph="141558" />
+            <Field label="Monthly Basic (for NPS cap)" val={monthlyBasic} set={setMonthlyBasic} ph="63386" />
+            <Field label="Monthly Employee PF" val={monthlyEmpPF} set={setMonthlyEmpPF} ph="7606" />
+            <Field label="Monthly Professional Tax" val={monthlyProfTax} set={setMonthlyProfTax} ph="200" />
+            <Field label="Employer NPS 80CCD(2) (annual)" val={employerNPS} set={setEmployerNPS} ph="0" />
+          </div>
+          <div style={{ fontSize: 11, color: '#64748b', display: 'flex', gap: 6, marginTop: 12 }}>
+            <IconInfoCircle size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
+            <span>Monthly figures are simply multiplied by 12 to estimate the yearly gross. For an employee who joined mid-year, got a raise, or has variable pay, this will differ from payroll's own FY-annualised figure — treat it as an estimate.</span>
+          </div>
         </div>
-        {msg && mode === 'manual' && <div style={{ marginTop: 10, fontSize: 12, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}><IconCircleCheck size={14} /> {msg}</div>}
-        <div style={{ fontSize: 11, color: '#64748b', display: 'flex', gap: 6, marginTop: 12 }}>
-          <IconInfoCircle size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
-          <span>New regime allows only the ₹75,000 standard deduction and employer NPS. Bonus is taxed but kept out of the regular monthly figure. PF &amp; Professional Tax reduce take-home but are not income tax.</span>
+      )}
+
+      {mode !== 'monthly' && (
+        <div style={{ ...card, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            <Field label="Regular Gross Annual (excl. bonus) *" val={regular} set={setRegular} ph="1690296" />
+            <Field label="Annual Bonus / One-time" val={bonus} set={setBonus} ph="141558" />
+            <Field label="Annual Basic (for NPS cap)" val={basic} set={setBasic} ph="760634" />
+            <Field label="Employee PF (annual)" val={empPF} set={setEmpPF} ph="91272" />
+            <Field label="Professional Tax (annual)" val={profTax} set={setProfTax} ph="2400" />
+            <Field label="Employer NPS 80CCD(2) (annual)" val={employerNPS} set={setEmployerNPS} ph="0" />
+          </div>
+          {msg && mode === 'manual' && <div style={{ marginTop: 10, fontSize: 12, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}><IconCircleCheck size={14} /> {msg}</div>}
+          <div style={{ fontSize: 11, color: '#64748b', display: 'flex', gap: 6, marginTop: 12 }}>
+            <IconInfoCircle size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
+            <span>New regime allows only the ₹75,000 standard deduction and employer NPS. Bonus is taxed but kept out of the regular monthly figure. PF &amp; Professional Tax reduce take-home but are not income tax.</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {r ? (
         <div style={{ ...card }}>
@@ -257,7 +335,7 @@ export default function TaxCalculator() {
           )}
         </div>
       ) : (
-        <div style={{ ...card, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Enter the regular gross annual salary (or upload a PDF) to see the net take-home.</div>
+        <div style={{ ...card, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Enter the {mode === 'monthly' ? 'monthly gross salary' : 'regular gross annual salary'} (or upload a PDF) to see the net take-home.</div>
       )}
 
       <style>{`.spin{animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}`}</style>
