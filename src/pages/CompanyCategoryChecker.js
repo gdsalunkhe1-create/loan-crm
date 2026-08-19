@@ -32,7 +32,7 @@ function scoreNameHeader(h) {
 }
 function scoreCatHeader(h) {
   h = String(h || '').toLowerCase();
-  if (/categ/.test(h)) return 3;
+  if (/categ|_catg\b|catg$/.test(h)) return 3;
   if (/classif/.test(h)) return 2;
   if (/grade|tier|segment/.test(h)) return 1.5;
   if (/status/.test(h)) return 0.5;
