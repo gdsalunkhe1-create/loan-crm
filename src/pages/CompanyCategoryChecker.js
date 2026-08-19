@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
 import { IconSearch, IconUpload, IconBuildingBank } from '@tabler/icons-react';
 
-const UPSERT_BATCH_SIZE = 500;
+const UPSERT_BATCH_SIZE = 150;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 const AUTOCOMPLETE_MIN_CHARS = 2;
 
@@ -31,12 +31,31 @@ function scoreNameHeader(h) {
   return 0;
 }
 function scoreCatHeader(h) {
-  h = String(h || '').toLowerCase();
-  if (/categ|_catg\b|catg$/.test(h)) return 3;
-  if (/classif/.test(h)) return 2;
-  if (/grade|tier|segment/.test(h)) return 1.5;
-  if (/status/.test(h)) return 0.5;
+  const tokens = String(h || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  if (tokens.some(t => t === 'CAT' || t === 'CATG' || t.startsWith('CATEG'))) return 3;
+  if (/classif/i.test(h)) return 2;
+  if (/grade|tier|segment/i.test(h)) return 1.5;
+  if (/status/i.test(h)) return 0.5;
   return 0;
+}
+
+async function upsertCompanyCategoryBatch(batch) {
+  const { error } = await supabase
+    .from('company_categories')
+    .upsert(batch, { onConflict: 'bank,company_name_norm' });
+  if (!error) return;
+
+  // One retry at half the batch size, split into two calls — a single slow
+  // batch degrades gracefully instead of aborting the whole import.
+  const mid = Math.ceil(batch.length / 2);
+  const halves = [batch.slice(0, mid), batch.slice(mid)];
+  for (const half of halves) {
+    if (half.length === 0) continue;
+    const { error: halfError } = await supabase
+      .from('company_categories')
+      .upsert(half, { onConflict: 'bank,company_name_norm' });
+    if (halfError) throw halfError;
+  }
 }
 
 export default function CompanyCategoryChecker({ currentUserRole }) {
@@ -448,10 +467,7 @@ function BankUploadCard({ bank }) {
       let done = 0;
       for (let i = 0; i < clean.length; i += UPSERT_BATCH_SIZE) {
         const batch = clean.slice(i, i + UPSERT_BATCH_SIZE);
-        const { error } = await supabase
-          .from('company_categories')
-          .upsert(batch, { onConflict: 'bank,company_name_norm' });
-        if (error) throw error;
+        await upsertCompanyCategoryBatch(batch);
         done += batch.length;
         setStatus(`Importing… ${done.toLocaleString()} / ${total.toLocaleString()}`);
       }
