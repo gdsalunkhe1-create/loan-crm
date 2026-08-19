@@ -1,23 +1,16 @@
 // CompanyCategoryChecker.js
 //
 // Search + admin-managed reference tool for looking up which category a
-// company falls into for each partner bank (ICICI/IndusInd/L&T/Yes/Bandhan).
-// Search (with type-ahead autocomplete) is open to everyone; the Manage
-// Lists tab (bulk upload) is admin-only — enforced here in the UI and
-// backed by RLS on company_categories on the database side.
+// company falls into for each partner bank. The bank list itself lives in
+// company_category_banks (admins can add more via Manage Lists), not as a
+// hardcoded const here. Search (with type-ahead autocomplete) is open to
+// everyone; the Manage Lists tab (bulk upload, add bank) is admin-only —
+// enforced here in the UI and backed by RLS/RPC checks on the database side.
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
 import { IconSearch, IconUpload, IconBuildingBank } from '@tabler/icons-react';
-
-const BANKS = [
-  { id: 'icici', label: 'ICICI Bank' },
-  { id: 'indusind', label: 'IndusInd Bank' },
-  { id: 'lt', label: 'L&T Finance' },
-  { id: 'yes', label: 'Yes Bank' },
-  { id: 'bandhan', label: 'Bandhan Bank' },
-];
 
 const UPSERT_BATCH_SIZE = 500;
 const AUTOCOMPLETE_DEBOUNCE_MS = 250;
@@ -53,6 +46,18 @@ export default function CompanyCategoryChecker({ currentUserRole }) {
   // panel, even if `tab` state were somehow 'manage' (e.g. role changes mid-session).
   const activeTab = tab === 'manage' && isAdmin ? 'manage' : 'search';
 
+  const [banks, setBanks] = useState([]); // [{id, label}] — company_category_banks is the source of truth
+
+  const fetchBanks = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('company_category_banks')
+      .select('id, label')
+      .order('label');
+    if (!error) setBanks(data || []);
+  }, []);
+
+  useEffect(() => { fetchBanks(); }, [fetchBanks]);
+
   return (
     <div>
       <div className="page-header">
@@ -77,7 +82,9 @@ export default function CompanyCategoryChecker({ currentUserRole }) {
             </button>
           </div>
         )}
-        {activeTab === 'search' ? <SearchPanel /> : <ManagePanel />}
+        {activeTab === 'search'
+          ? <SearchPanel banks={banks} />
+          : <ManagePanel banks={banks} onBanksChanged={fetchBanks} />}
       </div>
     </div>
   );
@@ -85,7 +92,7 @@ export default function CompanyCategoryChecker({ currentUserRole }) {
 
 // ---------------- Search ----------------
 
-function SearchPanel() {
+function SearchPanel({ banks }) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -122,7 +129,7 @@ function SearchPanel() {
       if (rpcError) throw rpcError;
 
       const grouped = {};
-      BANKS.forEach((b) => { grouped[b.id] = { status: 'none', rows: [] }; });
+      banks.forEach((b) => { grouped[b.id] = { status: 'none', rows: [] }; });
       (data || []).forEach((row) => {
         const g = grouped[row.bank];
         if (!g) return;
@@ -137,7 +144,7 @@ function SearchPanel() {
     } finally {
       if (reqId === searchReqRef.current) setLoading(false);
     }
-  }, [query]);
+  }, [query, banks]);
 
   const fetchSuggestions = useCallback((q) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -230,8 +237,9 @@ function SearchPanel() {
 
       {results && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 18 }}>
-          {BANKS.map((b) => {
+          {banks.map((b) => {
             const r = results[b.id];
+            if (!r) return null; // bank was added after this search ran
             const exact = r.rows.find((x) => x.match_type === 'exact');
             const badgeClass = exact ? 'badge-green' : r.rows.length ? 'badge-yellow' : 'badge-gray';
             const borderColor = exact ? 'var(--success)' : r.rows.length ? 'var(--warning)' : 'var(--border)';
@@ -282,16 +290,59 @@ function SearchPanel() {
 
 // ---------------- Manage / Upload ----------------
 
-function ManagePanel() {
+function ManagePanel({ banks, onBanksChanged }) {
   return (
     <div>
       <div className="info-box info-box-blue">
         Uploading replaces that bank's rows with the new file's data (matched by company name),
         so re-uploading next month is the same steps. Only admins can upload — everyone can search.
       </div>
+      <AddBankControl onAdded={onBanksChanged} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 18 }}>
-        {BANKS.map((b) => <BankUploadCard key={b.id} bank={b} />)}
+        {banks.map((b) => <BankUploadCard key={b.id} bank={b} />)}
       </div>
+    </div>
+  );
+}
+
+function AddBankControl({ onAdded }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async () => {
+    const label = name.trim();
+    if (!label) { setError('Enter a bank name.'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: rpcError } = await supabase.rpc('add_company_category_bank', { p_label: label });
+      if (rpcError) throw rpcError;
+      setName('');
+      if (onAdded) await onAdded();
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 8, maxWidth: 420 }}>
+        <input
+          className="form-input"
+          placeholder="New bank name, e.g. Axis Bank"
+          value={name}
+          onChange={(e) => { setName(e.target.value); if (error) setError(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          disabled={busy}
+        />
+        <button className="btn btn-outline btn-sm" onClick={submit} disabled={busy} style={{ whiteSpace: 'nowrap' }}>
+          {busy ? 'Adding…' : '+ Add bank'}
+        </button>
+      </div>
+      {error && <div className="info-box info-box-red" style={{ marginTop: 10, maxWidth: 420 }}>{error}</div>}
     </div>
   );
 }
