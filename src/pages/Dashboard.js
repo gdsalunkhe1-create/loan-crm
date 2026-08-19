@@ -716,6 +716,9 @@ function AgentDashboard({ userId }) {
         setAgentDbNotifs(prev=>[n,...prev.slice(0,29)])
         setAgentDbUnread(c=>c+1)
         showToast(n.message)
+        // Soft ping alongside the toast — browsers may block autoplay before any
+        // user interaction, so this must never throw or interrupt the toast above.
+        try{ new Audio(`${process.env.PUBLIC_URL}/notify-ping.wav`).play().catch(()=>{}) }catch{}
       })
       .subscribe()
     return()=>supabase.removeChannel(ch)
@@ -6764,12 +6767,12 @@ export default function Dashboard({ session }) {
     const notifyAgentAssigned=async(agentId,count)=>{
       if(!agentId||!count)return
       try{
-        // await supabase.from('notifications').insert([{
-        //   type:'leads_assigned',
-        //   agent_id:agentId,
-        //   agent_name:profile?.full_name||'Admin',
-        //   message:`📥 ${count} new lead${count>1?'s':''} assigned to you`,
-        // }])
+        await supabase.from('notifications').insert([{
+          type:'leads_assigned',
+          agent_id:agentId,
+          agent_name:profile?.full_name||'Admin',
+          message:`📥 ${count} new lead${count>1?'s':''} assigned to you`,
+        }])
       }catch(e){console.error('[notifyAgentAssigned]',e)}
     }
 

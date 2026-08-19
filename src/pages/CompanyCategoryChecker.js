@@ -94,6 +94,8 @@ function SearchPanel() {
   const [error, setError] = useState(null);
   const boxRef = useRef(null);
   const debounceRef = useRef(null);
+  const suggestReqRef = useRef(0); // stamps autocomplete_company_name requests so late responses can't clobber newer ones
+  const searchReqRef = useRef(0);  // stamps search_company_category requests, same reason
 
   useEffect(() => {
     const onDown = (e) => {
@@ -109,12 +111,14 @@ function SearchPanel() {
     const q = (qOverride !== undefined ? qOverride : query).trim();
     if (!q) return;
     setShowSuggestions(false);
+    const reqId = ++searchReqRef.current;
     setLoading(true);
     setError(null);
     try {
       const { data, error: rpcError } = await supabase.rpc('search_company_category', {
         p_query: q,
       });
+      if (reqId !== searchReqRef.current) return; // a newer search superseded this one
       if (rpcError) throw rpcError;
 
       const grouped = {};
@@ -128,19 +132,22 @@ function SearchPanel() {
       });
       setResults(grouped);
     } catch (e) {
+      if (reqId !== searchReqRef.current) return;
       setError(e.message || String(e));
     } finally {
-      setLoading(false);
+      if (reqId === searchReqRef.current) setLoading(false);
     }
   }, [query]);
 
   const fetchSuggestions = useCallback((q) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      const reqId = ++suggestReqRef.current;
       const { data, error: rpcError } = await supabase.rpc('autocomplete_company_name', {
         p_query: q,
         p_limit: 10,
       });
+      if (reqId !== suggestReqRef.current) return; // a newer keystroke superseded this one
       if (!rpcError) setSuggestions(data || []);
     }, AUTOCOMPLETE_DEBOUNCE_MS);
   }, []);
@@ -153,12 +160,14 @@ function SearchPanel() {
       setShowSuggestions(true);
     } else {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      suggestReqRef.current++; // invalidate any suggestion request still in flight
       setSuggestions([]);
       setShowSuggestions(false);
     }
   };
 
   const pickSuggestion = (name) => {
+    suggestReqRef.current++; // invalidate any suggestion request still in flight
     setQuery(name);
     setSuggestions([]);
     setShowSuggestions(false);
