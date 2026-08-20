@@ -577,7 +577,17 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       const { text, pdf, pdfjsLib } = await extractTextFromPDF(file,password)
       pdfDocRef.current = pdf
       setDebugText(text)
-      if(!text||text.trim().length<50) throw new Error('PDF appears empty or image-only.')
+      if(!text||text.trim().length<50){
+        // Whole-document version of the same gap the OCR recovery flow already handles per-page:
+        // some export paths (e.g. "Microsoft: Print to PDF") flatten every page's text into vector
+        // outlines with no text layer, so pdf.js reads 0 chars on every page. Previously this just
+        // threw and dead-ended — now it still fails the parse (nothing to auto-extract) but wires up
+        // the exact same page-gap/OCR-recovery UI as a partial gap, just for every page in the file.
+        const total = pdf.numPages
+        setPageGapInfo({ missing: Array.from({length: total}, (_,i)=>i+1), total })
+        setPageGapWarning(`This PDF has no readable text on any of its ${total} pages — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery below can read it page by page, but it only processes up to 6 pages per click, so a ${total}-page report will take several clicks and a few minutes.`)
+        throw new Error('PDF appears empty or image-only.')
+      }
 
       const detected = detectFormat(text)
 
