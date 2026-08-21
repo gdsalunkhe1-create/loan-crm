@@ -6403,7 +6403,7 @@ export default function Dashboard({ session }) {
     const [csvError,setCsvError]         = useState('')
     const [csvAgents,setCsvAgents]       = useState([])
     const [assignTo,setAssignTo]         = useState('')
-    const [existingAgentMobiles,setExistingAgentMobiles] = useState(new Set())
+    const [existingOrgMobiles,setExistingOrgMobiles] = useState(new Set())
     const [importing,setImporting]       = useState(false)
     const [importResult,setImportResult] = useState(null)
     const [adminNotifs,setAdminNotifs]   = useState([])
@@ -6716,22 +6716,34 @@ export default function Dashboard({ session }) {
     },[])
 
     // Derived rows from rawRows + colMap (keeps all existing csvRows references working)
-    const csvRows = rawRows.map((row,i)=>{
-      const nm  = colMap.full_name       ? (row[colMap.full_name]||'').trim()       : ''
-      const mb  = colMap.mobile          ? (row[colMap.mobile]||'').trim()          : ''
-      const am  = colMap.loan_amount     ? (row[colMap.loan_amount]||'').trim()     : ''
-      const ai  = colMap.application_id  ? (row[colMap.application_id]||'').trim()  : ''
-      const nt  = colMap.notes           ? (row[colMap.notes]||'').trim()           : ''
-      const ct  = colMap.city            ? (row[colMap.city]||'').trim()            : ''
-      const ld  = colMap.lead_date       ? (row[colMap.lead_date]||'')              : ''
-      const sn  = colMap.sheet_number    ? (row[colMap.sheet_number]||'').trim()    : ''
-      const an  = colMap.agent_name      ? (row[colMap.agent_name]||'').trim()      : ''
-      const mbNorm = mb.replace(/\D/g,'').slice(-10)
-      const isDupAgent = !!(assignTo && mbNorm && existingAgentMobiles.has(mbNorm))
-      return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,_valid:!!(nm&&mb),_dupAgent:isDupAgent}
-    })
+    const csvRows = (()=>{
+      const seenInSheet = new Set()
+      return rawRows.map((row,i)=>{
+        const nm  = colMap.full_name       ? (row[colMap.full_name]||'').trim()       : ''
+        const mb  = colMap.mobile          ? (row[colMap.mobile]||'').trim()          : ''
+        const am  = colMap.loan_amount     ? (row[colMap.loan_amount]||'').trim()     : ''
+        const ai  = colMap.application_id  ? (row[colMap.application_id]||'').trim()  : ''
+        const nt  = colMap.notes           ? (row[colMap.notes]||'').trim()           : ''
+        const ct  = colMap.city            ? (row[colMap.city]||'').trim()            : ''
+        const ld  = colMap.lead_date       ? (row[colMap.lead_date]||'')              : ''
+        const sn  = colMap.sheet_number    ? (row[colMap.sheet_number]||'').trim()    : ''
+        const an  = colMap.agent_name      ? (row[colMap.agent_name]||'').trim()      : ''
+        const mbNorm = mb.replace(/\D/g,'').slice(-10)
+        // Duplicate within this same uploaded sheet (only the 2nd+ occurrence is flagged;
+        // the first occurrence of a number is still imported).
+        const isDupSheet = !!(mbNorm && seenInSheet.has(mbNorm))
+        // Duplicate against any past upload, org-wide — regardless of which agent it's
+        // currently assigned to (or unassigned), not just the agent selected in Step 3.
+        const isDupOrg = !!(mbNorm && existingOrgMobiles.has(mbNorm))
+        if(mbNorm) seenInSheet.add(mbNorm)
+        return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,
+          _valid:!!(nm&&mb),_dupSheet:isDupSheet,_dupOrg:isDupOrg,_dupAgent:isDupSheet||isDupOrg}
+      })
+    })()
     const missingCount   = csvRows.filter(r=>!r._valid).length
-    const dupAgentCount  = csvRows.filter(r=>r._valid&&r._dupAgent).length
+    const dupSheetCount  = csvRows.filter(r=>r._valid&&r._dupSheet).length
+    const dupOrgCount    = csvRows.filter(r=>r._valid&&!r._dupSheet&&r._dupOrg).length
+    const dupAgentCount  = dupSheetCount+dupOrgCount
     const trulyValidRows = csvRows.filter(r=>r._valid&&!r._dupAgent)
     const selectedAgentName = csvAgents.find(a=>a.id===assignTo)?.full_name||'this agent'
 
@@ -6743,14 +6755,25 @@ export default function Dashboard({ session }) {
     useEffect(()=>{
       let cancelled=false
       const run=async()=>{
-        if(!assignTo||!colMap.mobile){ setExistingAgentMobiles(new Set()); return }
-        const{data}=await supabase.from('leads').select('mobile').eq('assigned_to',assignTo)
+        if(!colMap.mobile||!profile?.org_id){ setExistingOrgMobiles(new Set()); return }
+        // Org-wide check: catches a number from ANY past upload, regardless of which
+        // agent it's currently assigned to (or unassigned) — not just the agent being
+        // selected in Step 3. Paginated since a single request caps at 1000 rows.
+        let all=[],from=0
+        const PAGE=1000
+        while(true){
+          const{data,error}=await supabase.from('leads').select('mobile').eq('org_id',profile.org_id).eq('archived',false).range(from,from+PAGE-1)
+          if(error||!data||data.length===0)break
+          all=all.concat(data)
+          if(data.length<PAGE)break
+          from+=PAGE
+        }
         if(cancelled)return
-        setExistingAgentMobiles(new Set((data||[]).map(l=>(l.mobile||'').replace(/\D/g,'').slice(-10)).filter(Boolean)))
+        setExistingOrgMobiles(new Set(all.map(l=>(l.mobile||'').replace(/\D/g,'').slice(-10)).filter(Boolean)))
       }
       run()
       return()=>{cancelled=true}
-    },[assignTo,colMap.mobile])
+    },[colMap.mobile,profile?.org_id])
 
     const handleFile=async(e)=>{
       const file=e.target.files[0]; if(!file)return
@@ -6938,7 +6961,8 @@ export default function Dashboard({ session }) {
                     <span style={{fontSize:11,color:(missingCount>0||dupAgentCount>0)?'#DC2626':'#059669',fontWeight:600}}>
                       {[
                         missingCount>0?`${missingCount} row${missingCount>1?'s':''} missing Name/Number`:null,
-                        dupAgentCount>0?`${dupAgentCount} row${dupAgentCount>1?'s':''} already assigned to this agent`:null,
+                        dupSheetCount>0?`${dupSheetCount} row${dupSheetCount>1?'s':''} repeated in this sheet`:null,
+                        dupOrgCount>0?`${dupOrgCount} row${dupOrgCount>1?'s':''} already in the system`:null,
                       ].filter(Boolean).join(', ')}
                       {(missingCount>0||dupAgentCount>0)?' — ':''}{trulyValidRows.length} valid
                     </span>
@@ -6965,7 +6989,7 @@ export default function Dashboard({ session }) {
                                 :r._dupAgent
                                   ?<div>
                                     <span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 7px',borderRadius:4,fontWeight:600,whiteSpace:'nowrap'}}>Skip</span>
-                                    <div style={{fontSize:10,color:'#92400E',marginTop:2}}>Already assigned to {selectedAgentName}</div>
+                                    <div style={{fontSize:10,color:'#92400E',marginTop:2}}>{r._dupSheet?'Repeated in this sheet':'Already in the system'}</div>
                                   </div>
                                   :<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>✓ OK</span>
                             }</td>
