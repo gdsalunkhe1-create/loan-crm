@@ -1243,6 +1243,22 @@ function AgentDashboard({ userId }) {
     const todayLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart })
     const todayDisbLeads=leads.filter(l=>{ if(!isCurrentlyInStatus(l,'Disbursed')) return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
     const monthLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart })
+
+    // TEMP DEBUG — diagnosing the Nithya H Monthly Disbursed discrepancy
+    // (Shruti Viraj Sane vs Badavath Revanth). DO NOT REMOVE until the live
+    // console output has been reviewed and the divergence is confirmed.
+    leads.forEach(l=>{
+      if(l.status!=='Disbursed') return
+      console.log('[TEMP-DEBUG disbursed]', {
+        id: l.id,
+        full_name: l.full_name,
+        'l.status': l.status,
+        isCurrentlyInStatus: isCurrentlyInStatus(l,'Disbursed'),
+        getStatusChangeTime: getStatusChangeTime(l,'Disbursed'),
+        monthStart,
+      })
+    })
+
     const monthDisbLeads=leads.filter(l=>{ if(!isCurrentlyInStatus(l,'Disbursed')) return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
     const targets={
       todayLogins:     todayLoginLeads.length,

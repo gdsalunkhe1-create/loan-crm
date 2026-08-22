@@ -371,6 +371,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
   const [assignTo,setAssignTo]   = useState('')
   const [assigning,setAssigning] = useState(false)
   const [bulkDeleting,setBulkDeleting] = useState(false)
+  const [bulkDeleteProgress,setBulkDeleteProgress] = useState(null)
   const [unassigning,setUnassigning] = useState(false)
   const [showAssignTypeModal, setShowAssignTypeModal] = useState(false)
   const [assignType, setAssignType] = useState('mirror')
@@ -520,13 +521,17 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     const confirmed2 = window.confirm(`Are you absolutely sure? This will delete ${ids.length} leads permanently.`)
     if(!confirmed2) return
     setBulkDeleting(true)
+    const totalBatches = Math.ceil(ids.length/50)
     try {
       for(let i=0; i<ids.length; i+=50) {
         const batch = ids.slice(i, i+50)
-        await supabase.from('calls').delete().in('lead_id', batch)
-        await supabase.from('tasks').delete().in('lead_id', batch)
-        await supabase.from('loan_obligations').delete().in('lead_id', batch)
-        await supabase.from('activity_log').delete().in('lead_id', batch)
+        setBulkDeleteProgress({current: i/50+1, total: totalBatches})
+        await Promise.all([
+          supabase.from('calls').delete().in('lead_id', batch),
+          supabase.from('tasks').delete().in('lead_id', batch),
+          supabase.from('loan_obligations').delete().in('lead_id', batch),
+          supabase.from('activity_log').delete().in('lead_id', batch),
+        ])
         await supabase.from('leads').delete().in('id', batch)
       }
       showToast(`${ids.length} leads deleted successfully`)
@@ -536,6 +541,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
       showToast('Error: '+e.message, 'error')
     } finally {
       setBulkDeleting(false)
+      setBulkDeleteProgress(null)
     }
   }
 
@@ -582,7 +588,7 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
             {assigning?'Assigning…':'Assign'}
           </Btn>
           <button onClick={handleBulkDelete} disabled={bulkDeleting} style={{padding:'7px 14px',borderRadius:8,border:'none',background:'#dc2626',color:'white',cursor:'pointer',fontSize:13,fontWeight:600,opacity:bulkDeleting?0.6:1}}>
-            {bulkDeleting ? 'Deleting...' : `🗑 Delete ${selected.size} Leads`}
+            {bulkDeleting ? (bulkDeleteProgress ? `Deleting batch ${bulkDeleteProgress.current} of ${bulkDeleteProgress.total}…` : 'Deleting...') : `🗑 Delete ${selected.size} Leads`}
           </button>
           <button onClick={handleBulkUnassign} disabled={unassigning} style={{padding:'7px 14px',borderRadius:8,border:'none',background:'#d97706',color:'white',cursor:'pointer',fontSize:13,fontWeight:600,opacity:unassigning?0.6:1}}>
             {unassigning ? 'Unassigning…' : `↩ Unassign ${selected.size} Lead${selected.size>1?'s':''}`}
@@ -1160,6 +1166,7 @@ function DuplicateLeadsFinder({ leads, reload, showToast }) {
   const [duplicates, setDuplicates] = useState([])
   const [finding, setFinding]       = useState(false)
   const [deleting, setDeleting]     = useState(false)
+  const [deleteProgress, setDeleteProgress] = useState(null)
 
   const findDuplicates = () => {
     setFinding(true)
@@ -1184,12 +1191,16 @@ function DuplicateLeadsFinder({ leads, reload, showToast }) {
     const confirmed = window.confirm(`Delete ${toDelete.length} duplicate leads? This keeps the most recent lead for each mobile number.`)
     if(!confirmed) return
     setDeleting(true)
+    const totalBatches = Math.ceil(toDelete.length/50)
     try {
       for(let i=0; i<toDelete.length; i+=50) {
         const batch = toDelete.slice(i, i+50)
-        await supabase.from('calls').delete().in('lead_id', batch)
-        await supabase.from('tasks').delete().in('lead_id', batch)
-        await supabase.from('loan_obligations').delete().in('lead_id', batch)
+        setDeleteProgress({current: i/50+1, total: totalBatches})
+        await Promise.all([
+          supabase.from('calls').delete().in('lead_id', batch),
+          supabase.from('tasks').delete().in('lead_id', batch),
+          supabase.from('loan_obligations').delete().in('lead_id', batch),
+        ])
         await supabase.from('leads').delete().in('id', batch)
       }
       showToast(`${toDelete.length} duplicate leads deleted`)
@@ -1199,6 +1210,7 @@ function DuplicateLeadsFinder({ leads, reload, showToast }) {
       showToast('Error: '+e.message, 'error')
     } finally {
       setDeleting(false)
+      setDeleteProgress(null)
     }
   }
 
@@ -1210,7 +1222,7 @@ function DuplicateLeadsFinder({ leads, reload, showToast }) {
         </button>
         {duplicates.length > 0 && (
           <button onClick={deleteOlderDuplicates} disabled={deleting} style={{padding:'8px 18px',background:'#dc2626',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600,opacity:deleting?0.6:1}}>
-            {deleting ? 'Deleting...' : `🗑 Delete ${duplicates.flatMap(d=>d.leads.slice(1)).length} Duplicates`}
+            {deleting ? (deleteProgress ? `Deleting batch ${deleteProgress.current} of ${deleteProgress.total}…` : 'Deleting...') : `🗑 Delete ${duplicates.flatMap(d=>d.leads.slice(1)).length} Duplicates`}
           </button>
         )}
       </div>
