@@ -2149,7 +2149,7 @@ export default function FullAdminPanel() {
           setLeads(prev=>prev.filter(l=>l.id!==payload.old.id))
         } else {
           clearTimeout(fetchDataDebounceRef.current)
-          fetchDataDebounceRef.current = setTimeout(()=>fetchData(),800)
+          fetchDataDebounceRef.current = setTimeout(()=>fetchData(),1500)
         }
       })
       .subscribe()
@@ -2165,11 +2165,22 @@ export default function FullAdminPanel() {
   // Supabase/PostgREST caps unpaginated selects at 1000 rows — loop on
   // .range(from,from+999) like Dashboard.js's fetchLeads does, so the leads
   // count admin sees always reflects the full table.
+  const LEADS_PAGE_RETRY_ATTEMPTS = 3
+  const LEADS_PAGE_RETRY_DELAY_MS = 400
   const fetchLeadsPaginated = async () => {
     let all=[],from=0
     while(true){
-      const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
-      if(error){ console.error('[fetchData] leads page failed at offset',from,error); break }
+      let data,error
+      for(let attempt=1; attempt<=LEADS_PAGE_RETRY_ATTEMPTS; attempt++){
+        ;({data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999))
+        if(!error) break
+        console.error(`[fetchData] leads page failed at offset ${from} (attempt ${attempt}/${LEADS_PAGE_RETRY_ATTEMPTS})`,error)
+        if(attempt<LEADS_PAGE_RETRY_ATTEMPTS) await new Promise(r=>setTimeout(r,LEADS_PAGE_RETRY_DELAY_MS*attempt))
+      }
+      // A page that still fails after retries means the dataset is incomplete —
+      // throw rather than returning `all` as if it were the full table, so the
+      // caller can keep showing last-known-good data instead of a silent partial count.
+      if(error) throw new Error(`Failed to fetch leads page at offset ${from}: ${error.message}`)
       if(!data) break
       all=[...all,...data]
       if(data.length<1000) break
@@ -2185,12 +2196,24 @@ export default function FullAdminPanel() {
     try {
       const [uR,lD,cR,dR] = await Promise.all([
         supabase.from('profiles').select('*').order('role'),
-        fetchLeadsPaginated(),
+        // Isolate leads-fetch failures from the rest of this Promise.all: a page
+        // that still fails after fetchLeadsPaginated's internal retries throws,
+        // and we catch it here rather than letting it reject the whole batch —
+        // that way users/calls/dispositions still refresh even if leads can't.
+        fetchLeadsPaginated().catch(err=>({__leadsFetchFailed:true,error:err})),
         supabase.from('calls').select('id,agent_id,lead_id,created_at,call_status,call_outcome').order('created_at',{ascending:false}),
         supabase.from('dispositions').select('*').order('sort_order'),
       ])
       if(fetchSeqRef.current!==seq) return
-      setUsers(uR.data||[]);setLeads(lD||[]);setCallLogs(cR.data||[]);setDispositions(dR.data||[])
+      setUsers(uR.data||[]);setCallLogs(cR.data||[]);setDispositions(dR.data||[])
+      if(lD&&lD.__leadsFetchFailed){
+        // Don't overwrite good `leads` state with nothing/partial — keep showing
+        // whatever was already loaded and surface that the refresh failed.
+        console.error('[fetchData] leads fetch failed after retries — keeping last known leads',lD.error)
+        showToast("Couldn't refresh leads — showing last known data, retrying…",'error')
+      } else {
+        setLeads(lD||[])
+      }
 
       const aR = await supabase.from('activity_log').select('*').order('created_at',{ascending:false}).limit(500)
       if(fetchSeqRef.current!==seq) return

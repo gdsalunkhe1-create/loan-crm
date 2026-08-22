@@ -94,7 +94,7 @@ const istToday = () => nowIST().slice(0,10)
 // entry; falls back to updated_at for pre-trigger leads currently sitting in that status.
 // Module-level (not just AgentDashboard-local) so admin-side aggregations can reuse
 // the exact same status-change logic instead of re-deriving it and drifting.
-const getStatusChangeTime=(lead,status)=>{
+export const getStatusChangeTime=(lead,status)=>{
   const hist=Array.isArray(lead.stage_history)?lead.stage_history:[]
   for(let i=hist.length-1;i>=0;i--){
     if(hist[i]&&hist[i].to===status&&hist[i].at) return new Date(hist[i].at)
@@ -103,16 +103,33 @@ const getStatusChangeTime=(lead,status)=>{
   return null
 }
 
+// Whether a lead is CURRENTLY sitting in `status`, checked against the real
+// stage_history transition log rather than lead.status directly. lead.status
+// can NOT be trusted for this on a mirror-assigned lead: AgentDashboard's
+// fetchAll merges mirror leads with `status: mirror_agent_statuses[userId] ||
+// status`, so a mirror agent's own (possibly stale/never-updated) per-agent
+// status view silently overwrites the lead's real status in myLeads. Reading
+// the last real stage_history entry instead sidesteps that ambiguity — it's
+// the same append-only log a reversed/corrected disbursement (moved off
+// Disbursed to some other status later) would also show up in, since that
+// move appends its own later entry. Falls back to lead.status only when
+// there's no stage_history at all (legacy leads, never went through the trigger).
+export const isCurrentlyInStatus=(lead,status)=>{
+  const hist=Array.isArray(lead.stage_history)?lead.stage_history:[]
+  if(hist.length>0) return hist[hist.length-1]?.to===status
+  return lead.status===status
+}
+
 // Amount helpers shared between the agent-side pipeline stats and the admin-side
 // Team Targets rollup — keep these in one place so the two never drift again
 // (they did once already: login/disbursed totals disagreed between agent and admin views).
-const loginAmt=l=>Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0
-const disbAmt =l=>Number(l.disbursed_amount)||0
+export const loginAmt=l=>Number(l.login_amount)||Number(l.required_loan_amount)||Number(l.eligible_amount)||0
+export const disbAmt =l=>Number(l.disbursed_amount)||0
 
 // Computes the current month's target-vs-achieved numbers for the agent target widget
 // (Part 4) and the disbursement celebration popup (Part 5) — both read from the same
 // source of truth. Module-level so the admin Team Targets section can reuse it too.
-const computeTargetProgress=(leads,targetRow)=>{
+export const computeTargetProgress=(leads,targetRow)=>{
   if(!targetRow) return null
   const monthStr=istToday().slice(0,7)
   const [yy,mm]=monthStr.split('-').map(Number)
@@ -123,7 +140,7 @@ const computeTargetProgress=(leads,targetRow)=>{
   const monthlyLoginTarget=target*1.3
 
   const disbursedThisMonth=leads.reduce((sum,l)=>{
-    if(l.status!=='Disbursed') return sum
+    if(!isCurrentlyInStatus(l,'Disbursed')) return sum
     const t=getStatusChangeTime(l,'Disbursed')
     if(!t||t<monthStart||t>=monthEndExclusive) return sum
     return sum+disbAmt(l)
@@ -1218,12 +1235,15 @@ function AgentDashboard({ userId }) {
     // (login_amount counts for ratio purposes regardless of later outcome).
     // Disbursed additionally requires CURRENT status==='Disbursed' — unlike Login, a
     // disbursement can be reversed/corrected (lead moved off Disbursed later), and a
-    // stale stage_history transition shouldn't keep counting it. Same guard already
-    // used by computeTargetProgress's disbursedThisMonth reducer.
+    // stale stage_history transition shouldn't keep counting it. Checked via
+    // isCurrentlyInStatus (not lead.status directly) since leads here can be
+    // mirror-assigned, where lead.status may hold a stale per-agent mirror view
+    // instead of the lead's real status — see isCurrentlyInStatus's own comment.
+    // Same guard used by computeTargetProgress's disbursedThisMonth reducer.
     const todayLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=todayStart })
-    const todayDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed') return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
+    const todayDisbLeads=leads.filter(l=>{ if(!isCurrentlyInStatus(l,'Disbursed')) return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=todayStart })
     const monthLoginLeads=leads.filter(l=>{ const t=getStatusChangeTime(l,'Login'); return t&&t>=monthStart })
-    const monthDisbLeads=leads.filter(l=>{ if(l.status!=='Disbursed') return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
+    const monthDisbLeads=leads.filter(l=>{ if(!isCurrentlyInStatus(l,'Disbursed')) return false; const t=getStatusChangeTime(l,'Disbursed'); return t&&t>=monthStart })
     const targets={
       todayLogins:     todayLoginLeads.length,
       todayDisbursed:  todayDisbLeads.length,
