@@ -647,6 +647,14 @@ function AgentDashboard({ userId }) {
     }catch{}
   },[search, agentStatusSet, agentDateFrom, agentDateTo, filterLoanAmount, filterCity, userId])
 
+  // A stage filter persists in sessionStorage across the whole session (see above),
+  // so it can easily go stale and silently hide leads a fresh search would otherwise
+  // find — with no obvious sign anything's filtered besides the small dropdown label.
+  // Searching should always search across every stage, so any non-empty search term
+  // clears the stage filter. Doesn't touch agentDateFrom/agentDateTo/filterLoanAmount/
+  // filterCity — only the stage filter is implicated in this "hidden results" trap.
+  useEffect(()=>{ if(search) setAgentStatusSet([]) },[search])
+
   // ── Disbursed-amount capture (Part 2) ── shared by updateLeadStatus and saveCallLog;
   // disbursedAmountOnConfirm holds the "resume with this amount" callback for whichever path opened it.
   const [showDisbursedAmountModal,setShowDisbursedAmountModal] = useState(false)
@@ -3834,6 +3842,20 @@ function AgentDashboard({ userId }) {
               <DateInput value={agentDateTo} onChange={e=>setAgentDateTo(e.target.value)}
                 style={{...filterClayDate,flexShrink:0}}/>
             </div>
+
+            {/* Active stage-filter banner — a stage filter persists across the whole
+                session (see FILTER_STORAGE_KEY), so without this it can silently hide
+                leads with no visible sign anything's filtered. */}
+            {agentStatusSet.length>0&&(
+              <div style={{display:'flex',alignItems:'center',gap:8,margin:'8px 0 2px',flexWrap:'wrap'}}>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:20,background:darkMode?'rgba(24,95,165,0.18)':'#EFF6FF',border:'1px solid '+(darkMode?'#185FA5':'#BFDBFE'),color:darkMode?'#93C5FD':'#1D4ED8',fontSize:12,fontWeight:600}}>
+                  🔍 Filtering by: {agentStatusSet.join(', ')}
+                  <button onClick={()=>setAgentStatusSet([])}
+                    aria-label="Clear stage filter"
+                    style={{background:'none',border:'none',cursor:'pointer',color:'inherit',fontSize:13,fontWeight:700,lineHeight:1,padding:0,marginLeft:2}}>✕</button>
+                </span>
+              </div>
+            )}
 
             {/* MOBILE: card layout | DESKTOP: table layout */}
             {isMobile?(
