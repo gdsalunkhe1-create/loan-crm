@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
@@ -358,6 +358,63 @@ function Users({ users, reload, showToast }) {
   )
 }
 
+// One Leads-table row. Memoized so toggling a single checkbox (which only
+// changes `selected` state in the parent) re-renders just that row, not the
+// whole visible page. leads are refetched wholesale on every reload() (no
+// incremental merge, unlike Dashboard.js's realtime path), so a `lead` object
+// gets a brand-new reference on every reload even when its content is
+// unchanged — plain React.memo (reference-based shallow compare) wouldn't
+// skip anything in that case. The comparator below checks the actual
+// displayed field values instead, so a same-content refetch still skips
+// re-rendering rows whose id/status/selection (and other shown fields)
+// didn't really change.
+const leadRowPropsEqual = (prev, next) => {
+  return prev.lead.id === next.lead.id
+    && prev.lead.status === next.lead.status
+    && prev.isSelected === next.isSelected
+    && prev.lead.full_name === next.lead.full_name
+    && prev.lead.mobile === next.lead.mobile
+    && prev.lead.loan_amount === next.lead.loan_amount
+    && (prev.lead.source||prev.lead.lead_source) === (next.lead.source||next.lead.lead_source)
+    && prev.lead.created_at === next.lead.created_at
+    && prev.agentName === next.agentName
+    && prev.mirrorNames === next.mirrorNames
+    && prev.isDup === next.isDup
+    && prev.onToggle === next.onToggle
+    && prev.onReassign === next.onReassign
+    && prev.onDelete === next.onDelete
+}
+const LeadRow = React.memo(function LeadRow({ lead:l, agentName, mirrorNames, isDup, isSelected, onToggle, onReassign, onDelete }){
+  return(
+    <tr style={{background:isSelected?'#eff6ff':isDup?'#fff7ed':'white'}}>
+      <td style={TD}><input type="checkbox" checked={isSelected} onChange={()=>onToggle(l.id)} style={{cursor:'pointer'}}/></td>
+      <td style={TD}>
+        <div>{l.full_name||'—'}</div>
+        {isDup && <span style={{display:'inline-block',marginTop:3,padding:'1px 7px',borderRadius:10,background:'#fef3c7',color:'#92400e',fontSize:10,fontWeight:700}}>⚠️ DUPLICATE</span>}
+      </td>
+      <td style={{...TD,color:'#6b7280'}}>{l.mobile||'—'}</td>
+      <td style={TD}><Badge text={l.status||'New'} color={sc(l.status)}/></td>
+      <td style={TD}>{fmtV(l.loan_amount)}</td>
+      <td style={{...TD,color:'#6b7280'}}>{l.source||l.lead_source||'—'}</td>
+      <td style={TD}>{agentName?<span style={{fontSize:12,fontWeight:500}}>{agentName}</span>:<span style={{fontSize:12,color:'#9ca3af'}}>Unassigned</span>}</td>
+      <td style={TD}>{mirrorNames?<span style={{fontSize:11,color:'#185FA5'}}>{mirrorNames}</span>:<span style={{fontSize:11,color:'#9ca3af'}}>—</span>}</td>
+      <td style={{...TD,fontSize:11,color:'#9ca3af'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'}</td>
+      <td style={TD}>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+          <button
+            onClick={()=>onReassign(l)}
+            style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #bfdbfe',background:'#eff6ff',color:'#1d4ed8',cursor:'pointer',whiteSpace:'nowrap'}}
+          >↩ Reassign</button>
+          <button
+            onClick={()=>onDelete(l)}
+            style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #fecaca',background:'#fef2f2',color:'#dc2626',cursor:'pointer',whiteSpace:'nowrap'}}
+          >🗑 Delete</button>
+        </div>
+      </td>
+    </tr>
+  )
+}, leadRowPropsEqual)
+
 // ─── LEADS ───────────────────────────────────────────────────────────────────
 function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, showToast }) {
   const [search,setSearch]       = useState('')
@@ -380,6 +437,8 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
   const [reassignTarget, setReassignTarget] = useState(null)
   const [reassignTo, setReassignTo] = useState('')
   const [reassigning, setReassigning] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageJump, setPageJump] = useState('1')
 
   const agents  = users.filter(u=>['agent','team_leader'].includes(u.role))
   const statuses= ['All',...Array.from(new Set(leads.map(l=>l.status).filter(Boolean)))]
@@ -413,6 +472,17 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     return mQ&&mS&&mD&&mA&&mSheet&&mDate&&mDup
   })
 
+  // Any filter change resets to page 1 — otherwise the admin could land on a
+  // now out-of-range page (or a page whose rows silently changed underneath them).
+  useEffect(()=>{ setPage(1) }, [search, statusF, dispF, agentF, sheetF, dateFrom, dateTo, showDupOnly])
+
+  const PAGE_SIZE = 100
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(Math.max(page, 1), totalPages)
+  useEffect(()=>{ setPageJump(String(currentPage)) }, [currentPage])
+  const pageItems = filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE)
+  const goToPage = (n) => setPage(Math.min(Math.max(1, n), totalPages))
+
   const allSel = filtered.length>0&&filtered.every(l=>selected.has(l.id))
 
   const toggleAll = () => {
@@ -420,7 +490,13 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     allSel ? filtered.forEach(l=>next.delete(l.id)) : filtered.forEach(l=>next.add(l.id))
     setSelected(next)
   }
-  const toggleOne = id => { const next=new Set(selected); next.has(id)?next.delete(id):next.add(id); setSelected(next) }
+  // Functional update (not reading `selected` from closure) + useCallback so this
+  // has a stable reference across renders that only change `selected` itself —
+  // required for LeadRow's React.memo to actually skip re-rendering other rows
+  // when one checkbox is toggled.
+  const toggleOne = useCallback(id => {
+    setSelected(prev => { const next=new Set(prev); next.has(id)?next.delete(id):next.add(id); return next })
+  }, [])
   const clearFilters = () => { setSearch('');setStatusF('All');setDispF('All');setAgentF('All');setSheetF('All');setDateFrom('');setDateTo('') }
 
   const doAssign = async (type) => {
@@ -482,7 +558,9 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     setAssigning(false)
   }
 
-  const handleDeleteLead = async (lead) => {
+  // useCallback (stable across a selected-only re-render, since showToast/reload
+  // props don't change then) — see LeadRow's comment for why this matters.
+  const handleDeleteLead = useCallback(async (lead) => {
     const confirmed = window.confirm(`Delete lead "${lead.full_name}" (${lead.mobile})?\n\nThis will also delete all call logs and tasks for this lead. This cannot be undone.`)
     if(!confirmed) return
     try {
@@ -496,7 +574,11 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
     } catch(e) {
       showToast('Error deleting lead: '+e.message, 'error')
     }
-  }
+  }, [showToast, reload])
+
+  const openReassign = useCallback((lead) => {
+    setReassignTarget(lead); setReassignTo(''); setShowReassignModal(true)
+  }, [])
 
   const handleBulkUnassign = async () => {
     const ids = [...selected]
@@ -607,53 +689,53 @@ function Leads({ leads, users, dispositions, adminUser, adminProfile, reload, sh
               </tr>
             </thead>
             <tbody>
-              {filtered.map(l=>{
+              {pageItems.map(l=>{
                 const agent=users.find(u=>u.id===l.assigned_to)
-                const isSel=selected.has(l.id)
-                const isDup=dupLeadIds.has(l.id)
+                const mirrorNames = (l.mirror_agents||[])
+                  .filter(id => id !== l.assigned_to)
+                  .map(id => users.find(u=>u.id===id)?.full_name)
+                  .filter(Boolean)
+                  .join(', ')
                 return(
-                  <tr key={l.id} style={{background:isSel?'#eff6ff':isDup?'#fff7ed':'white'}}>
-                    <td style={TD}><input type="checkbox" checked={isSel} onChange={()=>toggleOne(l.id)} style={{cursor:'pointer'}}/></td>
-                    <td style={TD}>
-                      <div>{l.full_name||'—'}</div>
-                      {dupLeadIds.has(l.id) && <span style={{display:'inline-block',marginTop:3,padding:'1px 7px',borderRadius:10,background:'#fef3c7',color:'#92400e',fontSize:10,fontWeight:700}}>⚠️ DUPLICATE</span>}
-                    </td>
-                    <td style={{...TD,color:'#6b7280'}}>{l.mobile||'—'}</td>
-                    <td style={TD}><Badge text={l.status||'New'} color={sc(l.status)}/></td>
-                    <td style={TD}>{fmtV(l.loan_amount)}</td>
-                    <td style={{...TD,color:'#6b7280'}}>{l.source||l.lead_source||'—'}</td>
-                    <td style={TD}>{agent?<span style={{fontSize:12,fontWeight:500}}>{agent.full_name}</span>:<span style={{fontSize:12,color:'#9ca3af'}}>Unassigned</span>}</td>
-                    <td style={TD}>
-                      {(() => {
-                        const mirrorAgentNames = (l.mirror_agents||[])
-                          .filter(id => id !== l.assigned_to)
-                          .map(id => users.find(u=>u.id===id)?.full_name)
-                          .filter(Boolean)
-                        return mirrorAgentNames.length > 0
-                          ? <span style={{fontSize:11,color:'#185FA5'}}>{mirrorAgentNames.join(', ')}</span>
-                          : <span style={{fontSize:11,color:'#9ca3af'}}>—</span>
-                      })()}
-                    </td>
-                    <td style={{...TD,fontSize:11,color:'#9ca3af'}}>{l.created_at?new Date(l.created_at).toLocaleDateString('en-IN',{timeZone:IST_TZ}):'—'}</td>
-                    <td style={TD}>
-                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                        <button
-                          onClick={()=>{ setReassignTarget(l); setReassignTo(''); setShowReassignModal(true) }}
-                          style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #bfdbfe',background:'#eff6ff',color:'#1d4ed8',cursor:'pointer',whiteSpace:'nowrap'}}
-                        >↩ Reassign</button>
-                        <button
-                          onClick={()=>handleDeleteLead(l)}
-                          style={{padding:'4px 10px',fontSize:11,fontWeight:600,borderRadius:6,border:'1px solid #fecaca',background:'#fef2f2',color:'#dc2626',cursor:'pointer',whiteSpace:'nowrap'}}
-                        >🗑 Delete</button>
-                      </div>
-                    </td>
-                  </tr>
+                  <LeadRow
+                    key={l.id}
+                    lead={l}
+                    agentName={agent?.full_name}
+                    mirrorNames={mirrorNames}
+                    isDup={dupLeadIds.has(l.id)}
+                    isSelected={selected.has(l.id)}
+                    onToggle={toggleOne}
+                    onReassign={openReassign}
+                    onDelete={handleDeleteLead}
+                  />
                 )
               })}
               {filtered.length===0&&<tr><td colSpan={10} style={{...TD,textAlign:'center',color:'#9ca3af',padding:32}}>No leads found</td></tr>}
             </tbody>
           </table>
         </div>
+        {filtered.length>0&&(
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,padding:'12px 16px',borderTop:'1px solid #f3f4f6'}}>
+            <span style={{fontSize:12,color:'#6b7280'}}>
+              Showing {(currentPage-1)*PAGE_SIZE+1}–{Math.min(currentPage*PAGE_SIZE,filtered.length)} of {filtered.length} leads
+            </span>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <Btn outline small disabled={currentPage<=1} onClick={()=>goToPage(currentPage-1)}>Prev</Btn>
+              <span style={{fontSize:12,color:'#374151',display:'flex',alignItems:'center',gap:6}}>
+                Page
+                <input
+                  type="number" min={1} max={totalPages} value={pageJump}
+                  onChange={e=>setPageJump(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==='Enter') goToPage(parseInt(pageJump,10)||1) }}
+                  onBlur={()=>goToPage(parseInt(pageJump,10)||1)}
+                  style={{width:52,padding:'4px 6px',border:'1px solid #d1d5db',borderRadius:6,fontSize:12,textAlign:'center'}}
+                />
+                of {totalPages}
+              </span>
+              <Btn outline small disabled={currentPage>=totalPages} onClick={()=>goToPage(currentPage+1)}>Next</Btn>
+            </div>
+          </div>
+        )}
       </Card>
 
       {showReassignModal && reassignTarget && (
