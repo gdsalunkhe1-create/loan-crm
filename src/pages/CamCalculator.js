@@ -66,6 +66,7 @@ const mapCibilOwnership = (o = '') => {
 const cibilToRow = a => ({
   id: newRowId(),
   financier: a.bankName || '',
+  openDate: a.openDate || '',
   ownership: mapCibilOwnership(a.ownership),
   loanType: mapCibilType(a.loanType),
   status: 'Live',
@@ -79,7 +80,7 @@ const cibilToRow = a => ({
 const emptyRow = () => ({
   id: newRowId(),
   financier: '', ownership: 'Individual', loanType: 'Personal Loan',
-  status: 'Live', loanAmount: '', outstanding: '', emi: '', remEmi: '', paidBy: 'Self',
+  status: 'Live', loanAmount: '', outstanding: '', emi: '', remEmi: '', paidBy: 'Self', openDate: '',
 });
 
 const card = { background: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.07)', marginBottom: '18px' };
@@ -94,7 +95,7 @@ const btnPri = { padding: '9px 16px', background: BLUE, color: '#fff', border: '
 const btnSec = { padding: '9px 16px', background: '#fff', color: BLUE, border: '1px solid #cdd8ea', borderRadius: '7px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' };
 
 const COLS = [
-  ['Financier', 130], ['Ownership', 95], ['Loan Type', 120], ['Status', 80],
+  ['Financier', 130], ['Open Date', 100], ['Ownership', 95], ['Loan Type', 120], ['Status', 80],
   ['Loan Amt', 95], ['Outstanding', 100], ['EMI', 85], ['Rem. EMI', 72],
   ['Paid By', 105], ['Obligated EMI', 100], ['Reason', 110],
 ];
@@ -215,9 +216,9 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
 
   const exportExcel = () => {
     const aoa = [];
-    aoa.push(['Financier', 'Ownership', 'Loan Type', 'Status', 'Loan Amt', 'Outstanding', 'EMI', 'Rem. EMI', 'Paid By', 'Obligated EMI', 'Reason']);
+    aoa.push(['Financier', 'Open Date', 'Ownership', 'Loan Type', 'Status', 'Loan Amt', 'Outstanding', 'EMI', 'Rem. EMI', 'Paid By', 'Obligated EMI', 'Reason']);
     calc.rows.forEach(r => aoa.push([
-      r.financier, r.ownership, r.loanType, r.status,
+      r.financier, r.openDate, r.ownership, r.loanType, r.status,
       +r.loanAmount || 0, +r.outstanding || 0, +r.emi || 0,
       r.remEmi === '' ? '' : (+r.remEmi || 0),
       PAID_BY_TYPES.includes(r.loanType) ? r.paidBy : '',
@@ -226,7 +227,7 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
     aoa.push([]); aoa.push(['ELIGIBILITY SUMMARY']);
     buildSummaryRows().forEach(([k, v]) => aoa.push([k, v]));
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [{ wch: 18 }, { wch: 11 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 16 }];
+    ws['!cols'] = [{ wch: 18 }, { wch: 12 },{ wch: 11 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 16 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'CAM');
     XLSX.writeFile(wb, `CAM_${(customerName || 'customer').replace(/[^\w]+/g, '_')}.xlsx`);
@@ -235,9 +236,9 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
   const exportCSV = () => {
     const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
     const lines = [];
-    lines.push(['Financier', 'Ownership', 'Loan Type', 'Status', 'Loan Amt', 'Outstanding', 'EMI', 'Rem. EMI', 'Paid By', 'Obligated EMI', 'Reason'].map(esc).join(','));
+    lines.push(['Financier', 'Open Date', 'Ownership', 'Loan Type', 'Status', 'Loan Amt', 'Outstanding', 'EMI', 'Rem. EMI', 'Paid By', 'Obligated EMI', 'Reason'].map(esc).join(','));
     calc.rows.forEach(r => lines.push([
-      r.financier, r.ownership, r.loanType, r.status, +r.loanAmount || 0, +r.outstanding || 0, +r.emi || 0,
+      r.financier, r.openDate, r.ownership, r.loanType, r.status, +r.loanAmount || 0, +r.outstanding || 0, +r.emi || 0,
       r.remEmi === '' ? '' : (+r.remEmi || 0), PAID_BY_TYPES.includes(r.loanType) ? r.paidBy : '',
       Math.round(r.obligatedVal), r.obligatedReason,
     ].map(esc).join(',')));
@@ -290,13 +291,14 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '1040px' }}>
             <colgroup>{COLS.map(([, w], i) => <col key={i} style={{ width: w + 'px' }} />)}</colgroup>
-            <thead><tr>{COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: i >= 4 && i <= 9 ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
+            <thead><tr>{COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: i >= 5 && i <= 10 ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
             <tbody>
               {calc.rows.map(r => {
                 const showPaidBy = PAID_BY_TYPES.includes(r.loanType);
                 return (
                   <tr key={r.id}>
                     <td style={td}><input style={cellInp} value={r.financier} onChange={e => updateRow(r.id, 'financier', e.target.value)} placeholder="Bank" /></td>
+                    <td style={td}><input style={cellInp} value={r.openDate} onChange={e => updateRow(r.id, 'openDate', e.target.value)} placeholder="dd/mm/yyyy" /></td>
                     <td style={td}><select style={cellSel} value={r.ownership} onChange={e => updateRow(r.id, 'ownership', e.target.value)}>{OWNERSHIP.map(o => <option key={o}>{o}</option>)}</select></td>
                     <td style={td}><select style={cellSel} value={r.loanType} onChange={e => updateRow(r.id, 'loanType', e.target.value)}>{LOAN_TYPES.map(o => <option key={o}>{o}</option>)}</select></td>
                     <td style={td}><select style={cellSel} value={r.status} onChange={e => updateRow(r.id, 'status', e.target.value)}>{STATUSES.map(o => <option key={o}>{o}</option>)}</select></td>
