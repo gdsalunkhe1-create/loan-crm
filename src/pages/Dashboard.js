@@ -5498,6 +5498,7 @@ export default function Dashboard({ session }) {
     ]},
     {section:'MANAGE',items:[
       {id:'admin',    label:'Admin Panel', icon:'settings',    roles:['admin']},
+      {id:'wa-templates', label:'WhatsApp Templates', icon:'chart-bar', roles:['admin']},
       {id:'settings', label:'Settings',   icon:'adjustments', roles:['admin']},
     ]},
   ]
@@ -7559,6 +7560,7 @@ export default function Dashboard({ session }) {
 
         {activePage==='dashboard'&&role==='admin'       &&<ErrorBoundary><AdminDashboardHome userId={profile?.id}/></ErrorBoundary>}
         {activePage==='admin'    &&role==='admin'       &&<ErrorBoundary><AdminPanel/></ErrorBoundary>}
+        {activePage==='wa-templates' && role==='admin' && <ErrorBoundary><WATemplateEditor/></ErrorBoundary>}
         {activePage==='dashboard'&&role==='manager'     &&<ErrorBoundary><ManagerPanel     userId={profile?.id}/></ErrorBoundary>}
         {activePage==='dashboard'&&role==='team_leader' &&<ErrorBoundary><TeamLeaderPanel  userId={profile?.id}/></ErrorBoundary>}
         {activePage==='dashboard'&&role==='agent'       &&<ErrorBoundary><AgentDashboard   userId={profile?.id}/></ErrorBoundary>}
