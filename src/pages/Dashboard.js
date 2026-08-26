@@ -428,17 +428,17 @@ const DEFAULT_WA_TEMPLATES = [
   {
     id:'docs', name:'Docs Reminder', icon:'📄', tag:'DOCS',
     tagColor:'#22C55E', tagBg:'#F0FFF4',
-    message:`Hi {name} 😊, We have received your loan application for ₹{amount}.\n\nTo proceed, please share:\n📄 PAN Card\n📄 Aadhaar Card\n📄 Last 3 months bank statement\n📄 Latest salary slip\n\nFeel free to reply here if you have any questions!`
+    message:`Hi {name} 😊, We have received your loan application for ₹{amount}.\n\nTo proceed, please share:\n📄 PAN Card\n📄 Aadhaar Card\n📄 Last 3 months bank statement\n📄 Latest salary slip\n\nFeel free to reply here if you have any questions!\n\nRegards,\n{agent_name}\n{agent_mobile}`
   },
   {
     id:'emi', name:'EMI Details', icon:'💰', tag:'EMI',
     tagColor:'#3B82F6', tagBg:'#EFF6FF',
-    message:`Hi {name} 😊, Here are your EMI details for the loan of ₹{amount}:\n\n💰 EMI Amount: ₹{emi}/month\n📅 Tenure: 36 months\n📊 Interest Rate: 12.5% p.a.\n\nPlease review and confirm to proceed. 🙏`
+    message:`Hi {name} 😊, Here are your EMI details for the loan of ₹{amount}:\n\n💰 EMI Amount: ₹{emi}/month\n📅 Tenure: 36 months\n📊 Interest Rate: 12.5% p.a.\n\nPlease review and confirm to proceed. 🙏\n\nRegards,\n{agent_name}\n{agent_mobile}`
   },
   {
     id:'disbursement', name:'Disbursement Update', icon:'🎉', tag:'DISBURSED',
     tagColor:'#F59E0B', tagBg:'#FFF7ED',
-    message:`🎉 Congratulations {name}!\n\nYour loan of ₹{amount} has been *DISBURSED* ✅\n\nThe amount has been credited to your bank account.\n\nThank you for choosing us! 🙏`
+    message:`🎉 Congratulations {name}!\n\nYour loan of ₹{amount} has been *DISBURSED* ✅\n\nThe amount has been credited to your bank account.\n\nThank you for choosing us! 🙏\n\nRegards,\n{agent_name}\n{agent_mobile}`
   },
 ]
 
@@ -1838,7 +1838,7 @@ function AgentDashboard({ userId }) {
     const name=waLead.full_name?.split(' ')[0]||'Customer'
     const amount=Number(waLead.loan_amount||0).toLocaleString('en-IN')
     const emi=Math.round((Number(waLead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')
-    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi)
+    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi).replace(/{agent_name}/g,profile?.full_name||'').replace(/{agent_mobile}/g,profile?.mobile||'')
     window.open(`https://wa.me/91${waLead.mobile}?text=${encodeURIComponent(msg)}`,'_blank')
     // Log WA activity to lead notes so all devices see it via RT
     const now=new Date()
@@ -1857,7 +1857,7 @@ function AgentDashboard({ userId }) {
     const name=lead.full_name?.split(' ')[0]||'Customer'
     const amount=Number(lead.loan_amount||0).toLocaleString('en-IN')
     const emi=Math.round((Number(lead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')
-    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi)
+    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi).replace(/{agent_name}/g,profile?.full_name||'').replace(/{agent_mobile}/g,profile?.mobile||'')
     window.open(`https://wa.me/91${lead.mobile}?text=${encodeURIComponent(msg)}`,'_blank')
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
@@ -4345,7 +4345,7 @@ function WATemplateEditor() {
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:8}}>
         <div>
           <div style={{fontWeight:600,fontSize:15,color:'#111827',marginBottom:2}}>📱 WhatsApp Templates</div>
-          <div style={{fontSize:12,color:'#6B7280'}}>Use <strong>{'{name}'}</strong>, <strong>{'{amount}'}</strong>, <strong>{'{emi}'}</strong> as placeholders.</div>
+          <div style={{fontSize:12,color:'#6B7280'}}>Use <strong>{'{name}'}</strong>, <strong>{'{amount}'}</strong>, <strong>{'{emi}'}</strong>, <strong>{'{agent_name}'}</strong>, <strong>{'{agent_mobile}'}</strong> as placeholders.</div>
         </div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={addTpl}
