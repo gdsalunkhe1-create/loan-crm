@@ -1315,6 +1315,41 @@ function AgentDashboard({ userId }) {
     }catch(e){console.error('[notifyAdmins]',e)}
   }
 
+  // Computes the same monthTotal/isTopNow ranking the org-wide disbursement blast used to
+  // compute reactively inside its postgres_changes handler, then broadcasts it — Broadcast
+  // isn't subject to per-subscriber RLS the way postgres_changes is, so this reaches every
+  // role org-wide instead of only whoever the RLS policy lets see the underlying row.
+  const broadcastDisbursement=async(assignedTo,disbursedAmount,leadName,leadId)=>{
+    try{
+      const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString()
+      const [{data:agentProfile},{data:monthRows}]=await Promise.all([
+        supabase.from('profiles').select('full_name').eq('id',assignedTo).single(),
+        supabase.from('leads').select('id,assigned_to,disbursed_amount').eq('status','Disbursed').gte('updated_at',monthStart)
+      ])
+      const totals={}
+      ;(monthRows||[]).forEach(r=>{ totals[r.assigned_to]=(totals[r.assigned_to]||0)+(parseFloat(r.disbursed_amount)||0) })
+      if(!(monthRows||[]).some(r=>r.id===leadId)){
+        totals[assignedTo]=(totals[assignedTo]||0)+(parseFloat(disbursedAmount)||0)
+      }
+      const ranked=Object.entries(totals).sort((a,b)=>b[1]-a[1])
+      const isTopNow=ranked.length>0&&ranked[0][0]===assignedTo
+      supabase.channel('org-disbursement-blast').send({
+        type:'broadcast',
+        event:'disbursed',
+        payload:{
+          token:Date.now(),
+          agentName:agentProfile?.full_name||'An agent',
+          amount:disbursedAmount,
+          leadName,
+          isTopNow,
+          monthTotal:totals[assignedTo]||disbursedAmount
+        }
+      })
+    }catch(err){
+      console.error('[broadcastDisbursement] failed:',err)
+    }
+  }
+
   const updateLeadStatus=async(leadId,newStatus,disbursedAmountValue,loginAmountValue)=>{
     const lead=myLeads.find(l=>l.id===leadId)
     const isMirrorLead=lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
@@ -1365,7 +1400,13 @@ function AgentDashboard({ userId }) {
     setMyLeads(updatedLeads)
     showToast('Stage updated to '+newStatus)
     fetchAllRef.current?.()
-    if(newStatus==='Disbursed') fetchLeaderboard()
+    if(newStatus==='Disbursed'){
+      fetchLeaderboard()
+      if(lead?.status!=='Disbursed'){
+        const effectiveAmount=disbursedAmountValue!=null?disbursedAmountValue:lead?.disbursed_amount
+        broadcastDisbursement(lead?.assigned_to,effectiveAmount,lead?.full_name,leadId)
+      }
+    }
     if(newStatus==='Lead'){
       const lead=data[0]
       // notifyAdmins({type:'lead_saved',lead_id:leadId,customer_name:lead.full_name,amount:lead.loan_amount||null,
@@ -2030,6 +2071,10 @@ function AgentDashboard({ userId }) {
         fetchLeaderboard()
         const progress=computeTargetProgress(updatedLeads,monthlyTarget)
         if(progress) setDisbursementCelebration(progress)
+      }
+      if(callLogStage==='Disbursed'&&callLogLead?.status!=='Disbursed'){
+        const effectiveAmount=disbursedAmountOverride!=null?disbursedAmountOverride:callLogLead?.disbursed_amount
+        broadcastDisbursement(callLogLead?.assigned_to,effectiveAmount,callLogLead?.full_name,callLogLead?.id)
       }
     }catch(err){
       showToast('Error saving call log: '+err.message,'error')
@@ -5387,31 +5432,7 @@ export default function Dashboard({ session }) {
   const [orgBlast,setOrgBlast]=useState(null)
   useEffect(()=>{
     const channel=supabase.channel('org-disbursement-blast')
-      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'leads'},async(payload)=>{
-        const upd=payload.new, prev=payload.old
-        if(upd?.status!=='Disbursed'||prev?.status==='Disbursed') return
-        const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString()
-        const [{data:agentProfile},{data:monthRows}]=await Promise.all([
-          supabase.from('profiles').select('full_name').eq('id',upd.assigned_to).single(),
-          supabase.from('leads').select('id,assigned_to,disbursed_amount').eq('status','Disbursed').gte('updated_at',monthStart)
-        ])
-        const totals={}
-        ;(monthRows||[]).forEach(r=>{ totals[r.assigned_to]=(totals[r.assigned_to]||0)+(parseFloat(r.disbursed_amount)||0) })
-        if(!(monthRows||[]).some(r=>r.id===upd.id)){
-          totals[upd.assigned_to]=(totals[upd.assigned_to]||0)+(parseFloat(upd.disbursed_amount)||0)
-        }
-        const ranked=Object.entries(totals).sort((a,b)=>b[1]-a[1])
-        const isTopNow=ranked.length>0&&ranked[0][0]===upd.assigned_to
-        const token=Date.now()
-        setOrgBlast({
-          token,
-          agentName:agentProfile?.full_name||'An agent',
-          amount:upd.disbursed_amount,
-          leadName:upd.full_name,
-          isTopNow,
-          monthTotal:totals[upd.assigned_to]||upd.disbursed_amount
-        })
-      })
+      .on('broadcast',{event:'disbursed'},(payload)=>{ setOrgBlast(payload.payload) })
       .subscribe()
     return ()=>{ supabase.removeChannel(channel) }
   },[])
@@ -7538,7 +7559,11 @@ export default function Dashboard({ session }) {
             <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:900}} onClick={()=>setOrgBlast(null)}/>
             <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',background:'white',borderRadius:18,boxShadow:'0 24px 60px rgba(0,0,0,0.3)',zIndex:901,width:isMobile?'92%':420,overflow:'hidden',textAlign:'center'}}>
               <div style={{background:'linear-gradient(135deg,#B45309,#F59E0B)',padding:'28px 20px 22px',color:'white'}}>
-                <div style={{fontSize:42,marginBottom:6}}>{orgBlast.isTopNow?'🏆':'💰'}</div>
+                <style>{`@keyframes teddyDance { 0%,100% { transform: translateY(0) rotate(-8deg); } 50% { transform: translateY(-10px) rotate(8deg); } }`}</style>
+                <div style={{fontSize:42,marginBottom:6}}>
+                  {orgBlast.isTopNow?'🏆':'💰'}
+                  <span style={{display:'inline-block',fontSize:28,marginLeft:8,animation:'teddyDance 0.6s ease-in-out infinite'}}>🧸</span>
+                </div>
                 <div style={{fontWeight:700,fontSize:18}}>{orgBlast.agentName} just disbursed {fmtBlastCurrency(orgBlast.amount)}!</div>
                 {orgBlast.leadName&&<div style={{fontSize:13,opacity:0.9,marginTop:4}}>{orgBlast.leadName}</div>}
               </div>
