@@ -4322,6 +4322,16 @@ function WATemplateEditor() {
 
   const updateTpl=(id,field,value)=>setTemplates(prev=>prev.map(t=>t.id===id?{...t,[field]:value}:t))
 
+  const addTpl=()=>setTemplates(prev=>[...prev,{
+    id:`tpl_${Date.now()}`, name:'New Template', icon:'📝', tag:'NEW',
+    tagColor:'#6B7280', tagBg:'#F9FAFB', message:''
+  }])
+
+  const deleteTpl=(id)=>{
+    if(!window.confirm('Delete this template?')) return
+    setTemplates(prev=>prev.filter(t=>t.id!==id))
+  }
+
   const markAgentDbNotifsRead=async()=>{
     const ids=agentDbNotifs.filter(n=>!n.read).map(n=>n.id)
     if(!ids.length)return
@@ -4337,10 +4347,16 @@ function WATemplateEditor() {
           <div style={{fontWeight:600,fontSize:15,color:'#111827',marginBottom:2}}>📱 WhatsApp Templates</div>
           <div style={{fontSize:12,color:'#6B7280'}}>Use <strong>{'{name}'}</strong>, <strong>{'{amount}'}</strong>, <strong>{'{emi}'}</strong> as placeholders.</div>
         </div>
-        <button onClick={saveTemplates} disabled={loading}
-          style={{display:'flex',alignItems:'center',gap:7,background:saved?'#EAF3DE':'#185FA5',color:saved?'#27500A':'white',border:'none',padding:'9px 18px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>
-          <IconDeviceFloppy size={15}/>{loading?'Saving…':saved?'✅ Saved!':'Save Templates'}
-        </button>
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={addTpl}
+            style={{display:'flex',alignItems:'center',gap:7,background:'white',color:'#185FA5',border:'1px solid #185FA5',padding:'9px 18px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>
+            + Add Template
+          </button>
+          <button onClick={saveTemplates} disabled={loading}
+            style={{display:'flex',alignItems:'center',gap:7,background:saved?'#EAF3DE':'#185FA5',color:saved?'#27500A':'white',border:'none',padding:'9px 18px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:600}}>
+            <IconDeviceFloppy size={15}/>{loading?'Saving…':saved?'✅ Saved!':'Save Templates'}
+          </button>
+        </div>
       </div>
       {templates.map((tpl,idx)=>(
         <div key={tpl.id} style={{background:'white',border:'1px solid #E2E8F0',borderRadius:12,padding:16,marginBottom:14}}>
@@ -4348,6 +4364,8 @@ function WATemplateEditor() {
             <div style={{width:32,height:32,borderRadius:8,background:tpl.tagBg||'#F9FAFB',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>{tpl.icon}</div>
             <div style={{fontWeight:600,fontSize:14,color:'#111827'}}>Template {idx+1}</div>
             <span style={{background:tpl.tagColor,color:'white',fontSize:10,padding:'2px 8px',borderRadius:20,fontWeight:600}}>{tpl.tag}</span>
+            <button onClick={()=>deleteTpl(tpl.id)} title="Delete template"
+              style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'#DC2626',fontSize:15,padding:4,lineHeight:1}}>🗑️</button>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
             <div>
@@ -4357,6 +4375,20 @@ function WATemplateEditor() {
             <div>
               <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Icon</label>
               <input value={tpl.icon} onChange={e=>updateTpl(tpl.id,'icon',e.target.value)} style={{width:'100%',padding:'8px 10px',border:'1px solid #E2E8F0',borderRadius:7,fontSize:18,outline:'none',boxSizing:'border-box'}} onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:10,marginBottom:10,alignItems:'end'}}>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Tag Text</label>
+              <input value={tpl.tag} onChange={e=>updateTpl(tpl.id,'tag',e.target.value)} style={{width:'100%',padding:'8px 10px',border:'1px solid #E2E8F0',borderRadius:7,fontSize:13,outline:'none',boxSizing:'border-box'}} onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Tag Color</label>
+              <input type="color" value={tpl.tagColor||'#6B7280'} onChange={e=>updateTpl(tpl.id,'tagColor',e.target.value)} style={{width:44,height:34,padding:2,border:'1px solid #E2E8F0',borderRadius:7,cursor:'pointer'}}/>
+            </div>
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4,textTransform:'uppercase'}}>Tag Background</label>
+              <input type="color" value={tpl.tagBg||'#F9FAFB'} onChange={e=>updateTpl(tpl.id,'tagBg',e.target.value)} style={{width:44,height:34,padding:2,border:'1px solid #E2E8F0',borderRadius:7,cursor:'pointer'}}/>
             </div>
           </div>
           <div>
