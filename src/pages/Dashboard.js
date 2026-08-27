@@ -1879,8 +1879,9 @@ function AgentDashboard({ userId }) {
     const name=waLead.full_name?.split(' ')[0]||'Customer'
     const amount=Number(waLead.loan_amount||0).toLocaleString('en-IN')
     const emi=Math.round((Number(waLead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')
-    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi).replace(/{agent_name}/g,profile?.full_name||'').replace(/{agent_mobile}/g,profile?.mobile||'')
-    window.open(`https://wa.me/91${waLead.mobile}?text=${encodeURIComponent(msg)}`,'_blank')
+    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi).replace(/{agent_name}/g,profile?.full_name||'').replace(/{agent_mobile}/g,profile?.mobile||'').normalize('NFC')
+    const waUrl=`https://api.whatsapp.com/send?phone=91${waLead.mobile}&text=${encodeURIComponent(msg)}`
+    if(isMobile){ window.location.href=waUrl } else { window.open(waUrl,'_blank') }
     // Log WA activity to lead notes so all devices see it via RT
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
@@ -1898,8 +1899,9 @@ function AgentDashboard({ userId }) {
     const name=lead.full_name?.split(' ')[0]||'Customer'
     const amount=Number(lead.loan_amount||0).toLocaleString('en-IN')
     const emi=Math.round((Number(lead.loan_amount||0)*0.012*Math.pow(1.012,36))/(Math.pow(1.012,36)-1)).toLocaleString('en-IN')
-    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi).replace(/{agent_name}/g,profile?.full_name||'').replace(/{agent_mobile}/g,profile?.mobile||'')
-    window.open(`https://wa.me/91${lead.mobile}?text=${encodeURIComponent(msg)}`,'_blank')
+    const msg=tpl.message.replace(/{name}/g,name).replace(/{amount}/g,amount).replace(/{emi}/g,emi).replace(/{agent_name}/g,profile?.full_name||'').replace(/{agent_mobile}/g,profile?.mobile||'').normalize('NFC')
+    const waUrl=`https://api.whatsapp.com/send?phone=91${lead.mobile}&text=${encodeURIComponent(msg)}`
+    if(isMobile){ window.location.href=waUrl } else { window.open(waUrl,'_blank') }
     const now=new Date()
     const agentName=profile?.full_name||'Agent'
     const stamp=`[${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} - ${agentName}]`
