@@ -1190,14 +1190,29 @@ function AgentDashboard({ userId }) {
       if(dateRange==='today') sd.setHours(0,0,0,0)
       else if(dateRange==='week')  sd.setDate(now.getDate()-7)
       else if(dateRange==='month') sd.setDate(1)
-      const[lR,mirR,cR,tR,pR]=await Promise.all([
-        supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}).order('id',{ascending:false}),
-        supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}).order('id',{ascending:false}),
+      // Paginated in 1000-row pages — PostgREST silently caps unranged selects at
+      // 1000 rows, which was hiding an agent's older leads once they passed 1000
+      // total assigned (same class of bug fixed earlier in Admin Panel's fetchLeads).
+      const fetchLeadsPaged=async(builder)=>{
+        let all=[],from=0
+        while(true){
+          const{data,error}=await builder().range(from,from+999)
+          if(error){ console.error('[fetchAll] leads page failed at offset',from,error); break }
+          if(!data) break
+          all=[...all,...data]
+          if(data.length<1000) break
+          from+=1000
+        }
+        return all
+      }
+      const[myLeadsData,mirLeadsData,cR,tR,pR]=await Promise.all([
+        fetchLeadsPaged(()=>supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}).order('id',{ascending:false})),
+        fetchLeadsPaged(()=>supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}).order('id',{ascending:false})),
         supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
         supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
         supabase.from('profiles').select('*').eq('id',userId).single(),
       ])
-      const leads=[...(lR.data||[]),...(mirR.data||[]).filter(m=>!(lR.data||[]).find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
+      const leads=[...myLeadsData,...mirLeadsData.filter(m=>!myLeadsData.find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
       let obligationMap={}
       const leadIds=leads.map(l=>l.id).filter(Boolean)
       // Chunked to avoid a 400 from PostgREST when leadIds is large enough
@@ -4496,11 +4511,26 @@ function TeamLeaderPanel({ userId }) {
     const agL=ag||[]; setMyAgents(agL)
     if(!agL.length){setLeads([]);setCalls([]);setAgentStats([]);setLoading(false);return}
     const ids=agL.map(a=>a.id)
-    const[lR,cR]=await Promise.all([
-      supabase.from('leads').select('*').in('assigned_to',ids).order('created_at',{ascending:false}).order('id',{ascending:false}),
+    // Paginated in 1000-row pages — same unranged-select cap that was hiding
+    // older leads on the agent dashboard also applies here, and a team-leader
+    // view combining several agents' leads hits it even sooner.
+    const fetchTeamLeadsPaged=async()=>{
+      let all=[],from=0
+      while(true){
+        const{data,error}=await supabase.from('leads').select('*').in('assigned_to',ids).order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+        if(error){ console.error('[fetchAll] team leads page failed at offset',from,error); break }
+        if(!data) break
+        all=[...all,...data]
+        if(data.length<1000) break
+        from+=1000
+      }
+      return all
+    }
+    const[allL,cR]=await Promise.all([
+      fetchTeamLeadsPaged(),
       supabase.from('calls').select('*').in('agent_id',ids).gte('created_at',sd.toISOString()),
     ])
-    const allL=lR.data||[],cL=cR.data||[]
+    const cL=cR.data||[]
     // Filter leads by date matching created_at OR assigned_at so reassigned leads appear
     const inDateRange=(ts)=>!!ts&&new Date(ts)>=sd
     const lL=allL.filter(l=>inDateRange(l.created_at)||inDateRange(l.assigned_at))
@@ -4690,13 +4720,28 @@ function ManagerPanel({ userId }) {
     if(dateRange==='today') sd.setHours(0,0,0,0)
     else if(dateRange==='week')  sd.setDate(now.getDate()-7)
     else if(dateRange==='month') sd.setDate(1)
-    const[aR,tR,lR,cR]=await Promise.all([
+    // Paginated in 1000-row pages — same unranged-select cap that was hiding
+    // older leads on the agent dashboard also truncates this org-wide query,
+    // and monthly lead volume here (2,500-3,400+) blows past 1000 routinely.
+    const fetchOrgLeadsPaged=async()=>{
+      let all=[],from=0
+      while(true){
+        const{data,error}=await supabase.from('leads').select('*').gte('created_at',sd.toISOString()).order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+        if(error){ console.error('[fetchAll] org leads page failed at offset',from,error); break }
+        if(!data) break
+        all=[...all,...data]
+        if(data.length<1000) break
+        from+=1000
+      }
+      return all
+    }
+    const[aR,tR,lL,cR]=await Promise.all([
       supabase.from('profiles').select('*').eq('role','agent').eq('status','active'),
       supabase.from('profiles').select('*').eq('role','team_leader').eq('status','active'),
-      supabase.from('leads').select('*').gte('created_at',sd.toISOString()),
+      fetchOrgLeadsPaged(),
       supabase.from('calls').select('*').gte('created_at',sd.toISOString()),
     ])
-    const aL=aR.data||[],cL=cR.data||[],lL=lR.data||[]
+    const aL=aR.data||[],cL=cR.data||[]
     setAgents(aL); setTeamLeaders(tR.data||[]); setLeads(lL); setCalls(cL)
     setAgentStats(aL.map(a=>{
       const ac=cL.filter(c=>c.agent_id===a.id),al=lL.filter(l=>l.assigned_to===a.id)
