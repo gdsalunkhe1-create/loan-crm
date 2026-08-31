@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
@@ -6007,6 +6007,10 @@ export default function Dashboard({ session }) {
 
     const teamLeaders=users.filter(u=>u.role==='team_leader')
     const managers   =users.filter(u=>u.role==='manager')
+    // O(1) agent lookups — the per-row leads table below was calling users.find()
+    // (an O(users) scan) once or twice per row, on every render, including
+    // renders triggered by nothing more than a single checkbox toggle.
+    const usersById=useMemo(()=>{ const m={}; users.forEach(u=>{m[u.id]=u}); return m },[users])
     const RC={agent:{bg:'#E6F1FB',color:'#185FA5'},team_leader:{bg:'#EEEDFE',color:'#534AB7'},manager:{bg:'#FAEEDA',color:'#854F0B'},admin:{bg:'#FCEBEB',color:'#A32D2D'}}
     const gi=name=>name?name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2):'?'
     const AB=['#E6F1FB','#EEEDFE','#E1F5EE','#FAEEDA','#F1EFE8']
@@ -6026,17 +6030,26 @@ export default function Dashboard({ session }) {
     const agentIds=new Set(users.filter(u=>u.role==='agent').map(u=>u.id))
     const agentLogT=authUsers.filter(u=>agentIds.has(u.id)&&(u.last_sign_in_at||'').startsWith(td)).length
     const agentLogM=authUsers.filter(u=>agentIds.has(u.id)&&(u.last_sign_in_at||'').startsWith(tm)).length
-    const agentRows=users.filter(u=>u.role==='agent').map(a=>{ const ml=adminLeads.filter(l=>l.assigned_to===a.id); const au=authUsers.find(u=>u.id===a.id); return{...a,callsToday:callLogs.filter(c=>c.agent_id===a.id&&(c.created_at||'').startsWith(td)).length,totalLeads:ml.length,leadsMonth:ml.filter(l=>(l.created_at||'').startsWith(tm)).length,interested:ml.filter(l=>l.status==='Interested').length,callback:ml.filter(l=>l.status==='Callback').length,disbursed:ml.filter(l=>l.status==='Disbursed').length,lastLogin:au?.last_sign_in_at||null} }).sort((a,b)=>b.callsToday-a.callsToday)
+    const agentRows=useMemo(()=>users.filter(u=>u.role==='agent').map(a=>{ const ml=adminLeads.filter(l=>l.assigned_to===a.id); const au=authUsers.find(u=>u.id===a.id); return{...a,callsToday:callLogs.filter(c=>c.agent_id===a.id&&(c.created_at||'').startsWith(td)).length,totalLeads:ml.length,leadsMonth:ml.filter(l=>(l.created_at||'').startsWith(tm)).length,interested:ml.filter(l=>l.status==='Interested').length,callback:ml.filter(l=>l.status==='Callback').length,disbursed:ml.filter(l=>l.status==='Disbursed').length,lastLogin:au?.last_sign_in_at||null} }).sort((a,b)=>b.callsToday-a.callsToday),[users,adminLeads,authUsers,callLogs,td,tm])
     const mk=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:IST_TZ}).toLowerCase().replace(' ','_')
     const manualStats=[{key:'disbursements_'+mk,label:'Disbursements This Month'},{key:'applications_'+mk,label:'Applications Logged In'},{key:'obligations_'+mk,label:'Obligations Disbursed'}]
-    // Duplicate detection: same mobile (last 10 digits) assigned to the same agent more than once
-    const dupKeyCount={}
-    adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
-    const dupLeadIds=new Set()
-    adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) dupLeadIds.add(l.id) })
-    const distinctSheets=[...new Set(adminLeads.map(l=>l.sheet_number).filter(Boolean))].sort()
-    const baseFiltered=adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSh=selectedSheets.length===0||(l.sheet_number?selectedSheets.includes(l.sheet_number):selectedSheets.includes('__none__')); const amt=Number(l.loan_amount)||0; const mAmt=(leadAmtMin===''&&leadAmtMax==='')||((leadAmtMin===''||amt>=Number(leadAmtMin))&&(leadAmtMax===''||amt<=Number(leadAmtMax))); const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSh&&mAmt&&mF&&mT&&mDup })
-    const filteredLeads=leadAgentF==='All'?baseFiltered.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):baseFiltered
+    // Duplicate detection, sheet list, and the filtered/paged leads list below were
+    // all being recomputed from scratch on EVERY render of AdminPanel — including
+    // a render triggered by nothing more than toggling a single row checkbox
+    // (setSelected). None of these actually depend on `selected`, so wrapping them
+    // in useMemo means a checkbox click now skips re-filtering/re-scanning the
+    // full leads list entirely, which is what was making rapid multi-select feel
+    // slow.
+    const dupLeadIds=useMemo(()=>{
+      const dupKeyCount={}
+      adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
+      const ids=new Set()
+      adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) ids.add(l.id) })
+      return ids
+    },[adminLeads])
+    const distinctSheets=useMemo(()=>[...new Set(adminLeads.map(l=>l.sheet_number).filter(Boolean))].sort(),[adminLeads])
+    const baseFiltered=useMemo(()=>adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSh=selectedSheets.length===0||(l.sheet_number?selectedSheets.includes(l.sheet_number):selectedSheets.includes('__none__')); const amt=Number(l.loan_amount)||0; const mAmt=(leadAmtMin===''&&leadAmtMax==='')||((leadAmtMin===''||amt>=Number(leadAmtMin))&&(leadAmtMax===''||amt<=Number(leadAmtMax))); const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSh&&mAmt&&mF&&mT&&mDup }),[adminLeads,leadSearch,leadStatusSet,leadAgentF,selectedSheets,leadAmtMin,leadAmtMax,leadDateFrom,leadDateTo,showDupOnly,dupLeadIds])
+    const filteredLeads=useMemo(()=>leadAgentF==='All'?baseFiltered.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):baseFiltered,[baseFiltered,leadAgentF])
     const allLdSel=filteredLeads.length>0&&filteredLeads.every(l=>selected.has(l.id))
     const filteredAct=activityFull.filter(a=>{ const mA=!actFdAgent||a.assigned_to===actFdAgent||a.assigned_by===actFdAgent; const mD=!actFdDate||(a.created_at||'').startsWith(actFdDate); return mA&&mD })
     const apStageStyle=name=>{const s=adminStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return{bg:'#F7FAFC',color:'#4A5568'}}
@@ -6368,12 +6381,12 @@ export default function Dashboard({ session }) {
 <th style={{width:32,padding:'8px 6px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>
 {[['Name',130],['Mobile',105],['Status',120],['Agent',110],['Loan Amt',90],['Actions',180],['Date',90]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
 </tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=users.find(u=>u.id===l.assigned_to); const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id+(l._mirrorAgentId||'')} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=usersById[l.assigned_to]; const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id+(l._mirrorAgentId||'')} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',whiteSpace:'nowrap'}}><span style={{display:'inline-block',background:ss.bg,color:ss.color,padding:'3px 7px',borderRadius:5,fontSize:10.5,fontWeight:600,border:'1px solid '+ss.color+'33',lineHeight:1.3}}>{displayStatus||'New'}</span></td>
-<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',whiteSpace:'nowrap'}} title={agent?.full_name||''}><div style={{overflow:'hidden',textOverflow:'ellipsis'}}>{isMirrorRow?(users.find(u=>u.id===(l._mirrorAgentId||leadAgentF))?.full_name||agent?.full_name):(agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>)}</div>{isMirrorRow&&<span style={{display:'inline-block',fontSize:9,background:'#EFF6FF',color:'#1D4ED8',padding:'1px 5px',borderRadius:4,fontWeight:700,marginTop:2}}>MIRROR</span>}</td>
+<td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',overflow:'hidden',whiteSpace:'nowrap'}} title={agent?.full_name||''}><div style={{overflow:'hidden',textOverflow:'ellipsis'}}>{isMirrorRow?(usersById[l._mirrorAgentId||leadAgentF]?.full_name||agent?.full_name):(agent?.full_name||<span style={{color:'#CBD5E1'}}>Unassigned</span>)}</div>{isMirrorRow&&<span style={{display:'inline-block',fontSize:9,background:'#EFF6FF',color:'#1D4ED8',padding:'1px 5px',borderRadius:4,fontWeight:700,marginTop:2}}>MIRROR</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#1E293B',fontWeight:500,whiteSpace:'nowrap'}}>{l.loan_amount?'₹'+Number(l.loan_amount).toLocaleString('en-IN'):<span style={{color:'#CBD5E1'}}>—</span>}</td>
 
 
