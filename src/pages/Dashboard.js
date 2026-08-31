@@ -196,6 +196,19 @@ const fmtCompactCurrency=(v)=>{
   return `₹${n}`
 }
 
+// Same scaling as fmtCompactCurrency but never strips a trailing ".00" — a rounded-off
+// figure (e.g. "₹1Cr") sitting next to another badge's precise-looking "₹1.07Cr" reads as
+// an approximation/possible error even when it's an exact >1%-precise amount. Used only
+// where that side-by-side comparison matters (e.g. Last Month's Champion).
+const fmtCompactCurrencyPrecise=(v)=>{
+  const n=Number(v)
+  if(!n) return '-'
+  if(n>=10000000) return `₹${(n/10000000).toFixed(2)}Cr`
+  if(n>=100000) return `₹${(n/100000).toFixed(2)}L`
+  if(n>=1000) return `₹${(n/1000).toFixed(1)}K`
+  return `₹${n}`
+}
+
 // This month's Disbursed-leads leaderboard, org-wide, active agents only, sorted by
 // amount descending — the exact query/aggregation the agent-side "🏆 Top Performers"
 // widget already uses (fetchLeaderboard). Module-level so the admin Team Targets
@@ -2274,6 +2287,10 @@ function AgentDashboard({ userId }) {
   const txt2=darkMode?'#94a3b8':'#6B7280'
 
   const monthNameLabel=new Date(Number(istToday().slice(0,4)),Number(istToday().slice(5,7))-1,1).toLocaleString('en-US',{month:'long'})
+  // Same pattern as monthNameLabel, offset back one month — so the "Last Month's Champion"
+  // badge can name its month explicitly instead of reading as a duplicate of the
+  // current-month Top Performers card below it.
+  const lastMonthNameLabel=new Date(Number(istToday().slice(0,4)),Number(istToday().slice(5,7))-2,1).toLocaleString('en-US',{month:'long'})
   const targetProgress=computeTargetProgress(myLeads,monthlyTarget)
   // fmtCompactCurrency renders 0 as '-', which reads as "no data" here — this widget needs a real zero to read as progress.
   const fmtAchieved=v=>v===0?'₹0':fmtCompactCurrency(v)
@@ -3780,7 +3797,7 @@ function AgentDashboard({ userId }) {
         {lastMonthChampion && (
           <div style={{display:'flex',alignItems:'center',gap:8,background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:'8px 14px',marginBottom:10,fontSize:12.5,fontWeight:600,color:'#92400E'}}>
             <span style={{fontSize:16}}>🏅</span>
-            <span>Last Month's Champion: {lastMonthChampion.name} — {fmtCompactCurrency(lastMonthChampion.amount)}</span>
+            <span>{lastMonthNameLabel}'s Champion: {lastMonthChampion.name} — {fmtCompactCurrencyPrecise(lastMonthChampion.amount)}</span>
           </div>
         )}
 
