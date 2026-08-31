@@ -200,17 +200,28 @@ const fmtCompactCurrency=(v)=>{
 // amount descending — the exact query/aggregation the agent-side "🏆 Top Performers"
 // widget already uses (fetchLeaderboard). Module-level so the admin Team Targets
 // section can reuse it verbatim instead of reimplementing it and drifting.
-const fetchLeaderboardRows=async()=>{
-  const monthStr=istToday().slice(0,7)
-  const [yy,mm]=monthStr.split('-').map(Number)
-  const monthStart=new Date(yy,mm-1,1)
-  const monthEndExclusive=new Date(yy,mm,1)
+const fetchLeaderboardRows=async(monthStart,monthEndExclusive)=>{
+  if(!monthStart||!monthEndExclusive){
+    const monthStr=istToday().slice(0,7)
+    const [yy,mm]=monthStr.split('-').map(Number)
+    monthStart=new Date(yy,mm-1,1)
+    monthEndExclusive=new Date(yy,mm,1)
+  }
   const{data,error}=await supabase.rpc('get_monthly_leaderboard',{
     month_start: monthStart.toISOString(),
     month_end: monthEndExclusive.toISOString(),
   })
   if(error||!data) return null // query failed — callers should leave prior state untouched, matching the original inline implementation
   return data.map(r=>({agentId:r.agent_id,name:r.agent_name,amount:Number(r.total_amount)}))
+}
+
+// Previous calendar month's [start, end) range (IST) — same shape fetchLeaderboardRows
+// computes for the current month by default, offset back one month. Used by the
+// agent-side "🏅 Last Month's Champion" callout.
+const lastMonthRange=()=>{
+  const monthStr=istToday().slice(0,7)
+  const [yy,mm]=monthStr.split('-').map(Number)
+  return { monthStart:new Date(yy,mm-2,1), monthEndExclusive:new Date(yy,mm-1,1) }
 }
 
 const TIME_OPTIONS = (()=>{
@@ -688,6 +699,13 @@ function AgentDashboard({ userId }) {
   const [leaderboard,setLeaderboard]             = useState([])
   const [leaderboardLoading,setLeaderboardLoading] = useState(true)
 
+  // ── Last Month's Champion callout — additive, reuses get_monthly_leaderboard
+  // with last month's range instead of the current month's ──
+  const [lastMonthChampion,setLastMonthChampion] = useState(null)
+
+  // ── Login motivation nudge banner — dismissible per page load ──
+  const [showNudge,setShowNudge]                 = useState(true)
+
   useEffect(()=>{
     const build=()=>{
       const h=new Date().getHours()
@@ -721,6 +739,13 @@ function AgentDashboard({ userId }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[userId,targetLoading,monthlyTarget])
   useEffect(()=>{ fetchLeaderboard() },[])
+  useEffect(()=>{
+    (async()=>{
+      const {monthStart,monthEndExclusive}=lastMonthRange()
+      const rows=await fetchLeaderboardRows(monthStart,monthEndExclusive)
+      setLastMonthChampion(rows&&rows.length>0?rows[0]:null)
+    })()
+  },[])
 
   useEffect(()=>{
     if(!viewLead) return
@@ -2253,6 +2278,25 @@ function AgentDashboard({ userId }) {
   // fmtCompactCurrency renders 0 as '-', which reads as "no data" here — this widget needs a real zero to read as progress.
   const fmtAchieved=v=>v===0?'₹0':fmtCompactCurrency(v)
 
+  // Login motivation nudge — purely presentational combination of targetProgress
+  // (already computed above for the Target Progress widget) and the current month's
+  // #1 leaderboard row (already fetched for Top Performers). Doesn't touch either's
+  // calculation logic.
+  const currentLeader=(!leaderboardLoading&&leaderboard.length>0)?leaderboard[0]:null
+  const isSelfCurrentLeader=!!(currentLeader&&currentLeader.agentId===userId)
+  const nudgeMessage=(()=>{
+    if(!targetProgress) return ''
+    const pending=targetProgress.disbursementShortfall
+    const dailyNeeded=targetProgress.requiredDailyDisbursement
+    const leaderClause=currentLeader
+      ? (isSelfCurrentLeader
+          ? `You're #1 this month with ${fmtCompactCurrency(currentLeader.amount)} — keep it up! 🔥`
+          : `${currentLeader.name} is leading this month with ${fmtCompactCurrency(currentLeader.amount)}. Catch up!`)
+      : ''
+    if(pending<=0) return `🎉 Target achieved for ${monthNameLabel}! ${leaderClause}`.trim()
+    return `${fmtAchieved(pending)} pending — you need ${fmtCompactCurrency(dailyNeeded)}/day to hit target. ${leaderClause}`.trim()
+  })()
+
   const openEditTarget=()=>{
     if(monthlyTarget) setTargetForm({monthly_disbursement_target:String(monthlyTarget.monthly_disbursement_target),working_days:String(monthlyTarget.working_days)})
     setShowEditTarget(true)
@@ -3626,6 +3670,18 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
+        {/* LOGIN MOTIVATION NUDGE — dismissible banner combining targetProgress + leaderboard
+            data already computed above; additive, doesn't touch either widget's logic */}
+        {showNudge && targetProgress && nudgeMessage && (
+          <div style={{background:'linear-gradient(135deg,#0C447C,#185FA5)',color:'white',borderRadius:12,padding:'12px 16px',marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,boxShadow:'0 4px 14px rgba(24,95,165,0.25)'}}>
+            <div style={{fontSize:13.5,fontWeight:600,lineHeight:1.5}}>{nudgeMessage}</div>
+            <button onClick={()=>setShowNudge(false)} aria-label="Dismiss"
+              style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',borderRadius:'50%',width:24,height:24,flexShrink:0,cursor:'pointer',fontSize:14,lineHeight:1}}>
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* MONTHLY TARGET WIDGET — primary focus of the dashboard, rendered first */}
         {!targetLoading && (
           <div style={{background:bg1,border:'1.5px solid rgba(24,95,165,0.25)',borderRadius:14,padding:18,marginBottom:14,boxShadow:'0 6px 20px rgba(15,23,42,0.10)'}}>
@@ -3716,6 +3772,15 @@ function AgentDashboard({ userId }) {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* LAST MONTH'S CHAMPION — only the #1 row from last month's get_monthly_leaderboard;
+            hidden entirely when there's no qualifying data (no separate empty/zero state) */}
+        {lastMonthChampion && (
+          <div style={{display:'flex',alignItems:'center',gap:8,background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:'8px 14px',marginBottom:10,fontSize:12.5,fontWeight:600,color:'#92400E'}}>
+            <span style={{fontSize:16}}>🏅</span>
+            <span>Last Month's Champion: {lastMonthChampion.name} — {fmtCompactCurrency(lastMonthChampion.amount)}</span>
           </div>
         )}
 
