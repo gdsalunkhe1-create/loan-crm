@@ -6826,8 +6826,23 @@ export default function Dashboard({ session }) {
     const checkStaleLeads=async()=>{
       try{
         const threeDaysAgo=new Date(Date.now()-3*24*60*60*1000).toISOString()
-        const{data:staleLeads}=await supabase.from('leads').select('id,full_name,status,assigned_to,assigned_at,created_at').in('status',STALE_STAGES)
-        if(!staleLeads||!staleLeads.length)return
+        // Paginated + ordered — this previously had no .range()/order() at all,
+        // so on an unbounded/unordered result set PostgREST's 1000-row cap
+        // returned an arbitrary (and unstable across runs) subset, silently
+        // skipping the stale-lead check for most leads once the org passed
+        // 1000 leads in these stages. This is the ONLY safety net for
+        // forgotten follow-ups, so it must see every eligible lead, not just
+        // the first page.
+        let staleLeads=[],from=0
+        while(true){
+          const{data,error}=await supabase.from('leads').select('id,full_name,status,assigned_to,assigned_at,created_at').in('status',STALE_STAGES).order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+          if(error){ console.error('[checkStaleLeads] page failed at offset',from,error); break }
+          if(!data) break
+          staleLeads=[...staleLeads,...data]
+          if(data.length<1000) break
+          from+=1000
+        }
+        if(!staleLeads.length)return
         const stale=staleLeads.filter(l=>{ const ref=l.assigned_at||l.created_at; return ref&&ref<threeDaysAgo })
         if(!stale.length)return
         // No .in('lead_id', staleIds) here on purpose - that list is
