@@ -5653,15 +5653,36 @@ export default function Dashboard({ session }) {
     const amtLabel=leadAmtMin===''&&leadAmtMax===''?'All Amounts':leadAmtMin&&leadAmtMax?`${fmtAmt(leadAmtMin)}–${fmtAmt(leadAmtMax)}`:leadAmtMin?`${fmtAmt(leadAmtMin)}+`:`Up to ${fmtAmt(leadAmtMax)}`
 
     useEffect(()=>{
+      // All Leads was re-fetching and re-rendering its full 2000-row table on a fixed
+      // 8s poll REGARDLESS of whether anything changed, plus again on every single
+      // realtime leads/loan_obligations row change org-wide (writes land roughly every
+      // 1-2 min, sometimes 10+ in a burst during a bulk update/import) — with nothing
+      // to coalesce a burst into one fetch. That combination is what caused the
+      // constant flicker and the occasional freeze during bursts. Fixed by: debouncing
+      // realtime-triggered fetches so a burst of changes collapses into a single
+      // fetch ~2s after it settles; dropping the poll from a redundant 8s primary
+      // sync down to a much slower fallback safety net (60s) for any missed realtime
+      // event; and only refetching on tab-return if the data is more than 15s stale,
+      // instead of unconditionally on every focus.
+      const lastFetchAtRef={current:0}
+      let debounceTimer=null
+      const triggerFetch=()=>{
+        if(statusDropOpenRef.current) return
+        if(debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer=setTimeout(()=>{
+          lastFetchAtRef.current=Date.now()
+          fetchLeadsRef.current?.()
+        },2000)
+      }
       const sub=supabase
         .channel('admin-rt-leads')
-        .on('postgres_changes',{event:'*',schema:'public',table:'leads'},()=>{ if(!statusDropOpenRef.current) fetchLeadsRef.current?.() })
-        .on('postgres_changes',{event:'*',schema:'public',table:'loan_obligations'},()=>{ if(!statusDropOpenRef.current) fetchLeadsRef.current?.() })
+        .on('postgres_changes',{event:'*',schema:'public',table:'leads'},triggerFetch)
+        .on('postgres_changes',{event:'*',schema:'public',table:'loan_obligations'},triggerFetch)
         .subscribe(status=>setApRtConnected(status==='SUBSCRIBED'))
-      const poll=setInterval(()=>{ if(!statusDropOpenRef.current) fetchLeadsRef.current?.() },8000)
-      const onVis=()=>{ if(document.visibilityState==='visible'&&!statusDropOpenRef.current) fetchLeadsRef.current?.() }
+      const poll=setInterval(triggerFetch,60000)
+      const onVis=()=>{ if(document.visibilityState==='visible'&&!statusDropOpenRef.current&&Date.now()-lastFetchAtRef.current>15000) triggerFetch() }
       document.addEventListener('visibilitychange',onVis)
-      return()=>{ supabase.removeChannel(sub); clearInterval(poll); document.removeEventListener('visibilitychange',onVis) }
+      return()=>{ supabase.removeChannel(sub); clearInterval(poll); clearTimeout(debounceTimer); document.removeEventListener('visibilitychange',onVis) }
     },[])
 
     useEffect(()=>{
