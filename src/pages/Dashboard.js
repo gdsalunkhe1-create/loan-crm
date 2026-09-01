@@ -3828,7 +3828,7 @@ function AgentDashboard({ userId }) {
               <div style={{fontSize:14.5,fontWeight:700,color:'#fff',marginBottom:5,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                 {lastMonthChampion.name}
               </div>
-              <div style={{fontSize:34,fontWeight:800,color:'#FEF3C7',lineHeight:1,textShadow:'0 2px 8px rgba(0,0,0,0.15)'}}>
+              <div style={{fontSize:28,fontWeight:800,color:'#FEF3C7',lineHeight:1,textShadow:'0 2px 8px rgba(0,0,0,0.15)'}}>
                 {fmtCompactCurrencyPrecise(lastMonthChampion.amount)}
               </div>
             </div>
