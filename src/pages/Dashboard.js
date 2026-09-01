@@ -3802,12 +3802,12 @@ function AgentDashboard({ userId }) {
           <div className="champion-hero-card" style={{
             background:'linear-gradient(135deg,#B45309,#F59E0B)',
             borderRadius:14,
-            padding:'14px 20px',
+            padding:'22px 24px',
             marginBottom:14,
             boxShadow:'0 6px 20px rgba(180,83,9,0.28)',
             display:'flex',
             alignItems:'center',
-            gap:14,
+            gap:18,
           }}>
             <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
               <div style={{fontSize:34}}>🏆</div>
@@ -3821,16 +3821,16 @@ function AgentDashboard({ userId }) {
                 {(lastMonthChampion.name||'?')[0]?.toUpperCase()}
               </div>
             </div>
-            <div style={{minWidth:0,flex:1}}>
-              <div style={{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.85)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:2}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:'rgba(255,255,255,0.85)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:3}}>
                 {lastMonthNameLabel}'s Champion
               </div>
-              <div style={{fontSize:14,fontWeight:700,color:'#fff',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              <div style={{fontSize:14.5,fontWeight:700,color:'#fff',marginBottom:5,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                 {lastMonthChampion.name}
               </div>
-            </div>
-            <div style={{fontSize:34,fontWeight:800,color:'#FEF3C7',lineHeight:1,textShadow:'0 2px 8px rgba(0,0,0,0.15)',flexShrink:0,marginLeft:'auto',paddingLeft:12}}>
-              {fmtCompactCurrencyPrecise(lastMonthChampion.amount)}
+              <div style={{fontSize:34,fontWeight:800,color:'#FEF3C7',lineHeight:1,textShadow:'0 2px 8px rgba(0,0,0,0.15)'}}>
+                {fmtCompactCurrencyPrecise(lastMonthChampion.amount)}
+              </div>
             </div>
           </div>
         )}
