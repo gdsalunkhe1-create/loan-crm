@@ -3808,6 +3808,7 @@ function AgentDashboard({ userId }) {
             display:'flex',
             alignItems:'center',
             gap:18,
+            border:'4px solid red', /* TEMP DEBUG — deploy-verification marker, revert after confirming */
           }}>
             <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
               <div style={{fontSize:34}}>🏆</div>
