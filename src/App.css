@@ -191,6 +191,15 @@ body {
   flex-shrink: 0;
   border: 2px solid rgba(255,255,255,0.15);
 }
+/* One-time entrance for the agent-dashboard "Last Month's Champion" hero card —
+   plays once per mount (no infinite/looping), then holds its final state. */
+@keyframes championCardIn {
+  0%   { opacity: 0; transform: scale(0.94) translateY(8px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.champion-hero-card {
+  animation: championCardIn 0.55s cubic-bezier(0.22,1,0.36,1) both;
+}
 .user-info { flex: 1; min-width: 0; }
 .user-info h4 {
   font-size: 12px; font-weight: 600; color: #fff;

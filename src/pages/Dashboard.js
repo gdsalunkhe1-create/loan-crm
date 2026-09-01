@@ -3792,12 +3792,46 @@ function AgentDashboard({ userId }) {
           </div>
         )}
 
-        {/* LAST MONTH'S CHAMPION — only the #1 row from last month's get_monthly_leaderboard;
-            hidden entirely when there's no qualifying data (no separate empty/zero state) */}
+        {/* LAST MONTH'S CHAMPION — hero card, visible to every agent (shared "who's leading"
+            motivator, no per-agent visibility logic). Still just the #1 row from last month's
+            get_monthly_leaderboard; hidden entirely when there's no qualifying data. Kept in its
+            original slot — after Target Progress, before Top Performers — matching that widget's
+            border-radius/shadow/spacing (14 / 0 6px 20px / 14px margin). Avatar circle reuses
+            App.css's .user-avatar sidebar pattern, populated with the CHAMPION's initial. */}
         {lastMonthChampion && (
-          <div style={{display:'flex',alignItems:'center',gap:8,background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:'8px 14px',marginBottom:10,fontSize:12.5,fontWeight:600,color:'#92400E'}}>
-            <span style={{fontSize:16}}>🏅</span>
-            <span>{lastMonthNameLabel}'s Champion: {lastMonthChampion.name} — {fmtCompactCurrencyPrecise(lastMonthChampion.amount)}</span>
+          <div className="champion-hero-card" style={{
+            background:'linear-gradient(135deg,#B45309,#F59E0B)',
+            borderRadius:14,
+            padding:'22px 24px',
+            marginBottom:14,
+            boxShadow:'0 6px 20px rgba(180,83,9,0.28)',
+            display:'flex',
+            alignItems:'center',
+            gap:18,
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+              <div style={{fontSize:34}}>🏆</div>
+              <div style={{
+                width:42,height:42,borderRadius:'50%',
+                background:'rgba(255,255,255,0.25)',
+                border:'2px solid rgba(255,255,255,0.35)',
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,color:'#fff',fontSize:17,flexShrink:0,
+              }}>
+                {(lastMonthChampion.name||'?')[0]?.toUpperCase()}
+              </div>
+            </div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:700,color:'rgba(255,255,255,0.85)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:3}}>
+                {lastMonthNameLabel}'s Champion
+              </div>
+              <div style={{fontSize:14.5,fontWeight:700,color:'#fff',marginBottom:5,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {lastMonthChampion.name}
+              </div>
+              <div style={{fontSize:34,fontWeight:800,color:'#FEF3C7',lineHeight:1,textShadow:'0 2px 8px rgba(0,0,0,0.15)'}}>
+                {fmtCompactCurrencyPrecise(lastMonthChampion.amount)}
+              </div>
+            </div>
           </div>
         )}
 
