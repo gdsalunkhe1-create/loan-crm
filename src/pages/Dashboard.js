@@ -5847,8 +5847,16 @@ export default function Dashboard({ session }) {
       const agent=users.find(u=>u.id===targetAgentId)
       const logEntries=[]
       let obligationsFailed=false
+      const{data:existing}=await supabase.from('leads').select('mobile').or(`assigned_to.eq.${targetAgentId},mirror_agents.cs.{${targetAgentId}}`)
+      const existingMobiles=new Set((existing||[]).map(l=>l.mobile).filter(Boolean))
+      const skipped=[]
       for(const lead of leadsArr){
         const originalAgent=lead.assigned_to
+        if(lead.mobile&&existingMobiles.has(lead.mobile)){
+          skipped.push(lead)
+          continue
+        }
+        if(lead.mobile) existingMobiles.add(lead.mobile)
         if(type==='mirror'){
           const currentMirrors=lead.mirror_agents||[]
           const newMirrors=[...new Set([...currentMirrors,originalAgent].filter(Boolean))]
@@ -5962,18 +5970,20 @@ export default function Dashboard({ session }) {
           logEntries.push({lead_id:inserted.id,lead_name:inserted.full_name||'',action:'Reassigned',assigned_to:targetAgentId,assigned_to_name:agent?.full_name||'',assigned_by:profile?.id||null,assigned_by_name:profile?.full_name||'Admin',previous_agent_id:originalAgent||null,previous_agent_name:previousAgentName})
         }
       }
-      await supabase.from('activity_log').insert(logEntries)
-      return {error:null,obligationsFailed}
+      if(logEntries.length) await supabase.from('activity_log').insert(logEntries)
+      return {error:null,obligationsFailed,skipped}
     }
 
     const doReassignLead=async()=>{
       if(!reassignTo||!reassignTarget)return
       setReassigning(true)
       try{
-        const{error,obligationsFailed}=await reassignLeads([reassignTarget],reassignTo,reassignType)
+        const{error,obligationsFailed,skipped}=await reassignLeads([reassignTarget],reassignTo,reassignType)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         const agentName=users.find(u=>u.id===reassignTo)?.full_name||'agent'
-        showApToast(obligationsFailed
+        if(skipped&&skipped.length){
+          showApToast(agentName+' already has this number — skipped.','error')
+        } else showApToast(obligationsFailed
           ? ('Lead shared with '+agentName+' — obligations couldn\'t be copied, please check manually')
           : (reassignType==='mirror'
             ? ('Lead mirrored to '+agentName+'. Original agent retains access.')
@@ -6440,8 +6450,8 @@ export default function Dashboard({ session }) {
                     <option value=''>Reassign to agent...</option>
                     {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
-                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,obligationsFailed}=await reassignLeads(selLeads,assignTo,'transfer'); if(error){ showApToast('Error: '+error.message,'error') } else { showApToast(obligationsFailed?(selLeads.length+' lead'+(selLeads.length>1?'s':'')+' shared with '+agentName+' — some obligations couldn\'t be copied, please check manually'):(selLeads.length+' lead'+(selLeads.length>1?'s':'')+' shared with '+agentName+' as new independent copies. Original agents\' leads are untouched.')); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
-                  <button className='btn' style={{background:'transparent',color:'white',border:'1px solid rgba(255,255,255,0.5)',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error}=await reassignLeads(selLeads,assignTo,'mirror'); if(error){ showApToast('Error: '+error.message,'error') } else { showApToast(selLeads.length+' lead'+(selLeads.length>1?'s':'')+' mirrored to '+agentName+'. Original agents retain access.'); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo} title='Original agent keeps access; new agent also gets it'>{assigning?'…':'🪞 Mirror'}</button>
+                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,obligationsFailed,skipped}=await reassignLeads(selLeads,assignTo,'transfer'); if(error){ showApToast('Error: '+error.message,'error') } else { const skipCount=skipped?skipped.length:0; const processedCount=selLeads.length-skipCount; const skipSuffix=skipCount?(' — '+skipCount+' skipped ('+agentName+' already has this number)'):''; showApToast(obligationsFailed?(processedCount+' lead'+(processedCount>1?'s':'')+' shared with '+agentName+' — some obligations couldn\'t be copied, please check manually'+skipSuffix):(processedCount+' lead'+(processedCount>1?'s':'')+' shared with '+agentName+' as new independent copies. Original agents\' leads are untouched.'+skipSuffix)); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
+                  <button className='btn' style={{background:'transparent',color:'white',border:'1px solid rgba(255,255,255,0.5)',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,skipped}=await reassignLeads(selLeads,assignTo,'mirror'); if(error){ showApToast('Error: '+error.message,'error') } else { const skipCount=skipped?skipped.length:0; const processedCount=selLeads.length-skipCount; const skipSuffix=skipCount?(' — '+skipCount+' skipped ('+agentName+' already has this number)'):''; showApToast(processedCount+' lead'+(processedCount>1?'s':'')+' mirrored to '+agentName+'. Original agents retain access.'+skipSuffix); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo} title='Original agent keeps access; new agent also gets it'>{assigning?'…':'🪞 Mirror'}</button>
                   <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>🗑 Delete Selected</button>
                   <button onClick={()=>setSelected(new Set())} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontSize:12}}>Clear</button>
                 </div>
