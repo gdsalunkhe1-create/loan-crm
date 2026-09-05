@@ -577,6 +577,7 @@ function AgentDashboard({ userId }) {
   const [callbackDate,setCallbackDate]           = useState('')
   const [callbackTime,setCallbackTime]           = useState('10:00')
   const [callbackNotes,setCallbackNotes]         = useState('')
+  const [callbackModalKind,setCallbackModalKind] = useState('Callback')
   const [callbackTasks,setCallbackTasks]         = useState([])
   const [leadCallbackMap,setLeadCallbackMap]     = useState({})
   const [showCallbackReminder,setShowCallbackReminder] = useState(false)
@@ -1125,12 +1126,12 @@ function AgentDashboard({ userId }) {
     if(!callbackLead||!callbackDate||!callbackTime) return
     const iso=safeDueDate(callbackDate,callbackTime)
     console.log('[Action] scheduleCallback → DB write lead:', callbackLead.id, 'task due:', iso)
-    const {data:lData,error:lErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
+    const {data:lData,error:lErr}=await supabase.from('leads').update({status:callbackModalKind}).eq('id',callbackLead.id).select()
     if(lErr){ console.error('[Action] scheduleCallback lead update error:', lErr); showToast('Could not update stage: '+lErr.message,'error') }
     else if(!lData||lData.length===0){ console.warn('[Action] scheduleCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
-    else { setMyLeads(prev=>[...prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback',updated_at:new Date().toISOString()}:l)]); fetchAllRef.current?.() }
+    else { setMyLeads(prev=>[...prev.map(l=>l.id===callbackLead.id?{...l,status:callbackModalKind,updated_at:new Date().toISOString()}:l)]); fetchAllRef.current?.() }
     const {error:tErr}=await supabase.from('tasks').insert([{
-      title:'Callback: '+callbackLead.full_name,
+      title:(callbackModalKind==='Callback'?'Callback: ':'Follow-up: ')+callbackLead.full_name,
       lead_id:callbackLead.id,
       due_date:iso,
       notes:callbackNotes||null,
@@ -1142,21 +1143,21 @@ function AgentDashboard({ userId }) {
     if(tErr){ console.error('[Action] scheduleCallback task insert error:', tErr) }
     else{
       notifyAdmins({type:'callback_set',lead_id:callbackLead.id,customer_name:callbackLead.full_name,due_at:iso,
-        message:`⏰ ${profile?.full_name||'Agent'} set a callback for ${callbackLead.full_name} on ${formatIST(iso)}`,
+        message:`⏰ ${profile?.full_name||'Agent'} set a ${callbackModalKind==='Callback'?'callback':'follow-up'} for ${callbackLead.full_name} on ${formatIST(iso)}`,
       })
     }
     setShowCallbackModal(false)
     fetchCallbackTasks()
     const d=formatIST(`${callbackDate} 00:00:00`,'date')
-    showToast(`Callback scheduled for ${d} at ${callbackTime}`)
+    showToast(`${callbackModalKind==='Callback'?'Callback':'Follow-up'} scheduled for ${d} at ${callbackTime}`)
   }
 
   const skipCallback=async()=>{
     if(!callbackLead) return
-    const {data:skipData,error:skipErr}=await supabase.from('leads').update({status:'Callback'}).eq('id',callbackLead.id).select()
+    const {data:skipData,error:skipErr}=await supabase.from('leads').update({status:callbackModalKind}).eq('id',callbackLead.id).select()
     if(skipErr){ console.error('[Action] skipCallback lead update error:', skipErr); showToast('Could not update stage: '+skipErr.message,'error') }
     else if(!skipData||skipData.length===0){ console.warn('[Action] skipCallback lead update hit 0 rows — RLS blocked or lead not found'); showToast('Stage not saved — permission denied on this lead','error'); fetchAllRef.current?.() }
-    else { setMyLeads(prev=>prev.map(l=>l.id===callbackLead.id?{...l,status:'Callback',updated_at:new Date().toISOString()}:l)); showToast('Stage updated to Callback'); fetchAllRef.current?.() }
+    else { setMyLeads(prev=>prev.map(l=>l.id===callbackLead.id?{...l,status:callbackModalKind,updated_at:new Date().toISOString()}:l)); showToast('Stage updated to '+callbackModalKind); fetchAllRef.current?.() }
     setShowCallbackModal(false)
   }
 
@@ -1406,11 +1407,12 @@ function AgentDashboard({ userId }) {
   const updateLeadStatus=async(leadId,newStatus,disbursedAmountValue,loginAmountValue)=>{
     const lead=myLeads.find(l=>l.id===leadId)
     const isMirrorLead=lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
-    if(newStatus==='Callback'){
+    if(newStatus==='Callback'||newStatus==='Lead'){
       setCallbackLead(lead)
       setCallbackDate(istToday())
       setCallbackTime('10:00')
       setCallbackNotes('')
+      setCallbackModalKind(newStatus)
       setShowCallbackModal(true)
       return
     }
@@ -2748,7 +2750,7 @@ function AgentDashboard({ userId }) {
                   <IconClockHour4 size={17}/>
                 </div>
                 <div>
-                  <div style={{fontWeight:700,fontSize:15}}>Schedule Callback</div>
+                  <div style={{fontWeight:700,fontSize:15}}>{callbackModalKind==='Callback'?'Schedule Callback':'Schedule Follow-up'}</div>
                   <div style={{fontSize:12,opacity:0.8}}>{callbackLead.full_name} · {callbackLead.mobile}</div>
                 </div>
               </div>
@@ -2780,7 +2782,7 @@ function AgentDashboard({ userId }) {
               <div style={{display:'flex',gap:8}}>
                 <button onClick={scheduleCallback} disabled={!callbackDate}
                   style={{flex:1,padding:'12px',background:callbackDate?'#185FA5':'#CBD5E0',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:callbackDate?'pointer':'not-allowed',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                  <IconClockHour4 size={15}/>Schedule Callback
+                  <IconClockHour4 size={15}/>{callbackModalKind==='Callback'?'Schedule Callback':'Schedule Follow-up'}
                 </button>
                 <button onClick={skipCallback}
                   style={{padding:'12px 16px',background:'transparent',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',color:'#6B7280'}}>
