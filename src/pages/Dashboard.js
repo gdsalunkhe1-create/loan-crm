@@ -4037,8 +4037,8 @@ function AgentDashboard({ userId }) {
                           <div style={{width:36,height:36,borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,color:'#185FA5',fontSize:13,flexShrink:0}}>{initials(lead.full_name)}</div>
                           <div>
                             <div style={{fontWeight:700,fontSize:14,color:txt1}}>{lead.full_name}</div>
-                            <div style={{fontSize:12,color:txt2}}>{lead.mobile}{lead.city?` · ${lead.city}`:''}</div>
-                            {lead.application_id&&<div style={{fontSize:10,color:txt2,marginTop:1}}>App# {lead.application_id}</div>}
+                            <div style={{fontSize:12}}><span style={{color:'#374151'}}>{lead.mobile}</span>{lead.city?<span style={{color:txt2}}>{` · ${lead.city}`}</span>:''}</div>
+                            {lead.application_id&&<div style={{fontSize:10,color:'#374151',marginTop:1}}>App# {lead.application_id}</div>}
                             {lead.sheet_number&&<div style={{fontSize:10,color:txt2,marginTop:1}}>📄 {lead.sheet_number}</div>}
                             {lead.previous_status&&lead.previous_status!=='New'&&<div style={{display:'inline-block',marginTop:2,fontSize:10,fontWeight:600,color:'#92400E',background:'#FEF3C7',padding:'1px 7px',borderRadius:10}}>was: {lead.previous_status}</div>}
                             {(()=>{const obs=leadObligations[lead.id]||[];if(!obs.length)return null;const totalObl=obs.reduce((s,o)=>s+calculateObligatedEMI(o),0);const sal=parseFloat(lead.monthly_salary)||0;const foir=sal>0?Math.round((totalObl/sal)*100):null;return(<div style={{fontSize:10,color:'#6366f1',fontWeight:600,marginTop:1}}>📋 Obl. EMI: ₹{totalObl.toLocaleString('en-IN')}{foir!==null?` | FOIR: ${foir}%`:''}</div>)})()}
@@ -4159,10 +4159,10 @@ function AgentDashboard({ userId }) {
                                 <div style={{width:34,height:34,borderRadius:'50%',background:'#E6F1FB',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:600,color:'#185FA5',fontSize:12,flexShrink:0}}>{initials(lead.full_name)}</div>
                                 <div>
                                   <div style={{fontWeight:600,fontSize:13,color:txt1}}>{lead.full_name}</div>
-                                  <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:txt2}}>
-                                    <span>{lead.mobile}{lead.city?` · ${lead.city}`:''}</span>
+                                  <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
+                                    <span><span style={{color:'#374151'}}>{lead.mobile}</span>{lead.city?<span style={{color:txt2}}>{` · ${lead.city}`}</span>:''}</span>
                                   </div>
-                                  {lead.application_id&&<div style={{fontSize:10,color:'#9CA3AF'}}>App# {lead.application_id}</div>}
+                                  {lead.application_id&&<div style={{fontSize:10,color:'#374151'}}>App# {lead.application_id}</div>}
                                   {lead.call_count>0&&<div style={{fontSize:10,color:'#9CA3AF'}}>📞 {lead.call_count} calls</div>}
                                   {(()=>{const obs=leadObligations[lead.id]||[];if(!obs.length)return null;const totalObl=obs.reduce((s,o)=>s+calculateObligatedEMI(o),0);const sal=parseFloat(lead.monthly_salary)||0;const foir=sal>0?Math.round((totalObl/sal)*100):null;return(<div style={{fontSize:10,color:'#6366f1',fontWeight:600,marginTop:1}}>📋 Obl. EMI: ₹{totalObl.toLocaleString('en-IN')}{foir!==null?` | FOIR: ${foir}%`:''}</div>)})()}
                                   {lead.notes&&<div style={{fontSize:10,color:'#059669',fontWeight:600,marginTop:1}}>📝 Notes updated</div>}
