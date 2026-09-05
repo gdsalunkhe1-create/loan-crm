@@ -215,7 +215,7 @@ export default function Campaigns({ userRole, userId, orgId }) {
         const combinedNotes = [notesBase, whoCall, dateVal?`Date: ${dateVal}`:''].filter(Boolean).join(' | ')
         return {
           full_name: find(['full_name','Full Name','Name','name','FULL NAME','customer_name','Customer Name']),
-          mobile: find(['mobile','Mobile','Phone','phone','PHONE','Phone Number','phone number','contact','number','mob','cell']),
+          mobile: (find(['mobile','Mobile','Phone','phone','PHONE','Phone Number','phone number','contact','number','mob','cell'])||'').replace(/\D/g,'').slice(-10),
           email: find(['email','Email','EMAIL','e-mail']),
           city: find(['city','City','CITY','location','Location','district','area']),
           loan_amount: find(['loan_amount','Loan Amount','Amt','amt','Amount','AMT','AMOUNT','loan amt']),
@@ -234,14 +234,36 @@ export default function Campaigns({ userRole, userId, orgId }) {
         return normalizeRow2(obj)
       }).filter(r=>r.full_name&&r.mobile)
 
+      // Fetch every existing, non-archived mobile number (paginated past Supabase's
+      // 1000-row cap) so a number from any past upload is caught, regardless of
+      // which agent/campaign it's assigned to (or unassigned) — this import had no
+      // duplicate check at all before.
+      let existingRows=[],efrom=0
+      const EPAGE=1000
+      while(true){
+        const{data,error}=await supabase.from('leads').select('mobile').eq('archived',false).range(efrom,efrom+EPAGE-1)
+        if(error||!data||data.length===0)break
+        existingRows=existingRows.concat(data)
+        if(data.length<EPAGE)break
+        efrom+=EPAGE
+      }
+      const existingMobiles = new Set(existingRows.map(l=>(l.mobile||'').replace(/\D/g,'').slice(-10)).filter(Boolean))
+      const seenInSheet = new Set()
+      let dupSkipped = 0
+      const dedupedRows = allRows.filter(r=>{
+        if(existingMobiles.has(r.mobile) || seenInSheet.has(r.mobile)){ dupSkipped++; return false }
+        seenInSheet.add(r.mobile)
+        return true
+      })
+
       let rowsToInsert = []
 
       if (csvDistribution === 'single') {
         // All leads go to selected agent (first selected)
-        rowsToInsert = allRows.map(r=>({...r, assigned_to:selectedAgentsForCSV[0]}))
+        rowsToInsert = dedupedRows.map(r=>({...r, assigned_to:selectedAgentsForCSV[0]}))
       } else if (csvDistribution === 'equal') {
         // Distribute equally among selected agents
-        rowsToInsert = allRows.map((r,i)=>({
+        rowsToInsert = dedupedRows.map((r,i)=>({
           ...r,
           assigned_to: selectedAgentsForCSV[i % selectedAgentsForCSV.length]
         }))
@@ -253,7 +275,8 @@ export default function Campaigns({ userRole, userId, orgId }) {
           alert('Error: '+error.message)
         } else {
           const agentNames = selectedAgentsForCSV.map(id=>allAgents.find(a=>a.id===id)?.full_name).join(', ')
-          alert(`✅ ${rowsToInsert.length} leads uploaded!\nDistributed to: ${agentNames}`)
+          const dupNote = dupSkipped>0 ? `\n${dupSkipped} duplicate row${dupSkipped>1?'s':''} skipped.` : ''
+          alert(`✅ ${rowsToInsert.length} leads uploaded!\nDistributed to: ${agentNames}${dupNote}`)
           setShowCSVModal(false)
           setCsvFile(null)
           setCsvPreview([])
@@ -262,6 +285,8 @@ export default function Campaigns({ userRole, userId, orgId }) {
           fetchCampaignLeads(selectedCampaign.id)
           fetchCampaignStats(selectedCampaign.id)
         }
+      } else if (dupSkipped > 0) {
+        alert(`All ${dupSkipped} row${dupSkipped>1?'s':''} in this sheet already exist in the system — nothing new to import.`)
       }
       setLoading(false)
     }

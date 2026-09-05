@@ -1036,11 +1036,12 @@ function CSVImport({ users, leads, onImported, showToast, orgId }) {
         }
         if (name.trim() && mobile.trim()) valid.push(row)
       })
-      const existing = new Set((leads||[]).map(l=>(l.mobile||'').replace(/\s/g,'')))
+      const normMobile = (v) => (v||'').replace(/\D/g,'').slice(-10)
+      const existing = new Set((leads||[]).filter(l=>!l.archived).map(l=>normMobile(l.mobile)))
       const seen = new Set()
       let dExisting = 0, dInFile = 0
       valid.forEach(row => {
-        const m = (row['Contact']||row['Contatct']||row['contact']||'').replace(/\s/g,'')
+        const m = normMobile(row['Contact']||row['Contatct']||row['contact']||'')
         if (existing.has(m)) dExisting++
         else if (seen.has(m)) dInFile++
         else seen.add(m)
@@ -1065,12 +1066,13 @@ function CSVImport({ users, leads, onImported, showToast, orgId }) {
           const mobile = row['Contact'] || row['Contatct'] || row['contact'] || ''
           return name.trim() && mobile.trim()
         })
-        const existing = new Set((leads || []).map(l => (l.mobile||'').replace(/\s/g,'')))
+        const normMobile = (v) => (v||'').replace(/\D/g,'').slice(-10)
+        const existing = new Set((leads || []).filter(l=>!l.archived).map(l => normMobile(l.mobile)))
         const seen = new Set()
         let skipped = 0
         const leadsToInsert = []
         valid.forEach(row => {
-          const mobile = (row['Contact'] || row['Contatct'] || row['contact'] || '').replace(/\s/g,'')
+          const mobile = normMobile(row['Contact'] || row['Contatct'] || row['contact'] || '')
           if (existing.has(mobile) || seen.has(mobile)) { skipped++; return }
           seen.add(mobile)
           const loanAmt = row['Loan Amount'] || row['loan amount'] || ''

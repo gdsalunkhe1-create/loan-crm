@@ -224,10 +224,27 @@ export default function Leads({ userRole, userId }) {
     try {
       const {headers, rows} = await parseSpreadsheet(csvFile)
       const map = autoMapHeaders(headers)
+      const normMobile = (v) => (v||'').replace(/\D/g,'').slice(-10)
+      // Fetch every existing, non-archived mobile number (paginated past Supabase's
+      // 1000-row cap) so a number from any past upload is caught, regardless of
+      // which agent it's assigned to (or unassigned) — this import had no
+      // duplicate check at all before.
+      let existingRows=[],from=0
+      const PAGE=1000
+      while(true){
+        const{data,error}=await supabase.from('leads').select('mobile').eq('archived',false).range(from,from+PAGE-1)
+        if(error||!data||data.length===0)break
+        existingRows=existingRows.concat(data)
+        if(data.length<PAGE)break
+        from+=PAGE
+      }
+      const existingMobiles = new Set(existingRows.map(l=>normMobile(l.mobile)).filter(Boolean))
+      const seenInSheet = new Set()
+      let dupSkipped = 0
       const leads = rows
         .map(row => ({
           full_name:      map.full_name      ? (row[map.full_name]||'').trim()      : '',
-          mobile:         map.mobile         ? (row[map.mobile]||'').replace(/\D/g,'').slice(-10) : '',
+          mobile:         map.mobile         ? normMobile(row[map.mobile])           : '',
           city:           map.city           ? (row[map.city]||'').trim()           : '',
           loan_amount:    map.loan_amount    ? (parseFloat(String(row[map.loan_amount]||'').replace(/,/g,''))||null) : null,
           notes:          map.notes          ? (row[map.notes]||'').trim()||null    : null,
@@ -238,7 +255,13 @@ export default function Leads({ userRole, userId }) {
           status:         'New',
         }))
         .filter(r => r.full_name && r.mobile)
+        .filter(r => {
+          if(existingMobiles.has(r.mobile) || seenInSheet.has(r.mobile)){ dupSkipped++; return false }
+          seenInSheet.add(r.mobile)
+          return true
+        })
       if(leads.length > 0) await supabase.from('leads').insert(leads)
+      if(dupSkipped > 0) alert(`${dupSkipped} row${dupSkipped>1?'s':''} skipped as duplicate (already in the system or repeated in this sheet). ${leads.length} lead${leads.length===1?'':'s'} imported.`)
     } catch(err) { console.error('Upload error:', err) }
     setCsvUploading(false)
     setShowCSVModal(false)
