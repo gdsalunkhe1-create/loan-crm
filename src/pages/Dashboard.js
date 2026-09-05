@@ -1006,7 +1006,7 @@ function AgentDashboard({ userId }) {
     const{data}=await supabase.from('tasks').select('*')
       .eq('assigned_to',userId)
       .in('status',['Pending','Attempted'])
-      .ilike('title','Callback:%')
+      .or("title.ilike.Callback:%,title.ilike.Follow-up:%")
       .order('due_date',{ascending:true})
     const allTasks=data||[]
     const now=nowIST()
@@ -1167,7 +1167,7 @@ function AgentDashboard({ userId }) {
     // comparison happens client-side through the canonical IST module.
     const{data}=await supabase.from('tasks').select('*')
       .eq('assigned_to',userId).in('status',['Pending','In Progress'])
-    const all=(data||[]).filter(t=>!t.title?.startsWith('Callback:'))
+    const all=(data||[]).filter(t=>!t.title?.startsWith('Callback:')&&!t.title?.startsWith('Follow-up:'))
     const now=nowIST()
     const five=addMinutes(now,5)
     const upcoming=all.filter(t=>t.due_date&&compareIST(t.due_date,now)>=0&&compareIST(t.due_date,five)<=0)
@@ -2096,12 +2096,13 @@ function AgentDashboard({ userId }) {
         created_at: new Date().toISOString()
       },...prev])
 
-      // Handle callback task creation if needed
-      if(callLogDisposition==='Callback'&&callLogCallbackDate&&callLogCallbackTime){
+      // Handle callback/follow-up task creation if needed
+      if((callLogDisposition==='Callback'||callLogDisposition==='Lead'||callLogStage==='Lead')&&callLogCallbackDate&&callLogCallbackTime){
+        const prefix=callLogDisposition==='Callback'?'Callback: ':'Follow-up: '
         await supabase.from('tasks').insert([{
           lead_id:callLogLead.id,
           assigned_to:userId,
-          title:'Callback: '+callLogLead.full_name,
+          title:prefix+callLogLead.full_name,
           due_date:safeDueDate(callLogCallbackDate,callLogCallbackTime),
           status:'Pending',
           priority:'High',
@@ -2224,7 +2225,7 @@ function AgentDashboard({ userId }) {
   // Callbacks due today, dropping any lead that's already been called and moved off the Callback stage
   const todayCallbacks=myTasks.filter(t=>{
     if(t.status==='Completed') return false
-    if(!(t.title||'').startsWith('Callback:')) return false
+    if(!(t.title||'').startsWith('Callback:')&&!(t.title||'').startsWith('Follow-up:')) return false
     if(!isISTToday(t.due_date)) return false
     const lead=myLeads.find(l=>l.id===t.lead_id)
     if(lead&&lead.status!=='Callback') return false
@@ -2529,7 +2530,7 @@ function AgentDashboard({ userId }) {
                 const now=nowIST()
                 const taskOverdue=isOverdue(task)
                 const isUpcoming=task.due_date&&compareIST(task.due_date,now)>0
-                const leadName=task.title.replace('Callback: ','')
+                const leadName=task.title.replace('Callback: ','').replace('Follow-up: ','')
                 const lead=myLeads.find(l=>l.id===task.lead_id)
                 const isRescheduling=rescheduleTaskId===task.id
                 const isToday=isISTToday(task.due_date)
@@ -2637,7 +2638,7 @@ function AgentDashboard({ userId }) {
                   <div style={{fontSize:11,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:6}}>📞 Callbacks Due Today</div>
                   {callbackTasks.map(task=>(
                     <div key={'cb-'+task.id} style={{background:'#FFF7ED',border:'1px solid #FDE68A',borderRadius:8,padding:10,marginBottom:8,borderLeft:'3px solid #F59E0B'}}>
-                      <div style={{fontWeight:600,fontSize:12,color:'#92400E',marginBottom:2}}>{task.title.replace('Callback: ','')}</div>
+                      <div style={{fontWeight:600,fontSize:12,color:'#92400E',marginBottom:2}}>{task.title.replace('Callback: ','').replace('Follow-up: ','')}</div>
                       <div style={{fontSize:11,color:'#B45309'}}>🕐 {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}</div>
                       {task.notes&&<div style={{fontSize:11,color:'#B45309',marginTop:2}}>{task.notes}</div>}
                       <button onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead){openCallingWorkspace(lead);setShowNotifPanel(false)}}}
@@ -2999,10 +3000,10 @@ function AgentDashboard({ userId }) {
                   {STAGE_OPTIONS.map(s=><option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              {/* Callback Date + Time (only when disposition = Callback) */}
-              {callLogDisposition==='Callback'&&(
+              {/* Callback Date + Time (when disposition/stage = Callback or Lead) */}
+              {(callLogDisposition==='Callback'||callLogDisposition==='Lead'||callLogStage==='Lead')&&(
                 <div style={{background:'#EFF6FF',border:'1px solid #93C5FD',borderRadius:8,padding:'12px',marginBottom:12}}>
-                  <div style={{fontSize:11,fontWeight:700,color:'#1e40af',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.04em'}}>Schedule Callback</div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#1e40af',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.04em'}}>{callLogDisposition==='Callback'?'Schedule Callback':'Schedule Follow-up'}</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                     <div>
                       <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4}}>Date *</label>
@@ -3671,7 +3672,7 @@ function AgentDashboard({ userId }) {
             {callbackTasks.map((task,i)=>(
               <div key={task.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderTop:'1px solid #FDE68A'}}>
                 <div style={{minWidth:0,flex:1}}>
-                  <div style={{fontWeight:600,fontSize:12,color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title.replace('Callback: ','')}</div>
+                  <div style={{fontWeight:600,fontSize:12,color:'#92400E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{task.title.replace('Callback: ','').replace('Follow-up: ','')}</div>
                   <div style={{fontSize:11,color:'#B45309',marginTop:1}}>
                     {compareIST(task.due_date,nowIST())<0?'Overdue · ':'Today · '}
                     {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}
@@ -6020,7 +6021,7 @@ export default function Dashboard({ session }) {
         const[callRes,oblRes,taskRes]=await Promise.all([
           supabase.from('calls').select('*').in('lead_id',ids).order('created_at',{ascending:false}),
           supabase.from('loan_obligations').select('*').in('lead_id',ids),
-          supabase.from('tasks').select('*').in('lead_id',ids).ilike('title','Callback:%').eq('status','Pending'),
+          supabase.from('tasks').select('*').in('lead_id',ids).or("title.ilike.Callback:%,title.ilike.Follow-up:%").eq('status','Pending'),
         ])
         const callMap={},oblMap={},taskMap={}
         ;(callRes.data||[]).forEach(c=>{ if(!callMap[c.lead_id])callMap[c.lead_id]=[]; callMap[c.lead_id].push(c) })
