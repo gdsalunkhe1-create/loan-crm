@@ -1244,9 +1244,14 @@ function AgentDashboard({ userId }) {
         }
         return all
       }
+      // Narrowed to the columns AgentDashboard actually reads/writes (list view,
+      // detail modal, pipeline stats, CSV export, obligations card) — trims a lot
+      // of per-row payload (docs/KYC/source-tracking columns etc.) that this
+      // component never touches, without dropping anything currently displayed.
+      const LEAD_COLUMNS='id,full_name,mobile,email,city,status,previous_status,previous_agent_name,disposition,notes,call_history,loan_amount,required_loan_amount,eligible_amount,login_amount,disbursed_amount,monthly_salary,net_take_home,company_name,lead_temperature,call_count,sheet_number,application_id,assigned_to,assigned_at,mirror_agents,mirror_agent_statuses,stage_history,created_at,updated_at'
       const[myLeadsData,mirLeadsData,cR,tR,pR]=await Promise.all([
-        fetchLeadsPaged(()=>supabase.from('leads').select('*').eq('assigned_to',userId).order('created_at',{ascending:false}).order('id',{ascending:false})),
-        fetchLeadsPaged(()=>supabase.from('leads').select('*').contains('mirror_agents',[userId]).order('created_at',{ascending:false}).order('id',{ascending:false})),
+        fetchLeadsPaged(()=>supabase.from('leads').select(LEAD_COLUMNS).eq('assigned_to',userId).order('created_at',{ascending:false}).order('id',{ascending:false})),
+        fetchLeadsPaged(()=>supabase.from('leads').select(LEAD_COLUMNS).contains('mirror_agents',[userId]).order('created_at',{ascending:false}).order('id',{ascending:false})),
         supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
         supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
         supabase.from('profiles').select('*').eq('id',userId).single(),
@@ -1255,12 +1260,17 @@ function AgentDashboard({ userId }) {
       let obligationMap={}
       const leadIds=leads.map(l=>l.id).filter(Boolean)
       // Chunked to avoid a 400 from PostgREST when leadIds is large enough
-      // to blow the GET URL length limit on a single .in() filter.
+      // to blow the GET URL length limit on a single .in() filter — chunks
+      // fire in parallel since they're independent reads, not sequential.
+      const obligationChunks=[]
+      for(let i=0;i<leadIds.length;i+=50){ obligationChunks.push(leadIds.slice(i,i+50)) }
+      const obligationResults=await Promise.all(
+        obligationChunks.map(chunk=>supabase.from('loan_obligations').select('*').in('lead_id',chunk))
+      )
       let obligationsData=[],oErr=null
-      for(let i=0;i<leadIds.length;i+=50){
-        const{data,error}=await supabase.from('loan_obligations').select('*').in('lead_id',leadIds.slice(i,i+50))
-        if(error){ oErr=error; break }
-        obligationsData=[...obligationsData,...(data||[])]
+      for(const r of obligationResults){
+        if(r.error){ oErr=r.error; break }
+        obligationsData=[...obligationsData,...(r.data||[])]
       }
       if(!oErr){
         obligationMap=(obligationsData||[]).reduce((acc,o)=>{acc[o.lead_id]=[...(acc[o.lead_id]||[]),o];return acc},{})
