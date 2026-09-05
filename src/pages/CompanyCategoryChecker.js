@@ -465,6 +465,7 @@ function BankUploadCard({ bank }) {
 
       const total = clean.length;
       let done = 0;
+      const importStartedAt = new Date().toISOString();
       for (let i = 0; i < clean.length; i += UPSERT_BATCH_SIZE) {
         const batch = clean.slice(i, i + UPSERT_BATCH_SIZE);
         await upsertCompanyCategoryBatch(batch);
@@ -472,7 +473,19 @@ function BankUploadCard({ bank }) {
         setStatus(`Importing… ${done.toLocaleString()} / ${total.toLocaleString()}`);
       }
 
-      setStatus(`Imported ${total.toLocaleString()} companies for ${bank.label}.`);
+      // Every row this import touched (inserted or updated) now has
+      // updated_at >= importStartedAt, courtesy of the column default / the
+      // BEFORE UPDATE trigger — so anything still older than that, for this
+      // bank only, fell out of the newly uploaded file and should go.
+      setStatus('Removing delisted companies…');
+      const { error: deleteError, count: removedCount } = await supabase
+        .from('company_categories')
+        .delete({ count: 'exact' })
+        .eq('bank', bank.id)
+        .lt('updated_at', importStartedAt);
+      if (deleteError) throw deleteError;
+
+      setStatus(`Imported ${total.toLocaleString()} companies for ${bank.label} (${(removedCount || 0).toLocaleString()} no longer listed removed).`);
       setTimeout(() => {
         setMapping(null);
         setStatus(null);

@@ -289,7 +289,9 @@ function parseCibil(raw) {
   const rd = text.match(/(?:CIBIL\s*Score\s*is\s*\d{3}\s*as\s*of\s*Date|Report\s*Date)\s*:\s*(\d{2}\/\d{2}\/\d{4})/i) ||
              text.match(/\bDate\s*:\s*(\d{2}\/\d{2}\/\d{4})/)
   const anchor = rd ? dmy(rd[1]) : new Date()
-  const [acctRegion, enqRegion = ''] = text.split(/ENQUIRY\s*DETAILS/i)
+  const enqStart = text.search(/ENQUIRY\s*DETAILS/i)
+  const acctRegion = enqStart >= 0 ? text.slice(0, enqStart) : text
+  const enqRegion = enqStart >= 0 ? text.slice(enqStart) : ''
   const enqDetails = []
   const ENQ = /Member\s*Name\s+((?:(?!Disclaimer|End of report|Member\s*Name).)+?)\s+Date\s*Of\s*Enquiry\s+(\d{2}\/\d{2}\/\d{4})\s+Enquiry\s*Purpose\s+(.+?)(?=\s*Member\s*Name|\s*Disclaimer|\s*End of report|$)/gis
   for (const m of enqRegion.matchAll(ENQ)) {
@@ -673,17 +675,6 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     finally{ setSaving(false) }
   }
 
-  const exportCSV=()=>{
-    const h=['Bank Name','Loan Type','Loan Amount','Outstanding','EMI/Obligation','Open Date','Closed Date','DPDs','Overdue','Settlement','Status']
-    const r=accounts.map(a=>{
-      const ob = monthlyObligation(a)
-      return [a.bankName,a.loanType,a.loanAmount,a.outstanding,ob||a.emi,a.openDate,a.closedDate||'',a.dpds,a.overdue,a.settlement,a.status]
-    })
-    const csv=[h,...r].map(row=>row.map(v=>`"${v||''}"`).join(',')).join('\n')
-    const el=document.createElement('a'); el.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}))
-    el.download=`CIBIL_${customerName||'Report'}.csv`; el.click()
-  }
-
   const exportExcel=async()=>{
     try{
       const accountsForExport = accounts.map(a=>({...a, emi: monthlyObligation(a) || a.emi}))
@@ -988,8 +979,17 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
               <h3 style={S.ttl}>Loan Summary ({shown.length} accounts)</h3>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <button style={S.btn(showAll?'#EFF6FF':'#F9FAFB',showAll?'#1D4ED8':'#718096')} onClick={()=>setShowAll(!showAll)}>{showAll?'Active Only':'Show All'}</button>
-                <button style={S.btn('#0F6E56')} onClick={exportCSV}>⬇ Export CSV</button>
-                <button style={S.btn('#185FA5')} onClick={exportExcel}>📊 Export Excel</button>
+                <button
+                  style={{...S.btn('#217346'), display:'flex', alignItems:'center', gap:6}}
+                  onClick={exportExcel}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="2" width="20" height="20" rx="3" fill="white" fillOpacity="0.15"/>
+                    <path d="M7 7L11 12L7 17M13 7H18M13 12H18M13 17H18"
+                      stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  Export Excel
+                </button>
                 {onUseInCam && <button style={S.btn('#185FA5')} onClick={() => {
                   try {
                     sessionStorage.setItem('cam_import_payload', JSON.stringify({
