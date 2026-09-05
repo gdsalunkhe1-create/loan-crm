@@ -375,9 +375,10 @@ function parseCibil(raw) {
 // ── PAISABAZAAR PARSER ────────────────────────────────────────────────────────
 function parsePaisaBazaar(text) {
   // Score
-  const sm = text.match(/Powered\s*by\s*\n?\s*(\d{3})/i) ||
-             text.match(/(\d{3})\s*\n?\s*(?:Very Good|Good|Fair|Poor|Excellent)/i) ||
-             text.match(/score[^\d]*(\d{3})/i)
+  const sm = text.match(/Credit\s*Health\s*Report\s*\n?\s*(\d{3})(?!\d)/i) ||
+             text.match(/Powered\s*by\s*\n?\s*(\d{3})(?!\d)/i) ||
+             text.match(/(\d{3})(?!\d)\s*\n?\s*(?:Very Good|Good|Fair|Poor|Excellent)/i) ||
+             text.match(/score[^\d]*(\d{3})(?!\d)/i)
   const score = sm ? parseInt(sm[1]) : null
 
   // Name
@@ -389,16 +390,17 @@ function parsePaisaBazaar(text) {
   const anchor = rdM ? mkDate(rdM[1], rdM[2], rdM[3]) : new Date()
   const reportDate = anchor
 
-  const enqSec = (text.match(/Financial\s*Institution\s+Product\s*Type\s+Reported\s*Date\s+Amount([\s\S]*?)(?=\bTip\b|Employment\s*Details|Back\s*to\s*Top|$)/i) || [])[1] || ''
+  const enqSec = (text.match(/Financial\s*Institution\s+Product\s*Type\s+Reported\s*Date\s+Amount([\s\S]*?)(?=\bTip\b|Employment\s*Details|$)/i) || [])[1] || ''
   const ENQ_ROW = /([A-Z][A-Za-z0-9 .&'\-]{1,40}?)\s+(Personal Loan|Gold Loan|Credit Card|Consumer Loan|Home Loan|Housing Loan|Auto Loan|Business Loan|Two[- ]?Wheeler Loan|Education Loan|Overdraft)\s+(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+[₹₹]?\s*([\d,]+)/g
   const enqDetails = []
   for (const m of enqSec.matchAll(ENQ_ROW)) {
     enqDetails.push({ institution: m[1].trim(), product: m[2], date: mkDate(m[3], m[4], m[5]), amount: (m[6] || '').replace(/,/g, '') })
   }
-  const inWin = n => enqDetails.filter(e => { const x = (anchor - e.date) / 86400000; return x >= 0 && x <= n })
+  const enqPersonal = enqDetails.filter(e => e.product === 'Personal Loan')
+  const inWin = n => enqPersonal.filter(e => { const x = (anchor - e.date) / 86400000; return x >= 0 && x <= n })
   const byType = {}; enqDetails.forEach(e => { byType[e.product] = (byType[e.product] || 0) + 1 })
   const enquiries = {
-    total: enqDetails.length,
+    total: enqPersonal.length,
     last30: inWin(30).length, last60: inWin(60).length, last90: inWin(90).length,
     items30: inWin(30).map(e => ({ institution: e.institution, product: e.product, date: fmtD(e.date) })),
     items60: inWin(60).map(e => ({ institution: e.institution, product: e.product, date: fmtD(e.date) })),
