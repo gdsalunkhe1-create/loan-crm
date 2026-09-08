@@ -72,6 +72,23 @@ function extractAccountFromOcrText(raw) {
   }
 }
 
+// Same loose/tolerant matching as extractAccountFromOcrText, but for the report-level fields
+// (score/name/date) instead of an account row. Only meaningful against page 1's OCR text — used
+// once per whole-document-empty PDF, since that's the only case where parseCibil/parsePaisaBazaar
+// never got a text layer to read these from in the first place.
+function extractSummaryFromOcrText(raw) {
+  const t = raw.replace(/[|]/g, 'I').replace(/\s+/g, ' ')
+  const g = (rx) => { const m = t.match(rx); return m ? m[1].trim() : '' }
+  const scoreStr = g(/CIBIL\s*(?:TransUnion\s*)?Score\s*[:.]?\s*(\d{3})\b/i)
+  const customerName = g(/\bName\s*[:.]?\s*([A-Z][A-Za-z .]{2,40}?)(?=\s*(?:Date\s*of\s*Birth|Gender|Address|Mobile|Email|PAN|Father|$))/i)
+  const reportDate = g(/\bDate\s*(?!\s*of\s*Birth)[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i)
+  return {
+    score: scoreStr ? parseInt(scoreStr, 10) : null,
+    customerName,
+    reportDate,
+  }
+}
+
 // pdf.js emits text items in content-stream order, which for grid/table-based printed
 // reports (like CIBIL.com's and PaisaBazaar's account-detail pages) does not always match
 // the *visual* row order — a label and its value can sit on the same on-page line but arrive
@@ -544,6 +561,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const [ocrBusy,setOcrBusy]               = useState(false)
   const [ocrLog,setOcrLog]                 = useState('')
   const pdfDocRef = useRef(null)
+  const ocrCancelRef = useRef(false)
   const [score,setScore]                 = useState(null)
   const [customerName,setCustomerName]   = useState('')
   const [enquiries,setEnquiries]         = useState(null)
@@ -567,6 +585,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const pwdRef = useRef(null)
 
   useEffect(()=>{ loadPdfJs() },[])
+  // CibilParser is always-mounted (see Dashboard.js), so a page-by-page OCR run left going after
+  // the user navigates away would otherwise keep burning CPU in the background pointlessly.
+  useEffect(()=>()=>{ ocrCancelRef.current = true },[])
   useEffect(()=>{ if(needsPwd&&pwdRef.current) pwdRef.current.focus() },[needsPwd])
   useEffect(()=>{
     if(!leadSearch||leadSearch.length<2){setLeads([]);return}
@@ -589,7 +610,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         // the exact same page-gap/OCR-recovery UI as a partial gap, just for every page in the file.
         const total = pdf.numPages
         setPageGapInfo({ missing: Array.from({length: total}, (_,i)=>i+1), total })
-        setPageGapWarning(`This PDF has no readable text on any of its ${total} pages — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery below can read it page by page, but it only processes up to 6 pages per click, so a ${total}-page report will take several clicks and a few minutes.`)
+        setPageGapWarning(`This PDF has no readable text on any of its ${total} pages — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery below can read it page by page automatically — for a ${total}-page report that can take a few minutes, so just let it run.`)
         throw new Error('PDF appears empty or image-only.')
       }
 
@@ -685,24 +706,41 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     }catch(e){ setError('Excel export failed: '+e.message) }
   }
 
-  // Manual "recover this page" action for pages the text layer missed entirely (see
-  // detectMissingPages). Runs OCR page-by-page rather than automatically, since it's slow
-  // (a few seconds per page) and only needed for the rare disputed-account case. Caps at 6
-  // pages per click so a report with many gaps doesn't hang the tab.
+  // "Recover this page" action for pages the text layer missed entirely (see detectMissingPages).
+  // Runs OCR page-by-page (sequentially, since Tesseract is CPU-heavy) but auto-continues through
+  // every missing page on a single click, updating ocrLog after each page so progress is visible
+  // without repeated clicks. Cancellable via ocrCancelRef — see the unmount effect above.
   const runOcrRecovery = async () => {
     if (!pageGapInfo || !pdfDocRef.current) return
     setOcrBusy(true)
-    const pagesToTry = pageGapInfo.missing.slice(0, 6)
+    ocrCancelRef.current = false
+    const pagesToTry = pageGapInfo.missing
+    // Whole-document-empty case: no page anywhere had a text layer, so parseCibil/parsePaisaBazaar
+    // never ran and never populated score/customerName/reportDate — recover them once from page 1.
+    const wholeDocEmpty = pageGapInfo.missing.length === pageGapInfo.total
     const log = []
+    let summaryTried = false
     try {
       const Tesseract = await loadTesseract()
-      const recovered = []
-      for (const pageNum of pagesToTry) {
+      for (let i = 0; i < pagesToTry.length; i++) {
+        if (ocrCancelRef.current) return
+        const pageNum = pagesToTry[i]
+        setOcrLog([...log, `Recovering page ${pageNum} (${i + 1} of ${pagesToTry.length})...`].join('\n'))
         try {
           const ocrText = await ocrPage(pdfDocRef.current, pageNum, Tesseract)
+          if (ocrCancelRef.current) return
+
+          if (wholeDocEmpty && pageNum === 1 && !summaryTried) {
+            summaryTried = true
+            const summary = extractSummaryFromOcrText(ocrText)
+            if (summary.score !== null) setScore(prev => prev === null ? summary.score : prev)
+            if (summary.customerName) setCustomerName(prev => prev ? prev : summary.customerName)
+            if (summary.reportDate) setReportDate(prev => prev ? prev : summary.reportDate)
+          }
+
           const extracted = extractAccountFromOcrText(ocrText)
           if (extracted) {
-            recovered.push(extracted)
+            setAccounts(prev => [...prev, extracted])
             log.push(`Page ${pageNum}: recovered ${extracted.bankName} — ${extracted.loanType} (verify against PDF)`)
           } else {
             log.push(`Page ${pageNum}: OCR ran but couldn't confidently extract an account — check this page manually`)
@@ -710,16 +748,13 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         } catch (pageErr) {
           log.push(`Page ${pageNum}: OCR failed — ${pageErr.message}`)
         }
+        if (ocrCancelRef.current) return
+        setOcrLog(log.join('\n'))
       }
-      if (recovered.length) setAccounts(prev => [...prev, ...recovered])
-      if (pageGapInfo.missing.length > pagesToTry.length) {
-        log.push(`${pageGapInfo.missing.length - pagesToTry.length} more page(s) not attempted — click again to continue, or check them manually.`)
-      }
-      setOcrLog(log.join('\n'))
     } catch (e) {
-      setOcrLog('OCR recovery failed to start: ' + e.message)
+      if (!ocrCancelRef.current) setOcrLog('OCR recovery failed to start: ' + e.message)
     } finally {
-      setOcrBusy(false)
+      if (!ocrCancelRef.current) setOcrBusy(false)
     }
   }
 
