@@ -32,8 +32,10 @@ function loadTesseract() {
 
 // Renders a single PDF page to a canvas image and runs OCR on it, for pages whose text layer
 // pdf.js couldn't read at all (see detectMissingPages) — most commonly disputed-account blocks
-// CIBIL renders as a flattened image instead of selectable text.
-async function ocrPage(pdf, pageNum, Tesseract) {
+// CIBIL renders as a flattened image instead of selectable text. Takes an already-initialized
+// Tesseract worker (see runOcrRecovery) rather than the Tesseract module itself, so the 'eng'
+// model is loaded once per run instead of once per page.
+async function ocrPage(pdf, pageNum, worker) {
   const page = await pdf.getPage(pageNum)
   const viewport = page.getViewport({ scale: 2.5 })
   const canvas = document.createElement('canvas')
@@ -41,7 +43,7 @@ async function ocrPage(pdf, pageNum, Tesseract) {
   canvas.height = viewport.height
   const ctx = canvas.getContext('2d')
   await page.render({ canvasContext: ctx, viewport }).promise
-  const { data } = await Tesseract.recognize(canvas, 'eng')
+  const { data } = await worker.recognize(canvas)
   return data.text || ''
 }
 
@@ -720,14 +722,18 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     const wholeDocEmpty = pageGapInfo.missing.length === pageGapInfo.total
     const log = []
     let summaryTried = false
+    let worker = null
     try {
       const Tesseract = await loadTesseract()
+      // One worker for the whole run — createWorker('eng') loads the English model and
+      // initializes it once, instead of reloading it on every page's recognize() call.
+      worker = await Tesseract.createWorker('eng')
       for (let i = 0; i < pagesToTry.length; i++) {
         if (ocrCancelRef.current) return
         const pageNum = pagesToTry[i]
         setOcrLog([...log, `Recovering page ${pageNum} (${i + 1} of ${pagesToTry.length})...`].join('\n'))
         try {
-          const ocrText = await ocrPage(pdfDocRef.current, pageNum, Tesseract)
+          const ocrText = await ocrPage(pdfDocRef.current, pageNum, worker)
           if (ocrCancelRef.current) return
 
           if (wholeDocEmpty && pageNum === 1 && !summaryTried) {
@@ -754,6 +760,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     } catch (e) {
       if (!ocrCancelRef.current) setOcrLog('OCR recovery failed to start: ' + e.message)
     } finally {
+      if (worker) await worker.terminate()
       if (!ocrCancelRef.current) setOcrBusy(false)
     }
   }
