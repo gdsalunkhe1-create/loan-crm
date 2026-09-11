@@ -6702,6 +6702,7 @@ export default function Dashboard({ session }) {
     const [csvAgents,setCsvAgents]       = useState([])
     const [assignTo,setAssignTo]         = useState('')
     const [existingOrgMobiles,setExistingOrgMobiles] = useState(new Set())
+    const [agentDupMobiles,setAgentDupMobiles] = useState(new Set())
     const [importing,setImporting]       = useState(false)
     const [importResult,setImportResult] = useState(null)
     const [adminNotifs,setAdminNotifs]   = useState([])
@@ -7048,15 +7049,22 @@ export default function Dashboard({ session }) {
         // Duplicate against any past upload, org-wide — regardless of which agent it's
         // currently assigned to (or unassigned), not just the agent selected in Step 3.
         const isDupOrg = !!(mbNorm && existingOrgMobiles.has(mbNorm))
+        // Duplicate specifically against the agent selected in Step 3 — this is the
+        // exact pair the DB's leads_unique_agent_mobile index enforces, checked
+        // independently of isDupOrg since that org-wide check can miss rows (e.g.
+        // legacy leads without org_id) that would still collide on insert.
+        const isDupAgentAssigned = !!(mbNorm && agentDupMobiles.has(mbNorm))
         if(mbNorm) seenInSheet.add(mbNorm)
         return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,
-          _valid:!!(nm&&mb),_dupSheet:isDupSheet,_dupOrg:isDupOrg,_dupAgent:isDupSheet||isDupOrg}
+          _valid:!!(nm&&mb),_dupSheet:isDupSheet,_dupOrg:isDupOrg,_dupAgentAssigned:isDupAgentAssigned,
+          _dupAgent:isDupSheet||isDupOrg||isDupAgentAssigned}
       })
     })()
     const missingCount   = csvRows.filter(r=>!r._valid).length
     const dupSheetCount  = csvRows.filter(r=>r._valid&&r._dupSheet).length
     const dupOrgCount    = csvRows.filter(r=>r._valid&&!r._dupSheet&&r._dupOrg).length
-    const dupAgentCount  = dupSheetCount+dupOrgCount
+    const dupAgentAssignedCount = csvRows.filter(r=>r._valid&&!r._dupSheet&&!r._dupOrg&&r._dupAgentAssigned).length
+    const dupAgentCount  = dupSheetCount+dupOrgCount+dupAgentAssignedCount
     const trulyValidRows = csvRows.filter(r=>r._valid&&!r._dupAgent)
     const selectedAgentName = csvAgents.find(a=>a.id===assignTo)?.full_name||'this agent'
 
@@ -7088,6 +7096,32 @@ export default function Dashboard({ session }) {
       return()=>{cancelled=true}
     },[colMap.mobile,profile?.org_id])
 
+    // Agent-specific check: does the agent selected in Step 3 already have an
+    // active lead with this mobile? This is what leads_unique_agent_mobile
+    // actually enforces at the DB level (unique on assigned_to+mobile), so it
+    // catches conflicts the org-wide check above can miss (e.g. leads inserted
+    // without org_id). One batched .in() query against just this sheet's
+    // mobiles, not a query per row.
+    useEffect(()=>{
+      let cancelled=false
+      const run=async()=>{
+        if(!colMap.mobile||!assignTo){ setAgentDupMobiles(new Set()); return }
+        const mobiles=[...new Set(rawRows.map(row=>(row[colMap.mobile]||'').replace(/\D/g,'').slice(-10)).filter(Boolean))]
+        if(!mobiles.length){ setAgentDupMobiles(new Set()); return }
+        let found=new Set()
+        for(let i=0;i<mobiles.length;i+=200){
+          const chunk=mobiles.slice(i,i+200)
+          const{data,error}=await supabase.from('leads').select('mobile').eq('assigned_to',assignTo).eq('archived',false).in('mobile',chunk)
+          if(error){ console.error('[import] agent-duplicate check failed',error); continue }
+          ;(data||[]).forEach(l=>{ const m=(l.mobile||'').replace(/\D/g,'').slice(-10); if(m) found.add(m) })
+        }
+        if(cancelled)return
+        setAgentDupMobiles(found)
+      }
+      run()
+      return()=>{cancelled=true}
+    },[colMap.mobile,assignTo,rawRows])
+
     const handleFile=async(e)=>{
       const file=e.target.files[0]; if(!file)return
       try{
@@ -7115,7 +7149,7 @@ export default function Dashboard({ session }) {
     const handleImport=async()=>{
       setImporting(true)
       const valid=trulyValidRows
-      let ok=0,fail=0,firstError=''
+      let ok=0,dupSkipped=0,fail=0,firstError=''
       for(let i=0;i<valid.length;i+=100){
         const now=new Date().toISOString()
         const chunk=valid.slice(i,i+100).map(r=>{
@@ -7143,11 +7177,28 @@ export default function Dashboard({ session }) {
           }
         })
         const{error,data}=await supabase.from('leads').insert(chunk).select('id')
-        if(error){ fail+=chunk.length; if(!firstError)firstError=error.message }
+        if(error&&error.code==='23505'){
+          // Preview's duplicate check is a snapshot taken before the user hit
+          // Confirm — a row can still collide here if another import or manual
+          // assignment grabbed the same (agent, mobile) pair in the meantime.
+          // A multi-row insert fails atomically on any one conflict, so retry
+          // this chunk one row at a time to isolate exactly which row(s) lost
+          // the race instead of failing the whole chunk.
+          for(const row of chunk){
+            const{error:rowErr,data:rowData}=await supabase.from('leads').insert([row]).select('id')
+            if(rowErr){
+              if(rowErr.code==='23505') dupSkipped+=1
+              else { fail+=1; if(!firstError)firstError=rowErr.message }
+            }
+            else if(!rowData||rowData.length===0){ fail+=1; if(!firstError)firstError='No rows were inserted — likely a Row Level Security (RLS) block on assigning leads to this agent.' }
+            else ok+=1
+          }
+        }
+        else if(error){ fail+=chunk.length; if(!firstError)firstError=error.message }
         else if(!data||data.length===0){ fail+=chunk.length; if(!firstError)firstError='No rows were inserted — likely a Row Level Security (RLS) block on assigning leads to this agent.' }
         else { ok+=data.length; if(data.length<chunk.length){ fail+=chunk.length-data.length } }
       }
-      setImportResult({ok,fail,total:valid.length,error:firstError})
+      setImportResult({ok,dupSkipped,fail,total:valid.length,error:firstError})
       setImporting(false)
       if(ok>0)fetchDashboardStats()
       if(ok>0&&assignTo) await notifyAgentAssigned(assignTo,ok)
@@ -7276,6 +7327,7 @@ export default function Dashboard({ session }) {
                         missingCount>0?`${missingCount} row${missingCount>1?'s':''} missing Name/Number`:null,
                         dupSheetCount>0?`${dupSheetCount} row${dupSheetCount>1?'s':''} repeated in this sheet`:null,
                         dupOrgCount>0?`${dupOrgCount} row${dupOrgCount>1?'s':''} already in the system`:null,
+                        dupAgentAssignedCount>0?`${dupAgentAssignedCount} row${dupAgentAssignedCount>1?'s':''} already assigned to this agent`:null,
                       ].filter(Boolean).join(', ')}
                       {(missingCount>0||dupAgentCount>0)?' — ':''}{trulyValidRows.length} valid
                     </span>
@@ -7302,7 +7354,7 @@ export default function Dashboard({ session }) {
                                 :r._dupAgent
                                   ?<div>
                                     <span style={{background:'#FEF3C7',color:'#92400E',padding:'2px 7px',borderRadius:4,fontWeight:600,whiteSpace:'nowrap'}}>Skip</span>
-                                    <div style={{fontSize:10,color:'#92400E',marginTop:2}}>{r._dupSheet?'Repeated in this sheet':'Already in the system'}</div>
+                                    <div style={{fontSize:10,color:'#92400E',marginTop:2}}>{r._dupSheet?'Repeated in this sheet':r._dupOrg?'Already in the system':'⚠ Already assigned to this agent'}</div>
                                   </div>
                                   :<span style={{background:'#D1FAE5',color:'#065F46',padding:'2px 7px',borderRadius:4,fontWeight:600}}>✓ OK</span>
                             }</td>
@@ -7319,7 +7371,7 @@ export default function Dashboard({ session }) {
               {importResult&&(
                 <div style={{background:importResult.fail===0?'#F0FFF4':'#FFFBEB',border:'1px solid '+(importResult.fail===0?'#86EFAC':'#FCD34D'),borderRadius:10,padding:14,marginBottom:16}}>
                   <div style={{fontWeight:700,fontSize:14,color:importResult.fail===0?'#065F46':'#92400E',marginBottom:4}}>Import Complete</div>
-                  <div style={{fontSize:13,color:importResult.fail===0?'#166534':'#78350F'}}>✅ {importResult.ok} leads imported successfully{importResult.fail>0?` · ⚠️ ${importResult.fail} failed`:''}</div>
+                  <div style={{fontSize:13,color:importResult.fail===0?'#166534':'#78350F'}}>✅ {importResult.ok} leads imported successfully{importResult.dupSkipped>0?` · ⏭️ ${importResult.dupSkipped} skipped as duplicates`:''}{importResult.fail>0?` · ⚠️ ${importResult.fail} failed`:''}</div>
                   {importResult.error&&<div style={{fontSize:12,color:'#dc2626',marginTop:6}}>Error: {importResult.error}</div>}
                 </div>
               )}
