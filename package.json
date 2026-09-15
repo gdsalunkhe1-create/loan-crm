@@ -32,7 +32,8 @@
     "build": "cross-env GENERATE_SOURCEMAP=false node --max-old-space-size=8192 node_modules/react-scripts/bin/react-scripts.js build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "postinstall": "node scripts/copy-pdf-worker.js"
+    "postinstall": "node scripts/copy-pdf-worker.js",
+    "smoke:bsa": "node scripts/smoke-test-bsa.js"
   },
   "eslintConfig": {
     "extends": [

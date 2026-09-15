@@ -5345,18 +5345,30 @@ function BankStatementAnalyzer({ userId }) {
               <div style={{padding:'14px 20px',borderBottom:'1px solid #fecaca',fontWeight:600,fontSize:14,color:'#dc2626',background:'#fef2f2'}}>↩️ ECS / NACH Returns ({result.ecs_returns.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse'}}>
-                  <thead><tr>{['Party','Return Type','Return Date','Return Amount','Charge Date','Charge Amount','Charge Description'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
-                  <tbody>{result.ecs_returns.map((r,i)=>(
-                    <tr key={i} style={{background:'#fef2f2'}}>
+                  <thead><tr>{['Party','Return Type','Return Date','Return Amount','Charge Date','Charge Amount','Charge Description','Bounce Type'].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+                  {/* INFERRED_DATE_DRIFT rows (detectEmiDateDrift() in
+                      bankBehaviour.js) are NOT an explicit, bank-reported
+                      return - only an EMI debit landing later than its usual
+                      day, with no RETURN/BOUNCE/charge text anywhere in the
+                      statement. Shaded amber instead of the confirmed-return
+                      red, and labeled, so this panel can't be read as "N
+                      confirmed bounces" when some of them are unverified
+                      inferences. */}
+                  <tbody>{result.ecs_returns.map((r,i)=>{
+                    const inferred=r.bounce_type==='INFERRED_DATE_DRIFT';
+                    return (
+                    <tr key={i} style={{background:inferred?'#fffbeb':'#fef2f2'}}>
                       <td style={{...TD,fontWeight:500}}>{r.party}</td>
-                      <td style={TD}><Badge text={r.return_type} color='#dc2626'/></td>
+                      <td style={TD}><Badge text={r.return_type} color={inferred?'#d97706':'#dc2626'}/></td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{r.return_date}</td>
-                      <td style={{...TD,fontWeight:600,color:'#dc2626'}}>₹{(r.return_amount||0).toLocaleString('en-IN')}</td>
+                      <td style={{...TD,fontWeight:600,color:inferred?'#d97706':'#dc2626'}}>₹{(r.return_amount||0).toLocaleString('en-IN')}</td>
                       <td style={{...TD,whiteSpace:'nowrap'}}>{r.charge_date}</td>
                       <td style={{...TD,fontWeight:600,color:'#d97706'}}>₹{(r.charge_amount||0).toLocaleString('en-IN')}</td>
                       <td style={TD}>{r.charge_description}</td>
+                      <td style={TD}><Badge text={inferred?'INFERRED (VERIFY)':'CONFIRMED'} color={inferred?'#d97706':'#dc2626'}/></td>
                     </tr>
-                  ))}</tbody>
+                    );
+                  })}</tbody>
                 </table>
               </div>
             </Card>

@@ -2092,7 +2092,7 @@ function BankStatementAnalyzer({ userId }) {
       {(behaviour?.ecs_returns?.length > 0) && (
         <Section title="ECS / Auto-Debit Returns" icon="⚠️" color="#d97706" count={behaviour.ecs_returns.length}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead><tr><th style={bTH}>Party</th><th style={bTH}>Type</th><th style={bTH}>Return Date</th><th style={bTH}>Return Amt</th><th style={bTH}>Charge Date</th><th style={bTH}>Charge Amt</th></tr></thead>
+            <thead><tr><th style={bTH}>Party</th><th style={bTH}>Type</th><th style={bTH}>Return Date</th><th style={bTH}>Return Amt</th><th style={bTH}>Charge Date</th><th style={bTH}>Charge Amt</th><th style={bTH}>Bounce Type</th></tr></thead>
             <tbody>{behaviour.ecs_returns.map((e,i) => (
               <tr key={i} style={{ background:'#fffbeb' }}>
                 <td style={{ ...bTD, fontWeight:500 }}>{e.party}</td>
@@ -2101,6 +2101,12 @@ function BankStatementAnalyzer({ userId }) {
                 <td style={{ ...bTD, fontWeight:600, color:'#d97706' }}>₹{(e.return_amount||0).toLocaleString('en-IN')}</td>
                 <td style={{ ...bTD, whiteSpace:'nowrap' }}>{e.charge_date}</td>
                 <td style={{ ...bTD, fontWeight:600, color:'#dc2626' }}>₹{(e.charge_amount||0).toLocaleString('en-IN')}</td>
+                {/* INFERRED_DATE_DRIFT (detectEmiDateDrift() in
+                    bankBehaviour.js) is NOT an explicit, bank-reported
+                    return - only an EMI debit landing later than usual with
+                    no RETURN/BOUNCE/charge text anywhere in the statement -
+                    labeled so it isn't read as bank-confirmed. */}
+                <td style={bTD}><BSABadge text={e.bounce_type==='INFERRED_DATE_DRIFT'?'INFERRED (VERIFY)':'CONFIRMED'} bg={e.bounce_type==='INFERRED_DATE_DRIFT'?'#fef3c7':'#fee2e2'} tc={e.bounce_type==='INFERRED_DATE_DRIFT'?'#92400e':'#991b1b'} /></td>
               </tr>
             ))}</tbody>
           </table>

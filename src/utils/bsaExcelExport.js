@@ -1,12 +1,15 @@
 // bsaExcelExport.js — builds the multi-sheet Bank Statement Analysis workbook
 // (Executive Summary / EMI Tracker & Bounces / Rotation & Risk Flags /
-// Monthly Cash Flow / Stock Market Activity) from the object returned by
-// analyzeBankStatement() in bankBehaviour.js. No API — pure client-side.
+// Monthly Cash Flow / Stock Market Activity / Investment Activity /
+// Cash-Out Pattern Findings / Banking Behaviour / Transaction Details) from
+// the object returned by analyzeBankStatement() in bankBehaviour.js. No
+// API — pure client-side.
 // Uses exceljs (not xlsx/SheetJS) so real cell colors, fonts and borders
 // can be written, not just number formats.
 import ExcelJS from 'exceljs';
 
 const inr = n => Number(n) || 0;
+const round2 = n => Math.round(n * 100) / 100;
 const CUR = '₹#,##0.00';
 const PCT = '0.0%';
 const FONT = 'Arial';
@@ -15,6 +18,16 @@ const TITLE_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC000
 const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E5597' } };
 const THIN = { style: 'thin' };
 const THIN_BORDER = { top: THIN, bottom: THIN, left: THIN, right: THIN };
+
+// Per-confidence-tier row fill for the Cash-Out Pattern Findings sheet - no
+// conditional formatting exists elsewhere in this file to reuse, so this
+// follows the same flat "pick a fill color" approach the title/header rows
+// already use above, just applied per-row instead of per-sheet-band.
+const CONFIDENCE_FILL = {
+  HIGH: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8CBCB' } },
+  MEDIUM: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE8B2' } },
+  LOW: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } },
+};
 
 // Wraps a worksheet with row-adding helpers so every sheet applies the same
 // title / section-header / column-header / data styling consistently.
@@ -32,13 +45,14 @@ function sheetHelpers(ws, numCols) {
   return {
     title: (text) => bandRow([text], { size: 13, color: 'FFFFFFFF', fill: TITLE_FILL }),
     header: (values) => bandRow(Array.isArray(values) ? values : [values], { size: 10, color: 'FFFFFFFF', fill: HEADER_FILL }),
-    data: (values, { fmts = {}, bold = [] } = {}) => {
+    data: (values, { fmts = {}, bold = [], fill } = {}) => {
       const row = ws.addRow(values);
       values.forEach((_, i) => {
         const c = i + 1;
         const cell = row.getCell(c);
         cell.font = { name: FONT, size: 9, bold: bold.includes(c) };
         if (fmts[c]) cell.numFmt = fmts[c];
+        if (fill) cell.fill = fill;
       });
       return row;
     },
@@ -66,8 +80,11 @@ export function buildBsaWorkbook(result, cibilData) {
   s1.header(['Metric', 'Value', 'Metric', 'Value']);
   s1.data(['Opening Balance', sm.opening_balance || 0, 'Closing Balance', sm.closing_balance || 0], { fmts: { 2: CUR, 4: CUR }, bold: [2, 4] });
   s1.data(['Total Deposits', sm.total_credits || 0, 'Total Withdrawals', sm.total_debits || 0], { fmts: { 2: CUR, 4: CUR }, bold: [2, 4] });
+  const cws = result.cash_withdrawal_summary || {};
+  s1.data(['Cash Withdrawals (Count / Total)', `${cws.total_count || 0} / Rs.${inr(cws.total_amount).toLocaleString('en-IN')}`, 'Avg Withdrawal Amount', inr(cws.average_amount)], { fmts: { 4: CUR }, bold: [2, 4] });
   s1.data(['Net Cash Flow', (sm.total_credits || 0) - (sm.total_debits || 0), 'Avg Monthly Balance', sm.average_monthly_balance || 0], { fmts: { 2: CUR, 4: CUR }, bold: [2, 4] });
   s1.data(['No. of Salary Credits', salaryRows.length, 'Avg Monthly Salary', avgSalary], { fmts: { 4: CUR }, bold: [2, 4] });
+  s1.data(['Employer / Income Source', ca.employer_name || 'Not clearly identified', 'Salary Date (Modal)', ca.salary_date || 'N/A'], { bold: [2, 4] });
   s1.data(['Total Known EMI Obligation', ca.total_emi_burden || 0, 'FOIR (EMI/Income)', (ca.foir_estimate || 0) / 100], { fmts: { 2: CUR, 4: PCT }, bold: [2, 4] });
   s1.data(['Overall Risk', ca.overall_risk || '', 'Recommendation', ca.recommendation || ''], { bold: [2, 4] });
   s1.blank();
@@ -84,20 +101,49 @@ export function buildBsaWorkbook(result, cibilData) {
     s1.header('SECONDARY INCOME SOURCES');
     s1.header(['Source', 'Occurrences', 'Avg Amount', 'Consistency (CV)', 'First Seen', 'Last Seen']);
     secondaryIncome.forEach(s => s1.data([s.source, s.count, inr(s.mean), s.cv, s.first_seen, s.last_seen], { fmts: { 3: CUR } }));
+    s1.blank();
+  }
+
+  // Irregular credits - everything left over once salary, secondary
+  // income, broker/MF activity, wallet top-ups and lender disbursals have
+  // all claimed their own credits. Informational only - listed, never
+  // summed into any income figure, since nothing here has been
+  // established as recurring.
+  const irregularCredits = result.irregular_credits || [];
+  if (irregularCredits.length) {
+    s1.header('IRREGULAR / UNCLASSIFIED CREDITS (INFORMATIONAL - NOT INCLUDED IN INCOME)');
+    s1.header(['Date', 'Amount', 'Description']);
+    irregularCredits.forEach(c => s1.data([c.date, inr(c.amount), c.description], { fmts: { 2: CUR } }));
   }
 
   // ── Sheet 2: EMI Tracker & Bounces ──────────────────────────────────────
   const emis = result.emi_obligations || [];
   const ecs = result.ecs_returns || [];
-  const colWidths2 = [22, 22, 12, 14, 8, 14, 14, 30];
+  const ccObligations = result.credit_card_obligations || [];
+  const colWidths2 = [22, 22, 12, 14, 14, 14, 14, 14, 30, 20];
   const ws2 = wb.addWorksheet('EMI Tracker & Bounces');
   ws2.columns = colWidths2.map(w => ({ width: w }));
   const s2 = sheetHelpers(ws2, colWidths2.length);
   s2.title(`EMI TRACKER & BOUNCE ANALYSIS — ${sm.account_holder || ''}`);
   s2.blank();
+
+  const loanTypeSubtotals = {};
+  emis.forEach(e => {
+    const lt = e.loan_type || 'PERSONAL';
+    if (!loanTypeSubtotals[lt]) loanTypeSubtotals[lt] = { loan_type: lt, count: 0, total_monthly: 0 };
+    loanTypeSubtotals[lt].count += 1;
+    loanTypeSubtotals[lt].total_monthly += inr(e.amount);
+  });
+  if (Object.keys(loanTypeSubtotals).length) {
+    s2.header('OBLIGATION SUBTOTAL BY LOAN TYPE');
+    s2.header(['Loan Type', 'Obligation Count', 'Total Monthly Amount', '', '', '', '', '', '']);
+    Object.values(loanTypeSubtotals).forEach(r => s2.data([r.loan_type, r.count, round2(r.total_monthly)], { fmts: { 3: CUR } }));
+    s2.blank();
+  }
+
   s2.header('EMI / LOAN OBLIGATIONS OBSERVED');
-  s2.header(['#', 'Party / Lender', 'Type', 'Monthly EMI', 'Count', 'First Seen', 'Last Seen']);
-  emis.forEach((e, i) => s2.data([i + 1, e.party, e.type, inr(e.amount), e.count, e.first_seen, e.last_seen], { fmts: { 4: CUR } }));
+  s2.header(['#', 'Party / Lender', 'Type', 'Loan Type', 'Monthly EMI', 'Count', 'First Seen', 'Last Seen']);
+  emis.forEach((e, i) => s2.data([i + 1, e.party, e.type, e.loan_type, inr(e.amount), e.count, e.first_seen, e.last_seen], { fmts: { 5: CUR } }));
   s2.blank();
 
   const grid = result.emi_payment_grid || [];
@@ -111,9 +157,32 @@ export function buildBsaWorkbook(result, cibilData) {
     s2.blank();
   }
 
+  // Recurring credit-card bill payments (via CRED/PayZapp/etc. or a
+  // PAVC/"credit card" narration) - a distinct obligation type from EMI,
+  // kept in its own section here rather than folded into the EMI list
+  // above so it can't double-count against a debit that already appears
+  // there (see detectCreditCardObligations' own comment for why the two
+  // lists don't naturally overlap in the first place).
+  if (ccObligations.length) {
+    s2.header('CREDIT CARD OBLIGATIONS (RECURRING BILL PAYMENTS)');
+    s2.header(['Party / App', 'Avg Monthly Amount', 'Count', 'First Seen', 'Last Seen']);
+    ccObligations.forEach(c => s2.data([c.party, inr(c.average_monthly_amount), c.count, c.first_seen, c.last_seen], { fmts: { 2: CUR } }));
+    s2.blank();
+  }
+
   s2.header('BOUNCE DETAIL — ECS / NACH / CHEQUE RETURNS');
-  s2.header(['Party', 'Type', 'Return Date', 'Return Amount', 'Charge Date', 'Charge Amount', 'Charge Description']);
-  ecs.forEach(r => s2.data([r.party, r.return_type, r.return_date, inr(r.return_amount), r.charge_date, inr(r.charge_amount), r.charge_description], { fmts: { 4: CUR, 6: CUR } }));
+  s2.header(['Party', 'Type', 'Return Date', 'Return Amount', 'Balance Before', 'Balance After', 'Charge Date', 'Charge Amount', 'Charge Description', 'Bounce Type']);
+  // INFERRED_DATE_DRIFT rows (detectEmiDateDrift() in bankBehaviour.js) are
+  // NOT explicit, bank-reported returns - only a same-obligation debit
+  // landing later than its usual day, with no RETURN/BOUNCE/charge text
+  // anywhere in the statement. Shaded the same MEDIUM-confidence amber as
+  // the Cash-Out Pattern Findings sheet uses, so this reads as "worth
+  // review" rather than "confirmed", consistent everywhere in this
+  // workbook, not just in the Bounce Type column text.
+  ecs.forEach(r => s2.data(
+    [r.party, r.return_type, r.return_date, inr(r.return_amount), r.balance_before ?? '', r.balance_after ?? '', r.charge_date, inr(r.charge_amount), r.charge_description, r.bounce_type || 'CONFIRMED'],
+    { fmts: { 4: CUR, 5: CUR, 6: CUR, 8: CUR }, fill: r.bounce_type === 'INFERRED_DATE_DRIFT' ? CONFIDENCE_FILL.MEDIUM : undefined }
+  ));
   s2.blank();
   s2.data([`TOTAL BOUNCES: ${ecs.filter(r => r.return_date).length}`]);
 
@@ -161,18 +230,18 @@ export function buildBsaWorkbook(result, cibilData) {
 
   // ── Sheet 4: Monthly Cash Flow ───────────────────────────────────────────
   const mc = result.monthly_cashflow || [];
-  const colWidths4 = [12, 16, 16, 18, 14];
+  const colWidths4 = [12, 16, 16, 18, 16, 14];
   const ws4 = wb.addWorksheet('Monthly Cash Flow');
   ws4.columns = colWidths4.map(w => ({ width: w }));
   const s4 = sheetHelpers(ws4, colWidths4.length);
   s4.title(`MONTHLY CASH FLOW SUMMARY — ${sm.account_holder || ''}`);
   s4.blank();
-  s4.header(['Month', 'Total Credit', 'Total Debit', 'Closing Balance', 'Bounce Count']);
-  mc.forEach(m => s4.data([m.month, inr(m.total_credit), inr(m.total_debit), inr(m.closing_balance), m.bounce_count], { fmts: { 2: CUR, 3: CUR, 4: CUR } }));
+  s4.header(['Month', 'Total Credit', 'Total Debit', 'Closing Balance', 'Minimum Balance', 'Bounce Count']);
+  mc.forEach(m => s4.data([m.month, inr(m.total_credit), inr(m.total_debit), inr(m.closing_balance), inr(m.minimum_balance), m.bounce_count], { fmts: { 2: CUR, 3: CUR, 4: CUR, 5: CUR } }));
 
   // ── Sheet 5: Stock Market Activity ──────────────────────────────────────
   const stk = result.stock_market_activity || {};
-  const colWidths5 = [18, 14, 14, 12, 40];
+  const colWidths5 = [18, 14, 14, 14, 12, 40];
   const ws5 = wb.addWorksheet('Stock Market Activity');
   ws5.columns = colWidths5.map(w => ({ width: w }));
   const s5 = sheetHelpers(ws5, colWidths5.length);
@@ -184,11 +253,142 @@ export function buildBsaWorkbook(result, cibilData) {
   s5.data(['Total Withdrawn', inr(stk.total_withdrawn)], { fmts: { 2: CUR } });
   s5.data(['Brokers Seen', (stk.brokers_seen || []).join(', ')]);
   s5.blank();
-  s5.header('TRANSACTIONS');
-  s5.header(['Broker', 'Date', 'Amount', 'Direction', 'Description']);
-  (stk.transactions || []).forEach(t => s5.data([t.broker, t.date, inr(t.amount), t.direction, t.description], { fmts: { 3: CUR } }));
 
-  // ── Sheet 6: CIBIL Reconciliation (optional — only if CIBIL data was passed in) ──
+  const subTypeSummary = stk.sub_type_summary || [];
+  if (subTypeSummary.length) {
+    s5.header('ACTIVITY BREAKDOWN BY TYPE');
+    s5.header(['Type', 'Transaction Count', 'Total Amount', '', '', '']);
+    subTypeSummary.forEach(r => s5.data([r.sub_type, r.transaction_count, inr(r.total_amount)], { fmts: { 3: CUR } }));
+    s5.blank();
+  }
+
+  s5.header('TRANSACTIONS');
+  s5.header(['Broker', 'Type', 'Date', 'Amount', 'Direction', 'Description']);
+  (stk.transactions || []).forEach(t => s5.data([t.broker, t.sub_type, t.date, inr(t.amount), t.direction, t.description], { fmts: { 4: CUR } }));
+
+  // ── Sheet 6: Investment Activity ─────────────────────────────────────────
+  // Reuses stock_market_activity (same source as Sheet 5) but adds a
+  // running cash-flow column. Deliberately labeled "net cash flow to/from
+  // trading accounts" everywhere, never "profit/loss" - a bank statement
+  // only shows money crossing the account boundary, never what the broker
+  // did with it, so it cannot prove P&L.
+  const colWidths6b = [18, 14, 14, 14, 12, 40, 20];
+  const ws6b = wb.addWorksheet('Investment Activity');
+  ws6b.columns = colWidths6b.map(w => ({ width: w }));
+  const s6b = sheetHelpers(ws6b, colWidths6b.length);
+  s6b.title(`INVESTMENT ACTIVITY — ${sm.account_holder || ''}`);
+  s6b.blank();
+  s6b.data(['Note: "Net Cash Flow" below is money moved to/from trading accounts as seen on this bank statement - NOT trading profit or loss, which a bank statement cannot prove.']);
+  s6b.blank();
+  s6b.header('BROKER / SUB-TYPE SUMMARY');
+  s6b.header(['Type', 'Transaction Count', 'Total Amount', '', '', '', '']);
+  (stk.sub_type_summary || []).forEach(r => s6b.data([r.sub_type, r.transaction_count, inr(r.total_amount)], { fmts: { 3: CUR } }));
+  s6b.blank();
+  s6b.header('TRANSACTIONS — NET CASH FLOW TO/FROM TRADING ACCOUNTS');
+  s6b.header(['Broker', 'Type', 'Date', 'Amount', 'Direction', 'Description', 'Running Net Cash Flow']);
+  let investmentRunningNet = 0;
+  (stk.transactions || []).forEach(t => {
+    const amt = inr(t.amount);
+    investmentRunningNet += t.direction === 'DEBIT' ? amt : -amt;
+    s6b.data([t.broker, t.sub_type, t.date, amt, t.direction, t.description, round2(investmentRunningNet)], { fmts: { 4: CUR, 7: CUR } });
+  });
+
+  // Mutual fund / SIP activity - same "net cash flow, not P&L" framing as
+  // the trading section above.
+  const mf = result.mutual_fund_activity || {};
+  if (mf.detected) {
+    s6b.blank();
+    s6b.header('MUTUAL FUND / SIP ACTIVITY');
+    s6b.data(['Total Invested', inr(mf.total_invested), 'Total Redeemed', inr(mf.total_redeemed)], { fmts: { 2: CUR, 4: CUR }, bold: [2, 4] });
+    s6b.data(['Platforms Seen', (mf.platforms_seen || []).join(', ')]);
+    s6b.blank();
+    if ((mf.sip_obligations || []).length) {
+      s6b.header('RECURRING SIP OBLIGATIONS');
+      s6b.header(['Platform', 'Monthly Amount', 'Count', 'First Seen', 'Last Seen', '', '']);
+      mf.sip_obligations.forEach(s => s6b.data([s.platform, inr(s.amount), s.count, s.first_seen, s.last_seen], { fmts: { 2: CUR } }));
+      s6b.blank();
+    }
+    s6b.header('MUTUAL FUND TRANSACTIONS');
+    s6b.header(['Platform', 'Type', 'Date', 'Amount', 'Direction', 'Description', '']);
+    let mfRunningNet = 0;
+    (mf.transactions || []).forEach(t => {
+      const amt = inr(t.amount);
+      mfRunningNet += t.direction === 'DEBIT' ? amt : -amt;
+      s6b.data([t.platform, t.sub_type, t.date, amt, t.direction, t.description, round2(mfRunningNet)], { fmts: { 4: CUR, 7: CUR } });
+    });
+  }
+
+  // ── Sheet 7: Cash-Out Pattern Findings ───────────────────────────────────
+  const cashoutFindings = result.cashout_patterns || [];
+  const colWidths7 = [26, 12, 40, 12, 60];
+  const ws7 = wb.addWorksheet('Cash-Out Pattern Findings');
+  ws7.columns = colWidths7.map(w => ({ width: w }));
+  const s7 = sheetHelpers(ws7, colWidths7.length);
+  s7.title(`CARD-TO-BANK CASH-OUT PATTERN FINDINGS — ${sm.account_holder || ''}`);
+  s7.blank();
+  s7.data(['HIGH = strong signal (shaded red). MEDIUM = worth review (shaded amber). LOW/INFORMATIONAL = plausible normal liquidity rotation, not a risk signal on its own (shaded grey) - excluded from risk_flags/overall_risk.']);
+  s7.blank();
+  s7.header('FINDINGS');
+  s7.header(['Pattern Type', 'Confidence', 'Transaction(s)', 'Gap (Days)', 'Notes']);
+  cashoutFindings.forEach(f => {
+    const txnSummary = (f.transactions || []).map(t => `${t.date}: Rs.${inr(t.amount).toLocaleString('en-IN')} — ${t.description}`).join(' | ');
+    s7.data([f.pattern_type, f.confidence, txnSummary, f.gap_days, f.notes], { fill: CONFIDENCE_FILL[f.confidence] });
+  });
+  if (!cashoutFindings.length) s7.data(['No card-to-bank cash-out patterns detected in this statement.']);
+
+  // ── Sheet 8: Banking Behaviour ───────────────────────────────────────────
+  // Kept as its own sheet rather than folded into Rotation & Risk Flags
+  // (already 4 sections deep) - low-balance-day tracking and withdrawal
+  // frequency are a distinct "thin buffer" underwriting signal, not a
+  // rotation/fraud pattern.
+  const bb = result.banking_behaviour || {};
+  const colWidths8 = [16, 16, 30, 16, 16, 16];
+  const ws8 = wb.addWorksheet('Banking Behaviour');
+  ws8.columns = colWidths8.map(w => ({ width: w }));
+  const s8 = sheetHelpers(ws8, colWidths8.length);
+  s8.title(`BANKING BEHAVIOUR — ${sm.account_holder || ''}`);
+  s8.blank();
+
+  s8.header('LOW-BALANCE DAYS BY THRESHOLD');
+  s8.header(['Threshold', 'Day Count', 'Longest Consecutive Streak', '', '', '']);
+  (bb.low_balance_days || []).forEach(t => s8.data([inr(t.threshold), t.count, t.longest_streak], { fmts: { 1: CUR } }));
+  s8.blank();
+
+  (bb.low_balance_days || []).forEach(t => {
+    if (!t.days.length) return;
+    s8.header(`DAYS BELOW Rs.${t.threshold.toLocaleString('en-IN')}`);
+    s8.header(['Date', 'Balance', '', '', '', '']);
+    t.days.forEach(d => s8.data([d.date, inr(d.balance)], { fmts: { 2: CUR } }));
+    s8.blank();
+  });
+
+  s8.header('MONTHLY ATM / CASH WITHDRAWALS');
+  s8.header(['Month', 'Withdrawal Count', 'Total Amount', 'Frequent Withdrawal Month?', '', '']);
+  (bb.frequent_withdrawals || []).forEach(m => s8.data(
+    [m.label, m.count, inr(m.total), m.frequent_withdrawal_month ? 'YES' : 'NO'],
+    { fmts: { 3: CUR }, fill: m.frequent_withdrawal_month ? CONFIDENCE_FILL.MEDIUM : undefined }
+  ));
+
+  // ── Sheet 9: Transaction Details ─────────────────────────────────────────
+  // The raw, un-summarized transaction list (all_transactions), one row per
+  // transaction - every other sheet is a rolled-up view of a subset; this
+  // is the mechanical full listing that was always implied but never
+  // actually built as its own tab. Includes the entity column (partyKey())
+  // alongside the category/flag every transaction already carries.
+  const allTxns = result.all_transactions || [];
+  const colWidths9 = [12, 40, 22, 14, 14, 14, 14, 10];
+  const ws9 = wb.addWorksheet('Transaction Details');
+  ws9.columns = colWidths9.map(w => ({ width: w }));
+  const s9 = sheetHelpers(ws9, colWidths9.length);
+  s9.title(`TRANSACTION DETAILS — ${sm.account_holder || ''}`);
+  s9.blank();
+  s9.header(['Date', 'Description', 'Entity', 'Debit', 'Credit', 'Balance', 'Category', 'Flag']);
+  allTxns.forEach(t => s9.data(
+    [t.date, t.description, t.entity, inr(t.debit), inr(t.credit), inr(t.balance), t.category, t.flag],
+    { fmts: { 4: CUR, 5: CUR, 6: CUR } }
+  ));
+
+  // ── Sheet 10: CIBIL Reconciliation (optional — only if CIBIL data was passed in) ──
   if (cibilData && (cibilData.reconciliation || cibilData.pipeline)) {
     const recon = cibilData.reconciliation || {};
     const pipe = cibilData.pipeline || {};

@@ -3,19 +3,72 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL}/pdf.worker.min.mjs`;
 
 const DICT = {
-  brokers: ['ZERODHA','GROWW','UPSTOX','ANGEL ONE','ANGEL BROKING','ANGELONE','ICICI DIRECT','ICICIDIRECT','HDFC SEC','HDFC SECURITIES','HDFCSEC','KOTAK SEC','KOTAK SECURITIES','MOTILAL','SHAREKHAN','5PAISA','IIFL SEC','IIFL SECURITIES','PAYTM MONEY','DHAN','FYERS','ALICEBLUE','EDELWEISS','NUVAMA','SAMCO','NSE CLEARING','NSCCL','ICCL','INDIAN CLEARING','NSE CM','NSE FO','BSE LTD'],
+  brokers: ['ZERODHA','GROWW','UPSTOX','ANGEL ONE','ANGEL BROKING','ANGELONE','ICICI DIRECT','ICICIDIRECT','IDIRECT','I DIRECT','HDFC SEC','HDFC SECURITIES','HDFCSEC','KOTAK SEC','KOTAK SECURITIES','MOTILAL','SHAREKHAN','5PAISA','IIFL SEC','IIFL SECURITIES','PAYTM MONEY','DHAN','FYERS','ALICEBLUE','EDELWEISS','NUVAMA','SAMCO','NSE CLEARING','NSCCL','ICCL','INDIAN CLEARING','NSE CM','NSE FO','BSE LTD',
+    // Broader consumer/full-service trading platform coverage - SEBI's
+    // registered-broker list runs into the thousands, so this can never be
+    // complete on its own (see BROKER_FALLBACK_HINTS below for the catch-all).
+    'CHOICE BROKING','ANAND RATHI','GEOJIT','VENTURA','MASTERTRUST','JAINAM','TRADESMART','DEFINEDGE','FINVASIA','SHOONYA','M.STOCK','MSTOCK','INDMONEY','SHARE.MARKET','JM FINANCIAL','PRABHUDAS LILLADHER','RELIGARE','SMC GLOBAL','ASHIKA','MARWADI','TRUSTLINE'],
+  // GROWW, PAYTM MONEY and INDMONEY are dual-purpose - already in
+  // DICT.brokers because the same platform does both equity trading and
+  // MF/SIP investing. That overlap is deliberate (see isMutualFundTxn()
+  // below for how a transaction on one of those platforms gets
+  // disambiguated) - don't remove them from DICT.brokers. AMC names
+  // (HDFC MUTUAL FUND, SBI MF, etc.) are MF-only and always tag as mutual
+  // fund activity.
+  mutualFundPlatforms: ['ZERODHA COIN', 'COIN BY ZERODHA', 'GROWW', 'KUVERA', 'ETMONEY', 'PAYTM MONEY', 'INDMONEY', 'SCRIPBOX', 'FUNDSINDIA', 'ANGEL BEE', 'MFCENTRAL', 'CAMS', 'KFINTECH', 'KARVY MF',
+    'HDFC MUTUAL FUND', 'HDFC MF', 'SBI MUTUAL FUND', 'SBI MF', 'ICICI PRUDENTIAL MF', 'ICICI PRU MF', 'AXIS MUTUAL FUND', 'AXIS MF', 'NIPPON INDIA MF', 'KOTAK MF', 'ADITYA BIRLA SUN LIFE', 'UTI MUTUAL FUND', 'UTI MF', 'FRANKLIN TEMPLETON', 'MIRAE ASSET MF', 'DSP MUTUAL FUND', 'TATA MUTUAL FUND', 'QUANT MUTUAL FUND', 'PPFAS', 'PARAG PARIKH'],
   posAggregators: ['RAZORPAY','PINE LABS','PINELABS','MSWIPE','EZETAP','BHARATPE','BHARAT PE','PAYTM POS','PHONEPE MERCHANT','INNOVITI','MOSAMBEE','WORLDLINE','POS SETTLEMENT','MERCHANT SETTLEMENT','CARD SETTLEMENT','CASH @ POS','CC FUNDING','PAYU','CCAVENUE','CASHFREE','BILLDESK MERCHANT'],
   returnWords: ['ECS RTN','ECS RETURN','NACH RTN','NACH RETURN','INWARD RTN','INW RTN','I/W RETURN','O/W RETURN','CHQ RETURN','CHEQUE RETURN','CHQ RTN','DISHONOUR','DISHONOR','INSUFFICIENT','UNPAID','RETURN UNPAID','BOUNCE','ACH RTN','ACH RETURN','MANDATE FAIL'],
   chargeWords: ['RETURN CHARGES','RETURN CHARGE','RTN CHRG','RTN CHARGES','RET CHRG','RET CHARGES','RETURN CHG','RTN CHG','INW CHQ RTN','ECS RET','NACH RET','ACH RET CHRG','PENAL CHARGES','CHEQUE RETURN CHARGE','I/W CHQ RTN CHG'],
-  lenders: ['KREDITBEE','KREDIT BEE','KRAZYBEE','NAVI','LAZYPAY','LAZY PAY','MONEYTAP','MONEY TAP','CASHE','EARLYSALARY','EARLY SALARY','FIBE','KISSHT','PAYSENSE','PAY SENSE','SMARTCOIN','SMART COIN','STASHFIN','STASH FIN','MPOKKET','M POKKET','SLICE','BRANCH','DHANI','RUPEEREDEE','TRUEBALANCE','TRUE BALANCE','AVAIL FINANCE','BHARAT LOAN','LOANTAP','LOAN TAP','POCKETCASH','KREDITONE','ZESTMONEY','ZEST MONEY','KISETSU','KISETSU SAISON','RESPO FINANCIAL','RESPO','INCRED FINANCE','INCRED','AMAZON PAY LATER'],
+  lenders: ['KREDITBEE','KREDIT BEE','KRAZYBEE','NAVI','LAZYPAY','LAZY PAY','MONEYTAP','MONEY TAP','CASHE','EARLYSALARY','EARLY SALARY','FIBE','KISSHT','PAYSENSE','PAY SENSE','SMARTCOIN','SMART COIN','STASHFIN','STASH FIN','MPOKKET','M POKKET','SLICE','BRANCH','DHANI','RUPEEREDEE','TRUEBALANCE','TRUE BALANCE','AVAIL FINANCE','BHARAT LOAN','LOANTAP','LOAN TAP','POCKETCASH','KREDITONE','ZESTMONEY','ZEST MONEY','KISETSU','KISETSU SAISON','RESPO FINANCIAL','RESPO','INCRED FINANCE','INCRED','AMAZON PAY LATER',
+    // Mainstream traditional NBFCs - previously missing, which left every
+    // recurring EMI auto-debit to one of these completely undetected (see
+    // BAJAJ FINANCE confirmed bug: neither "BAJAJ_AUTO_CD" nor
+    // "AD~1ADBAJAJFINNEW~" matched anything here before this list existed).
+    // NOTE for whoever next edits this list: any entry whose first word is
+    // ALSO a private-sector bank name (see DICT.banks) needs that word added
+    // to GENERIC_ROOT_STOPWORDS below - see the MAHINDRA FINANCE / "Kotak
+    // Mahindra Bank" collision comment there. A hypothetical future "KOTAK
+    // ..." lender entry would carry the exact same risk (KOTAK is already a
+    // bank name) - no such entry exists today, so no stopword is needed yet.
+    'BAJAJ FINANCE','BAJAJ FINSERV','HDB FINANCIAL','TATA CAPITAL','L&T FINANCE','LNT FINANCE','MAHINDRA FINANCE','CHOLAMANDALAM','CHOLA FINANCE','SUNDARAM FINANCE','MUTHOOT FINANCE','IIFL FINANCE','POONAWALLA FINCORP','AU FINANCE','PIRAMAL FINANCE','HERO FINCORP','SBI CARD'],
   wallets: ['PAYTM WALLET','PHONEPE WALLET','AMAZON PAY','AMAZONPAY','MOBIKWIK','FREECHARGE','OLA MONEY','OLAMONEY','AIRTEL MONEY','JIO MONEY','JIOMONEY','SLICE WALLET'],
+  // Apps customers route a credit-card bill payment through rather than
+  // paying the bank/card-issuer directly. Distinct category from
+  // DICT.wallets (top-ups/reversals) even though some app names overlap -
+  // categorizeTxn() tags these CREDIT_CARD_BILL_PAYMENT specifically.
+  // 'CRED' is deliberately NOT in this list as a bare substring - see
+  // CRED_APP_RE below for why.
+  billPaymentApps: ['PAYZAPP', 'MOBIKWIK', 'AMAZON PAY', 'FREECHARGE'],
+  // Wallet/fintech platforms relevant to the card-cash-out detector
+  // (detectCardCashoutPatterns) specifically - overlaps DICT.wallets and
+  // DICT.lenders/billPaymentApps by design (e.g. SLICE, AMAZON PAY): a
+  // lender-disbursal match and a wallet-cashout match are different
+  // findings from the same narration, and both are meant to fire. 'CRED'
+  // is deliberately NOT in this list either - see CRED_APP_RE below.
+  walletPlatforms: ['PAYZAPP', 'MOBIKWIK', 'PAYTM', 'PHONEPE', 'AMAZON PAY', 'FREECHARGE', 'AIRTEL PAYMENTS BANK', 'JIOFINANCE', 'TATA NEU', 'SLICE'],
+  // Services that specifically move money between a card and a bank
+  // account (e.g. ESYCASH loads a bank account from a credit card for a
+  // fee) - narrower and more direct a signal than the general wallet list
+  // above. Generic "CASH"+"CARD"/"CARD TO BANK"/"CC TO BANK" phrasing is
+  // matched separately in isCardCashTransferTxn() since it isn't a single
+  // fixed keyword.
+  cardCashTransferServices: ['ESYCASH'],
   forex: ['OCTAFX','OCTA FX','EXNESS','IQ OPTION','IQOPTION','OLYMP TRADE','OLYMPTRADE','BINOMO','ETORO','XM GLOBAL','FXTM','AVATRADE','AVA TRADE','FBS','FOREX','FX TRADING','CFD TRADING'],
-  transferRails: ['IMPS','NEFT','RTGS','UPI','TFR','MMT','P2A'],
+  transferRails: ['IMPS','NEFT','RTGS','UPI','TFR','MMT','P2A','INFT'],
   gambling: ['DREAM11','DREAM 11','MPL','MY11CIRCLE','MY 11 CIRCLE','PAYTM FIRST GAMES','BALLEBAAZI','BETWAY','1XBET','RUMMY','POKERBAAZI','ADDA52','ADDA 52','JUNGLEE RUMMY','RUMMYCIRCLE'],
   gst: ['GST ', 'GSTN', 'GOODS AND SERVICE TAX', 'GST PAYMENT', 'GSTIN'],
   insurance: ['LIC ', 'LIC PREMIUM', 'HDFC LIFE', 'ICICI PRU', 'ICICI PRUDENTIAL', 'SBI LIFE', 'MAX LIFE', 'BAJAJ ALLIANZ', 'TATA AIA', 'STAR HEALTH', 'HDFC ERGO', 'RELIANCE GENERAL', 'PREMIUM PAYMENT'],
   epf: ['EPFO', 'EPF CONTRIBUTION', 'PROVIDENT FUND', 'PF CONTRIBUTION', 'PF TRF'],
-  emiKeywords: ['EMI', 'ACH D', 'ACH DEBIT', 'ACH-DR', 'ACH DR', 'NACH DEBIT', 'NACH TRXN', 'NACH TRANSACTION', 'ECS DEBIT', 'LOAN INSTALLMENT', 'LOAN INSTALMENT', 'INSTALLMENT', 'INSTALMENT', 'PLA', 'PDC', 'STANDING INSTRUCTION', 'SI DEBIT'],
+  // 'EMI' and 'PLA' are deliberately NOT in this list as bare substrings -
+  // see EMI_BARE_RE below for why (they collide with "PREMIUM" and
+  // "MARKETPLACE" respectively).
+  emiKeywords: ['ACH D', 'ACH DEBIT', 'ACH-DR', 'ACH DR', 'NACH DEBIT', 'NACH TRXN', 'NACH TRANSACTION', 'ECS DEBIT', 'LOAN INSTALLMENT', 'LOAN INSTALMENT', 'INSTALLMENT', 'INSTALMENT', 'PDC', 'STANDING INSTRUCTION', 'SI DEBIT',
+    // 'AUTO_CD'/'AUTO CD' catch CMS-style auto-debit narrations
+    // ("BAJAJ_AUTO_CD"); 'AD~' catches ICICI's "AD~1AD<LENDER>~<date>~<bank>"
+    // standing-instruction format; 'LNPY' is literally in ICICI's own
+    // statement legend ("LNPY - Linked loan payment") and was never added.
+    'AUTO_CD', 'AUTO CD', 'AD~', 'LNPY'],
   salaryKeywords: ['SALARY', 'SAL CR', 'SAL-', 'SAL/', 'PAYROLL', 'CMS', 'SAL TRF', 'MONTHLY SALARY', 'WAGES'],
   atm: ['ATM', 'CASH WDL', 'CASH WITHDRAWAL', 'ATM WDL', 'ATW'],
   // Cash-deposit narrations vary a lot by bank ("BY CASH -<branch>", "CASH
@@ -75,6 +128,232 @@ const up = s => (s || '').toUpperCase();
 const has = (text, list) => list.find(k => up(text).includes(k));
 const num = v => Number(v) || 0;
 const round2 = n => Math.round(n * 100) / 100;
+
+// ICICI Direct's own narration ("iDirect trxn ... EBA/F&O Trade ...",
+// "EBA//20260805181744") never contains "ICICI" anywhere - DICT.brokers'
+// 'ICICI DIRECT'/'ICICIDIRECT' entries never match it, only the added
+// 'IDIRECT' entry does. But some legs print as a BARE "EBA//..." rail code
+// with no "iDirect" text at all - EBA is ICICI's own legend code for
+// "Transaction on ICICI Direct". A bare 3-letter 'EBA' substring would be
+// too promiscuous to add to DICT.brokers directly (risks matching
+// unrelated narrations), so it's gated here to require the "/" that always
+// follows it in every real EBA narration (EBA/F&O, EBA/EQ, EBA//<ref>).
+const EBA_RAIL_RE = /EBA\//i;
+// SEBI's registered-broker list runs into the thousands - DICT.brokers will
+// never name all of them. Any narration containing one of these generic
+// broker-industry words that ISN'T already a named match still counts as
+// broker activity, tagged 'UNLISTED BROKER' rather than falling through to
+// OTHER/UPI uncategorized. 'STOCK' is deliberately NOT in this list - it's
+// too dangerous a bare substring on its own (see STOCK_HINT_RE below for
+// why) and needs its own, stricter check.
+const BROKER_FALLBACK_HINTS = ['SECURITIES', 'BROKING', 'CAPITAL MARKETS'];
+// A plain substring match on 'STOCK' (the same style as the hints above)
+// would false-positive on STOCKIST, LIVESTOCK, or a merchant/place name
+// like "WOODSTOCK CAFE" - the same class of risk the INF transfer-rail fix
+// addressed last session (INF inside INFY/CONFIRM). A word-boundary check
+// alone (matching the INF_RAIL_RE pattern) already rules those three out,
+// since "STOCK" there is glued inside a longer word with no boundary
+// before it at all.
+const STOCK_HINT_RE = /\bSTOCK\b/;
+// Even word-bounded, a lone "STOCK" with nothing else around it ("STOCK",
+// or "STOCK 500.00" once amounts are stripped) isn't company-name context -
+// real broker narrations always pair it with other words ("XYZ STOCK
+// BROKING", "ABC STOCK MARKETS"). Rather than try to enumerate every
+// ordinary (non-broker) word that could legitimately sit next to "stock" -
+// an unwinnable list, since real narrations are free text - this just
+// requires STOCK to be part of a two-or-more-word phrase, matching what was
+// asked: not a precise test, just enough to rule out a bare isolated hit.
+function hasStockBrokerHint(desc) {
+  const u = up(desc);
+  if (!STOCK_HINT_RE.test(u)) return false;
+  const words = u.split(/[^A-Z&]+/).filter(Boolean);
+  return words.length > 1;
+}
+// isMutualFundTxn is defined further below, but referenced here safely -
+// it's only ever CALLED later (once real transactions are being analyzed),
+// never at module-evaluation time, so its declaration position doesn't
+// matter. A dual-purpose platform (GROWW/PAYTM MONEY/INDMONEY) that
+// disambiguates to mutual-fund activity is excluded from isBrokerTxn so
+// the same transaction never double-counts in both stock_market_activity
+// and mutual_fund_activity.
+const isBrokerTxn = desc => (!!has(desc, DICT.brokers) || EBA_RAIL_RE.test(desc || '') || !!has(desc, BROKER_FALLBACK_HINTS) || hasStockBrokerHint(desc || '')) && !isMutualFundTxn(desc);
+const brokerLabel = desc => has(desc, DICT.brokers) || (EBA_RAIL_RE.test(desc || '') ? 'ICICI DIRECT (EBA)' : null) || (has(desc, BROKER_FALLBACK_HINTS) ? 'UNLISTED BROKER' : null) || (hasStockBrokerHint(desc || '') ? 'UNLISTED BROKER' : null);
+// Splits ICICI Direct activity into risk-relevant sub-types: F&O trades are
+// a leveraged/derivatives signal, EQ margin calls are a distinct risk
+// signal from a plain equity trade, and a bare "EBA//<ref>" with no
+// trade-type suffix is just a net settlement transfer to/from the trading
+// account, not a trade itself.
+function detectBrokerSubType(desc) {
+  const u = up(desc);
+  if (u.includes('EBA/F&O') || u.includes('EBA/FNO')) return 'F&O';
+  if (u.includes('EBA/EQ') && u.includes('MARGIN')) return 'MARGIN_CALL';
+  if (u.includes('EBA/EQ')) return 'EQUITY';
+  if (u.includes('EBA//')) return 'NET_SETTLEMENT';
+  return 'OTHER';
+}
+
+// Mutual fund / SIP detection - a separate category from stock brokers.
+// GROWW/PAYTM MONEY/INDMONEY are "dual-purpose": the same platform legally
+// does both equity trading and MF/SIP investing, so a plain platform-name
+// match alone can't tell which. Narration sub-text ("SIP"/"MF"/"MUTUAL
+// FUND"/"COIN") disambiguates those, the same way detectBrokerSubType()
+// splits F&O/EQUITY/MARGIN for ICICI Direct. AMC-only names (HDFC MUTUAL
+// FUND, SBI MF, etc. - not present in DICT.brokers at all) always count as
+// mutual fund activity regardless of sub-text.
+const MF_SUBTEXT_RE = /\bSIP\b|\bMF\b|MUTUAL\s*FUND|\bCOIN\b/i;
+// Confirmed real: ICICI's own NEFT settlement narration prints "ICICI
+// PRUDENTIAL M F REDEMPTION POOL A/C..." - a space between every letter of
+// the abbreviation, not "MF" as one token. That defeats BOTH the plain
+// substring DICT.mutualFundPlatforms check (no entry there has a space in
+// the middle of "MF") and the MF_SUBTEXT_RE word-boundary regex above,
+// since neither ever expected the abbreviation itself to be spaced out.
+// "S I P" is the same risk for SIP debits, per the same real-statement
+// audit. Collapsed once here, called from every match site below, rather
+// than duplicating the same regex three times and risking them drifting
+// out of sync.
+const SPACED_ABBREV_RE = /\bM\s+F\b|\bS\s+I\s+P\b/gi;
+const normalizeSpacedAbbrev = desc => (desc || '').replace(SPACED_ABBREV_RE, m => m.replace(/\s+/g, ''));
+function isMutualFundTxn(desc) {
+  const d = normalizeSpacedAbbrev(desc);
+  if (!has(d, DICT.mutualFundPlatforms)) return false;
+  const isDualPurposePlatform = !!has(d, DICT.brokers);
+  return isDualPurposePlatform ? MF_SUBTEXT_RE.test(d) : true;
+}
+const mutualFundLabel = desc => has(normalizeSpacedAbbrev(desc), DICT.mutualFundPlatforms) || null;
+// Direction is the primary signal (a credit on a recognized MF platform is
+// redemption proceeds - there's no other reason money flows FROM a mutual
+// fund platform back to a bank account), narration text only distinguishes
+// SIP from a one-off lumpsum purchase among debits.
+function detectMfSubType(desc, isCredit) {
+  if (isCredit) return 'REDEMPTION';
+  return /\bSIP\b/i.test(normalizeSpacedAbbrev(desc)) ? 'SIP' : 'LUMPSUM';
+}
+
+// ICICI's own legend defines INFT ("Internal Fund Transfer (Within ICICI
+// Bank)") as a DIFFERENT rail code from NEFT - self-transfer narrations
+// using it were previously invisible to every transferRails-gated
+// detector. INF ("Internet fund transfer in linked accounts") is also a
+// distinct real code, but bare "INF" is a dangerous 3-letter substring to
+// add to the plain includes()-based DICT.transferRails list (it would
+// false-positive on "INFY"/"INFOSYS" as a transfer counterparty, or
+// "CONFIRM"), so it's matched only as a whole word here instead.
+const INF_RAIL_RE = /\bINF\b/;
+const hasTransferRail = desc => has(desc, DICT.transferRails) || (INF_RAIL_RE.test(up(desc)) ? 'INF' : undefined);
+
+// Shared self-transfer signal - originally local to runBehaviourDetectors'
+// frequent_transfers grouping (as `selfRe`), hoisted here so detectSalary()
+// and detectSecondaryIncome() can reuse the EXACT same check rather than a
+// second, possibly-inconsistent one. Confirmed real: 7 credits narrated
+// "Fund transfer INF/INFT/000081245209/Self" (varying amounts, Rs.29,697.58
+// to Rs.1,00,000) were adopted as "salary" - partyKey() strips the literal
+// word SELF as a stopword before grouping, so a holderTokens-name check
+// alone (already used elsewhere) can't catch this shape: there's no
+// account-holder name anywhere in the narration to match against, only the
+// generic word "Self". Must be tested against the RAW description, before
+// partyKey() has a chance to strip it away.
+const SELF_TRANSFER_RE = /\b(SELF|OWN\s*A\/?C|OWN\s*ACCOUNT)\b/i;
+const isSelfTransferTxn = desc => SELF_TRANSFER_RE.test(desc || '');
+
+// The English word "Credit" contains "CRED" as a substring - a bare
+// includes()-based match (the same style as the other billPaymentApps/
+// walletPlatforms entries) would mistag any generic "Credit trxn ..."
+// narration (extremely common across Indian bank statements, e.g. a plain
+// self-transfer credit) as a CRED-app transaction. Same class of risk as
+// INF_RAIL_RE/STOCK_HINT_RE above - gated to a whole word. The other app
+// names (PAYZAPP, MOBIKWIK, etc.) are distinctive enough as bare
+// substrings and don't need this.
+const CRED_APP_RE = /\bCRED\b/;
+const hasBillPaymentApp = desc => has(desc, DICT.billPaymentApps) || (CRED_APP_RE.test(up(desc)) ? 'CRED' : undefined);
+const hasWalletPlatform = desc => has(desc, DICT.walletPlatforms) || (CRED_APP_RE.test(up(desc)) ? 'CRED' : undefined);
+
+// Same class of risk again, this time inside DICT.emiKeywords: a bare
+// 'PLA' includes()-match collides with "...MARKETPLACE..." - confirmed
+// real statement where 9 recurring Zepto grocery debits ("ZEPTO
+// MARKETPLACE PRI") were misclassified as an EMI obligation purely because
+// "MARKETPLACE" contains "PLA", with no actual lender or loan signal
+// anywhere in the narration. Auditing the same list turned up a second,
+// latent instance of the identical bug: bare 'EMI' matches "...PREMIUM..."
+// (LIC/insurance premium debits, already their own DICT.insurance
+// category) - not yet evidenced in a real statement, but the exact same
+// substring-collision shape, fixed here alongside PLA rather than left for
+// the next real-PDF round to rediscover separately.
+const EMI_BARE_RE = /\b(?:EMI|PLA)\b/;
+const hasEmiKeyword = desc => has(desc, DICT.emiKeywords) || (up(desc).match(EMI_BARE_RE) || [])[0];
+
+// Canonicalizes a lender name across the different narration styles the
+// SAME lender prints under. Beyond the exact DICT.lenders phrase match,
+// this also recognizes: (a) ICICI's "AD~1AD<LENDER>~<date>~<bank>" standing
+// -instruction format via regex extraction, and (b) any known lender's
+// first significant word appearing as a whole word elsewhere (so
+// "BAJAJ_AUTO_CD" and "AD~1ADBAJAJFINNEW~06AUG26~ICIC" - two genuinely
+// different narration styles for the same BAJAJ FINANCE auto-debit - group
+// into ONE obligation instead of two separate under-threshold ones). Only
+// used to canonicalize transactions that have ALREADY passed an EMI/lender
+// keyword gate, so the broader word-root match doesn't risk pulling in
+// unrelated transactions.
+const AD_SI_RE = /AD~1AD([A-Z]+)~/;
+const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\&]/g, '\\$&');
+// A plain \b word-boundary regex does NOT fire between a letter and an
+// underscore or tilde (both count as "word" characters in JS regex), so it
+// would silently fail to match "BAJAJ" inside "BAJAJ_AUTO_CD" - real bank
+// narrations glue lender names to adjoining tokens with exactly these
+// characters, not just spaces. Treat any non-A-Z character as a boundary
+// instead.
+const rootBoundaryRe = root => new RegExp(`(?:^|[^A-Z])${escapeRe(root)}(?:[^A-Z]|$)`);
+// A first-word root that is itself a common English word (not a distinctive
+// brand token) is too dangerous to fuzzy-match on regardless of length -
+// confirmed via "LOAN TAP" -> root "LOAN": ANY personal/home/business loan
+// EMI narration contains the word "loan" somewhere, so without this
+// exclusion virtually every non-fintech-app EMI in the country would get
+// miscategorized as the "Loan Tap" BNPL app specifically. Same shape of
+// risk for the other two-word entries below (a common adjective/noun paired
+// with a finance suffix, e.g. "Money Tap", "Zest Money").
+// AMAZON (root of "AMAZON PAY LATER") and BHARAT (root of "BHARAT LOAN")
+// carry the same risk as the original eight: AMAZON.in shopping-merchant
+// debits are far more common in a real account than Amazon Pay Later EMI
+// debits, and BHARAT collides with Bharat Petroleum/Bharat Gas/BharatPe
+// merchant-settlement narrations - all common, all unrelated to the
+// "Bharat Loan" fintech lender.
+// TATA is a closer call - it isn't itself a DICT.lenders root directly
+// (BAJAJ FINANCE etc. added it as "TATA CAPITAL" in an earlier session,
+// making TATA a root there too). Included here anyway: Tata Sky/Tata Play
+// DTH recharges and Tata AIA insurance premiums are common recurring
+// consumer debits sharing the same root, and any genuine Tata Capital EMI
+// narration almost always spells out the full phrase (matched directly via
+// DICT.lenders, untouched by this exclusion) or the AD~ standing
+// -instruction format (handled by its own extractor) - so the fuzzy root
+// match's added recall here is low relative to its false-positive risk.
+// MAHINDRA (root of "MAHINDRA FINANCE") is the highest-impact of these:
+// confirmed real statement where ordinary Zepto grocery debits routed
+// "...Paymen/KOTAK MAHINDRA BANK" (the payee's own bank, not a lender) got
+// folded into a fictitious MAHINDRA FINANCE EMI obligation. Kotak Mahindra
+// Bank is one of India's largest private banks, so its name routinely
+// appears as a payee's bank in UPI narrations across a large fraction of
+// all statements - this isn't a rare edge case like the others above. The
+// real "MAHINDRA FINANCE" lender phrase still matches directly via the
+// exact-phrase DICT.lenders check in detectLenderName() (untouched by this
+// exclusion) - only the fuzzy root fallback is affected.
+const GENERIC_ROOT_STOPWORDS = new Set(['LOAN', 'MONEY', 'SMART', 'TRUE', 'EARLY', 'ZEST', 'LAZY', 'AVAIL', 'STASH', 'AMAZON', 'BHARAT', 'TATA', 'MAHINDRA']);
+const LENDER_ROOTS = DICT.lenders.map(l => ({ full: l, root: l.split(/\s+/)[0] })).filter(r => r.root.length >= 4 && !GENERIC_ROOT_STOPWORDS.has(r.root));
+function detectLenderName(desc) {
+  const known = has(desc, DICT.lenders);
+  if (known) return known;
+  const u = up(desc);
+  // ICICI's "AD~1AD<LENDER><date>~<bank>" format glues the lender token
+  // directly onto "AD" with no separator at all (e.g. "AD~1ADBAJAJFINNEW~"
+  // has no boundary before "BAJAJ" either), so it's checked via extraction
+  // + substring match BEFORE the generic root-boundary scan below, which
+  // wouldn't find a boundary there.
+  const adMatch = u.match(AD_SI_RE);
+  if (adMatch) {
+    const extracted = adMatch[1];
+    const rootHit = LENDER_ROOTS.find(({ root }) => extracted.includes(root));
+    return rootHit ? rootHit.full : extracted;
+  }
+  const rootHit = LENDER_ROOTS.find(({ root }) => rootBoundaryRe(root).test(u));
+  if (rootHit) return rootHit.full;
+  return null;
+}
 
 function partyKey(desc) {
   let s = up(desc);
@@ -148,23 +427,364 @@ function sortDateStrings(dateStrs) {
 }
 const monthSortKey = d => d ? d.getFullYear() * 12 + d.getMonth() : -1;
 
+function isCardCashTransferTxn(desc) {
+  if (has(desc, DICT.cardCashTransferServices)) return true;
+  const u = up(desc);
+  if (u.includes('CARD TO BANK') || u.includes('CC TO BANK')) return true;
+  return u.includes('CASH') && u.includes('CARD');
+}
+
+// Card-to-bank cash-out / wallet round-trip detector. A bank statement
+// never shows the actual credit-card leg of a cash-out scheme - only its
+// bank-side footprints: a wallet/merchant credit or debit, and a bank
+// credit/debit that correlates with it in timing and amount. Each
+// sub-pattern below infers ONE such footprint shape. Confidence is
+// deliberately conservative (see the notes on each branch) because several
+// of these shapes - especially CREDIT_FUNDS_CC_REPAYMENT - are also
+// completely normal, legal liquidity management that most customers do
+// routinely; over-flagging those would make the whole sheet noise.
+function detectCardCashoutPatterns(txns) {
+  const findings = [];
+  const credits = txns.filter(t => num(t.credit) > 0).map(t => ({ ...t, _amt: num(t.credit) }));
+  const debits = txns.filter(t => num(t.debit) > 0).map(t => ({ ...t, _amt: num(t.debit) }));
+  const txDesc = t => ({ date: t.date, amount: t._amt !== undefined ? t._amt : (num(t.debit) || num(t.credit)), description: t.description });
+  const afterOrSame = (a, b) => { const da = parseDateFlexible(a), db = parseDateFlexible(b); return !!(da && db && db >= da); };
+
+  // (a) CARD_CASHOUT_SUSPECTED - a wallet/merchant/bill-payment-app/
+  // card-cash-service leg (either direction) followed same-day or
+  // next-day by a bank credit landing at 90-99% of it. The card charge
+  // itself is never visible in a bank statement - this only infers from
+  // the wallet/merchant leg plus the bank credit that follows it.
+  const cashoutLegs = txns.filter(t => hasWalletPlatform(t.description) || hasBillPaymentApp(t.description) || isCardCashTransferTxn(t.description));
+  cashoutLegs.forEach(leg => {
+    const legAmt = num(leg.debit) || num(leg.credit);
+    if (!legAmt) return;
+    const followUp = credits.find(c => afterOrSame(leg.date, c.date) && daysBetween(leg.date, c.date) <= 1 && (c._amt / legAmt) >= 0.90 && (c._amt / legAmt) <= 0.99);
+    if (followUp) {
+      const gap = round2(daysBetween(leg.date, followUp.date));
+      findings.push({
+        pattern_type: 'CARD_CASHOUT_SUSPECTED',
+        confidence: 'MEDIUM',
+        transactions: [txDesc({ date: leg.date, description: leg.description, _amt: legAmt }), txDesc(followUp)],
+        gap_days: gap,
+        notes: `A bank credit of Rs.${followUp._amt.toLocaleString('en-IN')} (${Math.round((followUp._amt / legAmt) * 100)}% of the Rs.${legAmt.toLocaleString('en-IN')} wallet/card-service leg) lands ${gap === 0 ? 'the same day' : `${gap} day(s) later`} - the card charge itself isn't visible in a bank statement, so this is inferred only from the two legs that are.`,
+      });
+    }
+  });
+
+  // (b) MATCHED_ROUND_TRIP - a credit followed within 1-2 days by a
+  // non-ATM debit at 97-99% of the same amount (shrinkage consistent with
+  // a fee). Ratio is strictly < 1 by design: an EXACT amount-in ->
+  // amount-out pair is excluded entirely per the confidence rules (treated
+  // as a likely genuine transfer, not flagged at all) rather than
+  // down-ranked. ATM/cash debits are excluded here and handled below under
+  // CREDIT_THEN_CASH_WITHDRAWAL instead, so the same pair is never
+  // double-counted under two pattern types.
+  credits.forEach(c => {
+    const match = debits.find(d => !has(d.description, DICT.atm) && afterOrSame(c.date, d.date) && daysBetween(c.date, d.date) <= 2 && (d._amt / c._amt) >= 0.97 && (d._amt / c._amt) < 1);
+    if (match) {
+      const gap = round2(daysBetween(c.date, match.date));
+      findings.push({
+        pattern_type: 'MATCHED_ROUND_TRIP',
+        confidence: 'MEDIUM',
+        transactions: [txDesc(c), txDesc(match)],
+        gap_days: gap,
+        notes: `Credit of Rs.${c._amt.toLocaleString('en-IN')} offset by a debit of Rs.${match._amt.toLocaleString('en-IN')} (${(100 * match._amt / c._amt).toFixed(1)}%) ${gap} day(s) later - shrinkage consistent with a small fee, but no cash-withdrawal leg follows to raise this further.`,
+      });
+    }
+  });
+
+  // (c) CREDIT_THEN_CASH_WITHDRAWAL - the strongest signal: a credit
+  // almost entirely pulled out as cash within 1-2 days.
+  credits.forEach(c => {
+    const atmMatch = debits.find(d => has(d.description, DICT.atm) && afterOrSame(c.date, d.date) && daysBetween(c.date, d.date) <= 2 && (d._amt / c._amt) >= 0.97 && (d._amt / c._amt) <= 0.99);
+    if (atmMatch) {
+      const gap = round2(daysBetween(c.date, atmMatch.date));
+      findings.push({
+        pattern_type: 'CREDIT_THEN_CASH_WITHDRAWAL',
+        confidence: 'HIGH',
+        transactions: [txDesc(c), txDesc(atmMatch)],
+        gap_days: gap,
+        notes: `Credit fully offset by an ATM/cash withdrawal ${gap} day(s) later, ${(100 * atmMatch._amt / c._amt).toFixed(1)}% of the original amount - consistent with a card-to-cash pattern.`,
+      });
+    }
+  });
+
+  // (d) REPEATED_SAME_PARTY_CREDITS - 3+ credits from the same UPI
+  // VPA/party within a 30-day window. Weak signal alone (could just be a
+  // recurring family transfer), kept at LOW.
+  const partyGroups = {};
+  credits.forEach(c => { const k = partyKey(c.description); if (!k) return; (partyGroups[k] = partyGroups[k] || []).push(c); });
+  Object.entries(partyGroups).forEach(([party, list]) => {
+    if (list.length < 3) return;
+    const sorted = [...list].sort((a, b) => (parseDateFlexible(a.date) || 0) - (parseDateFlexible(b.date) || 0));
+    for (let i = 0; i + 2 < sorted.length; i++) {
+      const windowTxns = sorted.slice(i).filter(t => daysBetween(sorted[i].date, t.date) <= 30);
+      if (windowTxns.length >= 3) {
+        const gap = round2(daysBetween(windowTxns[0].date, windowTxns[windowTxns.length - 1].date));
+        findings.push({
+          pattern_type: 'REPEATED_SAME_PARTY_CREDITS',
+          confidence: 'LOW',
+          transactions: windowTxns.map(txDesc),
+          gap_days: gap,
+          notes: `${windowTxns.length} credits from the same counterparty ("${party}") within ${gap} day(s) - repeated same-party funding, informational rather than inherently suspicious.`,
+        });
+        break;
+      }
+    }
+  });
+
+  // (e) POST_MERCHANT_CREDIT - a credit landing same/next-day after a
+  // large (>= Rs.10,000) merchant/wallet-platform debit. Timing
+  // correlation only, no amount match - weak/ambiguous alone, kept at LOW.
+  const LARGE_MERCHANT_DEBIT = 10000;
+  debits.filter(d => d._amt >= LARGE_MERCHANT_DEBIT && (hasWalletPlatform(d.description) || has(d.description, DICT.posAggregators))).forEach(d => {
+    const followUp = credits.find(c => afterOrSame(d.date, c.date) && daysBetween(d.date, c.date) <= 1);
+    if (followUp) {
+      const gap = round2(daysBetween(d.date, followUp.date));
+      findings.push({
+        pattern_type: 'POST_MERCHANT_CREDIT',
+        confidence: 'LOW',
+        transactions: [txDesc(d), txDesc(followUp)],
+        gap_days: gap,
+        notes: `A bank credit of Rs.${followUp._amt.toLocaleString('en-IN')} lands ${gap === 0 ? 'the same day as' : `${gap} day(s) after`} a large (Rs.${d._amt.toLocaleString('en-IN')}) merchant/wallet-platform debit - timing correlation only, no amount match required for this pattern.`,
+      });
+    }
+  });
+
+  // (f) AGGREGATED_LIMIT_MATCH - 2+ credits within a 7-day window summing
+  // to within +/-5% of a round card-limit figure.
+  const ROUND_LIMITS = [50000, 100000, 200000, 500000, 1000000];
+  // Takes the running sum as an explicit parameter rather than closing over
+  // the loop-scoped `sum` below - a closure that both reads AND is defined
+  // inside a loop where the captured variable keeps mutating is exactly
+  // what eslint's no-loop-func rule (correctly) flags as unsafe.
+  const findRoundLimit = s => ROUND_LIMITS.find(l => Math.abs(s - l) / l <= 0.05);
+  const sortedCredits = [...credits].sort((a, b) => (parseDateFlexible(a.date) || 0) - (parseDateFlexible(b.date) || 0));
+  const usedInLimitMatch = new Set();
+  for (let i = 0; i < sortedCredits.length; i++) {
+    if (usedInLimitMatch.has(i)) continue;
+    let sum = sortedCredits[i]._amt;
+    const groupIdx = [i];
+    for (let j = i + 1; j < sortedCredits.length && daysBetween(sortedCredits[i].date, sortedCredits[j].date) <= 7; j++) {
+      if (usedInLimitMatch.has(j)) continue;
+      sum += sortedCredits[j]._amt;
+      groupIdx.push(j);
+      const hitLimit = findRoundLimit(sum);
+      if (hitLimit && groupIdx.length >= 2) {
+        groupIdx.forEach(gi => usedInLimitMatch.add(gi));
+        const group = groupIdx.map(gi => sortedCredits[gi]);
+        const matchGap = round2(daysBetween(group[0].date, group[group.length - 1].date));
+        findings.push({
+          pattern_type: 'AGGREGATED_LIMIT_MATCH',
+          confidence: 'MEDIUM',
+          transactions: group.map(txDesc),
+          gap_days: matchGap,
+          notes: `${group.length} credits within ${matchGap} day(s) sum to Rs.${round2(sum).toLocaleString('en-IN')}, within 5% of a round Rs.${hitLimit.toLocaleString('en-IN')} figure - a common card-limit denomination, worth checking against a specific card limit.`,
+        });
+        break;
+      }
+    }
+  }
+
+  // (g) CREDIT_FUNDS_CC_REPAYMENT - a credit followed by a bill-payment-app
+  // debit of similar size. Always LOW/INFORMATIONAL - routing money
+  // through CRED/PayZapp etc. to pay a card bill shortly after receiving a
+  // credit is completely normal, legal liquidity rotation. Must NOT weigh
+  // into risk_flags/overall_risk the way a HIGH finding does - see the
+  // `confidence !== 'LOW'` filters in detectRiskFlagsWatchlistPositive and
+  // computeCreditAssessment.
+  credits.forEach(c => {
+    const match = debits.find(d => hasBillPaymentApp(d.description) && afterOrSame(c.date, d.date) && daysBetween(c.date, d.date) <= 3 && (d._amt / c._amt) >= 0.85 && (d._amt / c._amt) <= 1.05);
+    if (match) {
+      const gap = round2(daysBetween(c.date, match.date));
+      findings.push({
+        pattern_type: 'CREDIT_FUNDS_CC_REPAYMENT',
+        confidence: 'LOW',
+        transactions: [txDesc(c), txDesc(match)],
+        gap_days: gap,
+        notes: `Credit of Rs.${c._amt.toLocaleString('en-IN')} followed by a credit-card bill payment of Rs.${match._amt.toLocaleString('en-IN')} via ${hasBillPaymentApp(match.description)} ${gap} day(s) later - plausible normal liquidity rotation, not treated as a risk signal on its own.`,
+      });
+    }
+  });
+
+  return findings.slice(0, 40);
+}
+
+// Mutual fund / SIP / redemption activity - mirrors stock_market_activity's
+// shape (detected/transaction_count/total_invested/total_withdrawn-style
+// totals, a per-platform rollup, per-transaction sub_type). SIP obligations
+// are grouped the same way detectEmiObligations groups lender debits: same
+// platform + same (rounded) amount, >=2 occurrences - a real SIP is a fixed
+// amount debited on a recurring cadence, so amount+platform is a reliable
+// grouping key without needing to separately verify monthly spacing.
+function detectMutualFundActivity(txns) {
+  const mfTxns = txns.filter(t => isMutualFundTxn(t.description));
+  const platformRollup = {};
+  const transactions = mfTxns.map(t => {
+    const isCredit = num(t.credit) > 0;
+    const amount = num(t.debit) || num(t.credit);
+    const platform = mutualFundLabel(t.description);
+    const sub_type = detectMfSubType(t.description, isCredit);
+    if (!platformRollup[platform]) platformRollup[platform] = { platform, transaction_count: 0, total_invested: 0, total_redeemed: 0 };
+    platformRollup[platform].transaction_count += 1;
+    if (isCredit) platformRollup[platform].total_redeemed += amount; else platformRollup[platform].total_invested += amount;
+    return { platform, sub_type, date: t.date, amount, direction: isCredit ? 'CREDIT' : 'DEBIT', description: t.description };
+  });
+
+  const sipGroups = {};
+  mfTxns.filter(t => num(t.debit) > 0 && detectMfSubType(t.description, false) === 'SIP').forEach(t => {
+    const platform = mutualFundLabel(t.description) || 'UNKNOWN';
+    const k = `${platform}::${Math.round(num(t.debit))}`;
+    (sipGroups[k] = sipGroups[k] || []).push(t);
+  });
+  const sip_obligations = Object.values(sipGroups).filter(list => list.length >= 2).map(list => {
+    const dates = sortDateStrings(list.map(t => t.date).filter(Boolean));
+    return { platform: mutualFundLabel(list[0].description), amount: round2(num(list[0].debit)), count: list.length, first_seen: dates[0] || '', last_seen: dates[dates.length - 1] || '' };
+  });
+
+  return {
+    detected: mfTxns.length > 0,
+    transaction_count: mfTxns.length,
+    total_invested: round2(mfTxns.reduce((s, t) => s + num(t.debit), 0)),
+    total_redeemed: round2(mfTxns.reduce((s, t) => s + num(t.credit), 0)),
+    platforms_seen: [...new Set(mfTxns.map(t => mutualFundLabel(t.description)))],
+    platform_summary: Object.values(platformRollup).map(r => ({ ...r, total_invested: round2(r.total_invested), total_redeemed: round2(r.total_redeemed) })),
+    sip_obligations,
+    transactions,
+  };
+}
+
+// Low-balance-day banking behaviour - a thin buffer against upcoming
+// debits is a real underwriting signal distinct from an actual bounce
+// (which ecs_returns already covers): this flags days the balance merely
+// got uncomfortably close to zero, whether or not anything actually
+// failed. thresholds is a parameter (not hardcoded once) so a caller can
+// tune it per lending product instead of editing this function.
+function detectLowBalanceDays(txns, thresholds = [1000, 5000]) {
+  // Sort defensively into chronological order - PDF row order and
+  // statement date order usually agree, but "longest consecutive streak"
+  // is meaningless if they don't.
+  const sorted = [...txns]
+    .filter(t => t.balance !== undefined && t.balance !== null && parseDateFlexible(t.date))
+    .sort((a, b) => parseDateFlexible(a.date) - parseDateFlexible(b.date));
+
+  const low_balance_days = thresholds.map(threshold => {
+    const days = sorted.filter(t => num(t.balance) < threshold).map(t => ({ date: t.date, balance: num(t.balance) }));
+    let longest_streak = 0, current = 0;
+    sorted.forEach(t => { if (num(t.balance) < threshold) { current += 1; longest_streak = Math.max(longest_streak, current); } else current = 0; });
+    return { threshold, count: days.length, days, longest_streak };
+  });
+
+  // Frequent ATM/cash withdrawals per month, flagged once a month's count
+  // OR total is meaningfully (>1.5x) above the statement's own per-month
+  // average - relative to the account's own pattern, not a fixed figure,
+  // since a "normal" withdrawal cadence varies enormously person to person.
+  const byMonth = {};
+  sorted.filter(t => has(t.description, DICT.atm) && num(t.debit) > 0).forEach(t => {
+    const d = parseDateFlexible(t.date);
+    const key = monthSortKey(d);
+    if (!byMonth[key]) byMonth[key] = { key, label: monthLabel(d), count: 0, total: 0 };
+    byMonth[key].count += 1;
+    byMonth[key].total += num(t.debit);
+  });
+  const monthList = Object.values(byMonth).sort((a, b) => a.key - b.key).map(m => ({ ...m, total: round2(m.total) }));
+  const FREQUENT_MULTIPLIER = 1.5;
+  const avgCount = monthList.length ? monthList.reduce((s, m) => s + m.count, 0) / monthList.length : 0;
+  const avgTotal = monthList.length ? monthList.reduce((s, m) => s + m.total, 0) / monthList.length : 0;
+  const frequent_withdrawals = monthList.map(({ key, ...m }) => ({
+    ...m,
+    frequent_withdrawal_month: (avgCount > 0 && m.count > avgCount * FREQUENT_MULTIPLIER) || (avgTotal > 0 && m.total > avgTotal * FREQUENT_MULTIPLIER),
+  }));
+
+  return { low_balance_days, frequent_withdrawals };
+}
+
+// Recurring credit-card bill payments via a bill-payment app (CRED,
+// PayZapp, etc.) or an explicit "PAVC"/"CREDIT CARD"/"CC PAYMENT"
+// narration - grouped the same way detectEmiObligations groups lender
+// debits (by app/party, >=2 occurrences). Kept as its OWN list rather than
+// merged into emi_obligations: detectEmiObligations' own gate
+// (emiKeywords/DICT.lenders/literal "EMI") essentially never matches a
+// bill-payment-app debit, so there's no natural overlap to double-count -
+// keeping this separate avoids having to reconcile the two lists' distinct
+// grouping keys.
+function detectCreditCardObligations(txns) {
+  const debits = txns.filter(t => num(t.debit) > 0 && (hasBillPaymentApp(t.description) || /\bPAVC\b/i.test(t.description) || /CREDIT\s*CARD|CC\s*PAYMENT/i.test(t.description)));
+  const groups = {};
+  debits.forEach(t => {
+    const k = hasBillPaymentApp(t.description) || partyKey(t.description) || 'CREDIT CARD';
+    (groups[k] = groups[k] || []).push(t);
+  });
+  return Object.entries(groups).filter(([, list]) => list.length >= 2).map(([party, list]) => {
+    const amounts = list.map(t => num(t.debit));
+    const dates = sortDateStrings(list.map(t => t.date).filter(Boolean));
+    return {
+      party,
+      loan_type: 'CREDIT_CARD',
+      average_monthly_amount: round2(amounts.reduce((a, b) => a + b, 0) / amounts.length),
+      count: list.length,
+      first_seen: dates[0] || '',
+      last_seen: dates[dates.length - 1] || '',
+      transactions: list.map(t => ({ date: t.date, amount: num(t.debit) })),
+    };
+  });
+}
+
+// Top-line ATM/cash withdrawal total across the whole statement - the same
+// DICT.atm tag already used inside detectLowBalanceDays' frequent-withdrawal
+// logic and in categorizeTxn(), just rolled up into one simple summary
+// rather than only living inside a per-month breakdown.
+function detectCashWithdrawalSummary(txns) {
+  const withdrawals = txns.filter(t => has(t.description, DICT.atm) && num(t.debit) > 0);
+  const total_amount = round2(withdrawals.reduce((s, t) => s + num(t.debit), 0));
+  return {
+    total_count: withdrawals.length,
+    total_amount,
+    average_amount: withdrawals.length ? round2(total_amount / withdrawals.length) : 0,
+  };
+}
+
 export function runBehaviourDetectors(txns, accountHolder = '') {
   const holderTokens = up(accountHolder).split(/\s+/).filter(w => w.length > 2);
-  const stock = txns.filter(t => has(t.description, DICT.brokers));
-  const stock_market_activity = { detected: stock.length > 0, transaction_count: stock.length, total_invested: stock.reduce((s, t) => s + num(t.debit), 0), total_withdrawn: stock.reduce((s, t) => s + num(t.credit), 0), brokers_seen: [...new Set(stock.map(t => has(t.description, DICT.brokers)))], transactions: stock.map(t => ({ broker: has(t.description, DICT.brokers), date: t.date, amount: num(t.debit) || num(t.credit), direction: num(t.debit) ? 'DEBIT' : 'CREDIT', description: t.description })) };
+  const stock = txns.filter(t => isBrokerTxn(t.description));
+  const stockSubRollup = {};
+  const stockTransactions = stock.map(t => {
+    const sub_type = detectBrokerSubType(t.description);
+    const amount = num(t.debit) || num(t.credit);
+    if (!stockSubRollup[sub_type]) stockSubRollup[sub_type] = { sub_type, transaction_count: 0, total_amount: 0 };
+    stockSubRollup[sub_type].transaction_count += 1;
+    stockSubRollup[sub_type].total_amount += amount;
+    return { broker: brokerLabel(t.description), sub_type, date: t.date, amount, direction: num(t.debit) ? 'DEBIT' : 'CREDIT', description: t.description };
+  });
+  const stock_market_activity = { detected: stock.length > 0, transaction_count: stock.length, total_invested: stock.reduce((s, t) => s + num(t.debit), 0), total_withdrawn: stock.reduce((s, t) => s + num(t.credit), 0), brokers_seen: [...new Set(stock.map(t => brokerLabel(t.description)))], sub_type_summary: Object.values(stockSubRollup).map(r => ({ ...r, total_amount: round2(r.total_amount) })), transactions: stockTransactions };
   const rot = txns.filter(t => num(t.credit) > 0 && has(t.description, DICT.posAggregators));
   const cc_card_rotation = { detected: rot.length > 0, transaction_count: rot.length, total_amount: rot.reduce((s, t) => s + num(t.credit), 0), transactions: rot.map(t => ({ vendor: has(t.description, DICT.posAggregators), date: t.date, amount: num(t.credit), description: t.description })) };
   const returns = txns.filter(t => has(t.description, DICT.returnWords) && !has(t.description, DICT.chargeWords));
   const charges = txns.filter(t => has(t.description, DICT.chargeWords));
   const usedCharge = new Set();
-  const ecs_returns = returns.map(r => { let match = null; charges.forEach((c, i) => { if (!usedCharge.has(i) && daysBetween(r.date, c.date) <= 3 && !match) { match = c; usedCharge.add(i); } }); return { party: partyKey(r.description) || 'UNKNOWN', return_type: up(r.description).includes('NACH') ? 'NACH' : up(r.description).includes('ECS') ? 'ECS' : (up(r.description).includes('CHQ') || up(r.description).includes('CHEQUE')) ? 'CHEQUE' : 'AUTO_DEBIT', return_date: r.date, return_amount: num(r.debit) || num(r.credit), charge_date: match ? match.date : '', charge_amount: match ? num(match.debit) : 0, charge_description: match ? match.description : '' }; });
-  charges.forEach((c, i) => { if (!usedCharge.has(i)) ecs_returns.push({ party: 'UNMATCHED', return_type: 'AUTO_DEBIT', return_date: '', return_amount: 0, charge_date: c.date, charge_amount: num(c.debit), charge_description: c.description }); });
+  // balance_before/balance_after - the account balance immediately
+  // preceding the bounce attempt vs. after it, so an underwriter can see
+  // whether the account genuinely lacked funds. txns is already in
+  // statement (chronological) order (every other detector in this file
+  // makes the same assumption, e.g. buildEmiPaymentGrid/
+  // detectMonthlyCashflow), so the transaction at r's own index minus one
+  // is "immediately before it" - a plain O(n) reference lookup since r is
+  // the SAME object instance found in txns (returns is a filter() of txns,
+  // which preserves object identity).
+  const ecs_returns = returns.map(r => {
+    let match = null; charges.forEach((c, i) => { if (!usedCharge.has(i) && daysBetween(r.date, c.date) <= 3 && !match) { match = c; usedCharge.add(i); } });
+    const idx = txns.indexOf(r);
+    const prevTxn = idx > 0 ? txns[idx - 1] : null;
+    return { party: partyKey(r.description) || 'UNKNOWN', return_type: up(r.description).includes('NACH') ? 'NACH' : up(r.description).includes('ECS') ? 'ECS' : (up(r.description).includes('CHQ') || up(r.description).includes('CHEQUE')) ? 'CHEQUE' : 'AUTO_DEBIT', return_date: r.date, return_amount: num(r.debit) || num(r.credit), balance_before: prevTxn ? num(prevTxn.balance) : null, balance_after: num(r.balance), charge_date: match ? match.date : '', charge_amount: match ? num(match.debit) : 0, charge_description: match ? match.description : '' };
+  });
+  charges.forEach((c, i) => { if (!usedCharge.has(i)) ecs_returns.push({ party: 'UNMATCHED', return_type: 'AUTO_DEBIT', return_date: '', return_amount: 0, balance_before: null, balance_after: num(c.balance), charge_date: c.date, charge_amount: num(c.debit), charge_description: c.description }); });
   const disb = txns.filter(t => num(t.credit) > 0 && has(t.description, DICT.lenders));
   const lendersSeen = [...new Set(disb.map(t => has(t.description, DICT.lenders)))];
   const small_loan_disbursals = { detected: disb.length > 0, frequent: disb.length >= 2 || lendersSeen.length >= 3, disbursal_count: disb.length, total_disbursed: disb.reduce((s, t) => s + num(t.credit), 0), lenders_seen: lendersSeen, disbursals: disb.map(t => ({ lender: has(t.description, DICT.lenders), date: t.date, amount: num(t.credit), description: t.description })) };
   const wallet_to_bank = txns.filter(t => has(t.description, DICT.wallets)).map(t => ({ wallet: has(t.description, DICT.wallets), date: t.date, amount: num(t.debit) || num(t.credit), direction: num(t.credit) ? 'WALLET_TO_BANK' : 'BANK_TO_WALLET' }));
-  const groups = {}; const selfRe = /\b(SELF|OWN\s*A\/?C|OWN\s*ACCOUNT)\b/i;
-  txns.filter(t => has(t.description, DICT.transferRails)).forEach(t => { const k = partyKey(t.description); if (!k) return; if (!groups[k]) groups[k] = { beneficiary: k, total_amount: 0, transfer_count: 0, dates: [], self_hint: false }; groups[k].total_amount += num(t.debit) || num(t.credit); groups[k].transfer_count += 1; groups[k].dates.push(t.date); if (selfRe.test(t.description)) groups[k].self_hint = true; });
+  const groups = {};
+  txns.filter(t => hasTransferRail(t.description)).forEach(t => { const k = partyKey(t.description); if (!k) return; if (!groups[k]) groups[k] = { beneficiary: k, total_amount: 0, transfer_count: 0, dates: [], self_hint: false }; groups[k].total_amount += num(t.debit) || num(t.credit); groups[k].transfer_count += 1; groups[k].dates.push(t.date); if (isSelfTransferTxn(t.description)) groups[k].self_hint = true; });
   const frequent_transfers = Object.values(groups).filter(g => g.transfer_count >= 3).map(g => { const sorted = sortDateStrings(g.dates.filter(Boolean)); const is_self = g.self_hint || holderTokens.some(tok => g.beneficiary.includes(tok)); return { beneficiary: g.beneficiary, is_self, total_amount: g.total_amount, transfer_count: g.transfer_count, first_date: sorted[0] || '', last_date: sorted[sorted.length - 1] || '' }; }).sort((a, b) => b.transfer_count - a.transfer_count).slice(0, 10);
   const forex_trading = txns.filter(t => has(t.description, DICT.forex)).map(t => ({ platform: has(t.description, DICT.forex), date: t.date, amount: num(t.debit) || num(t.credit), direction: num(t.debit) ? 'DEBIT' : 'CREDIT', description: t.description }));
 
@@ -181,7 +801,7 @@ export function runBehaviourDetectors(txns, accountHolder = '') {
   // frequent-transfer relationship, which frequent_transfers already
   // covers but doesn't specifically test the debit<->credit round-trip.
   const circGroups = {};
-  txns.filter(t => has(t.description, DICT.transferRails)).forEach(t => {
+  txns.filter(t => hasTransferRail(t.description)).forEach(t => {
     const k = partyKey(t.description);
     if (!k) return;
     if (!circGroups[k]) circGroups[k] = [];
@@ -202,7 +822,39 @@ export function runBehaviourDetectors(txns, accountHolder = '') {
     return { party, round_trip_count: pairs.length, total_debit: round2(list.reduce((s, t) => s + num(t.debit), 0)), total_credit: round2(list.reduce((s, t) => s + num(t.credit), 0)), pairs };
   }).filter(Boolean).sort((a, b) => b.round_trip_count - a.round_trip_count).slice(0, 10);
 
-  return { stock_market_activity, cc_card_rotation, ecs_returns, small_loan_disbursals, wallet_to_bank, frequent_transfers, forex_trading, cash_deposits, circular_transactions };
+  const cashout_patterns = detectCardCashoutPatterns(txns);
+  const mutual_fund_activity = detectMutualFundActivity(txns);
+  const banking_behaviour = detectLowBalanceDays(txns);
+  const credit_card_obligations = detectCreditCardObligations(txns);
+  const cash_withdrawal_summary = detectCashWithdrawalSummary(txns);
+
+  // Irregular credits - the leftover credits that don't fall into ANY known
+  // bucket (salary, secondary income, broker/MF activity, wallet top-ups,
+  // lender disbursals). Purely informational, by exclusion - never summed
+  // into any income figure since nothing here is established as recurring.
+  // detectSalary/detectSecondaryIncome are defined further below in this
+  // file but safe to call here (same hoisting reasoning as isMutualFundTxn
+  // above) - computeCreditAssessment() calls them again independently for
+  // the actual income assessment, so this is a small amount of redundant
+  // work, but it keeps this self-contained within runBehaviourDetectors
+  // rather than threading extra state through computeCreditAssessment.
+  const salaryForIrregular = detectSalary(txns, holderTokens);
+  const secondaryForIrregular = detectSecondaryIncome(txns, holderTokens, salaryForIrregular ? salaryForIrregular.key : null);
+  const salaryCreditSet = new Set(salaryForIrregular ? salaryForIrregular.list : []);
+  const secondarySources = new Set(secondaryForIrregular.map(s => s.source));
+  const irregular_credits = txns.filter(t => {
+    if (num(t.credit) <= 0) return false;
+    if (salaryCreditSet.has(t)) return false;
+    if (isBrokerTxn(t.description)) return false;
+    if (isMutualFundTxn(t.description)) return false;
+    if (has(t.description, DICT.wallets)) return false;
+    if (has(t.description, DICT.lenders)) return false;
+    const key = partyKey(t.description);
+    if (key && secondarySources.has(key)) return false;
+    return true;
+  }).map(t => ({ date: t.date, amount: num(t.credit), description: t.description }));
+
+  return { stock_market_activity, cc_card_rotation, ecs_returns, small_loan_disbursals, wallet_to_bank, frequent_transfers, forex_trading, cash_deposits, circular_transactions, cashout_patterns, mutual_fund_activity, banking_behaviour, credit_card_obligations, cash_withdrawal_summary, irregular_credits };
 }
 
 // Bank name must come from the statement's own header/letterhead area, not
@@ -281,6 +933,26 @@ function detectHeader(fullText, transactions) {
           account_holder = candidate;
         }
       }
+      // Final, lower-confidence fallback: some statements (ICICI included)
+      // print the holder's name a few lines into the header/address block
+      // with NO preceding label at all AND not on line 1 either (e.g.
+      // after the bank's own letterhead lines) - neither check above
+      // catches this layout. Scans a small window near the top of the
+      // document (tried last, deliberately conservative) for a line that
+      // looks like a name and ISN'T itself generic statement/address
+      // boilerplate - without the BANNER_WORDS exclusion, a line like
+      // "Statement of Account" would otherwise coincidentally match the
+      // same short/title-case shape as a real name.
+      if (!account_holder) {
+        const BANNER_WORDS = ['STATEMENT', 'ACCOUNT', 'PERIOD', 'ADDRESS', 'BRANCH', 'IFSC', 'MICR', 'PAGE', 'SUMMARY', 'BALANCE', 'REGISTERED', 'OFFICE', 'CUSTOMER', 'PRIVILEGE', 'BANKING', 'LIMITED', 'CIN'];
+        const nameLike = rawLines.slice(0, 15).find(l =>
+          /^[A-Z][A-Za-z.\s]{2,40}$/.test(l) &&
+          l.split(/\s+/).length <= 5 &&
+          !DICT.banks.some(b => up(l).includes(b)) &&
+          !BANNER_WORDS.some(w => up(l).includes(w))
+        );
+        if (nameLike) account_holder = nameLike;
+      }
     }
   }
   const dates = transactions.map(t2 => parseDateFlexible(t2.date)).filter(Boolean).sort((a, b) => a - b);
@@ -288,8 +960,65 @@ function detectHeader(fullText, transactions) {
   return { bank_name, account_number, account_holder, statement_period };
 }
 
+// Ordinal-suffixed day-of-month label ("1st", "28th") for salary-date
+// display.
+function ordinal(n) {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+// Modal (most common) day-of-month across a salary group's transaction
+// dates. Salary near month-end sometimes lands the 1st-3rd of the
+// following month instead (weekends/holidays push the credit), so a mix
+// of "high" (>=28) and "low" (<=3) days is treated as one wraparound
+// cluster ("28th-1st") rather than reported as a wide, unclustered spread.
+// A tight (<=3 day) non-wraparound spread is also reported as a window;
+// anything wider/noisier falls back to just the single modal day rather
+// than forcing a misleading exact date.
+function computeSalaryDate(list) {
+  const days = list.map(t => { const d = parseDateFlexible(t.date); return d ? d.getDate() : null; }).filter(Boolean);
+  if (!days.length) return '';
+  const uniqueDays = [...new Set(days)];
+  if (uniqueDays.length === 1) return ordinal(uniqueDays[0]);
+  const freq = {};
+  days.forEach(d => { freq[d] = (freq[d] || 0) + 1; });
+  const modal = Number(Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0]);
+  const isMonthEndCluster = uniqueDays.every(d => d >= 28 || d <= 3) && uniqueDays.some(d => d >= 28) && uniqueDays.some(d => d <= 3);
+  if (isMonthEndCluster) {
+    const high = Math.min(...uniqueDays.filter(d => d >= 28));
+    const low = Math.max(...uniqueDays.filter(d => d <= 3));
+    return `${ordinal(high)}-${ordinal(low)}`;
+  }
+  const spread = Math.max(...uniqueDays) - Math.min(...uniqueDays);
+  if (spread <= 3) return `${ordinal(Math.min(...uniqueDays))}-${ordinal(Math.max(...uniqueDays))}`;
+  return ordinal(modal);
+}
+
 function detectSalary(txns, holderTokens) {
-  const credits = txns.filter(t => num(t.credit) > 0);
+  // Broker settlement credits (iDirect/EBA trade proceeds), mutual-fund
+  // redemptions, wallet top-ups/reversals, lender disbursals, and
+  // self-transfers can all recur monthly at plausible-looking amounts, but
+  // none of them are salary - without this exclusion the highest-scoring
+  // recurring-credit group could be built entirely out of e.g. ICICI Direct
+  // trade settlements (or MF redemptions, or a customer moving money
+  // between their own accounts) and get reported as "Monthly Salary
+  // Credits", inflating estimated income and understating FOIR. Confirmed
+  // real: 7 credits narrated "Fund transfer INF/INFT/000081245209/Self"
+  // (varying amounts) were adopted as salary, with employer_name surfacing
+  // as the nonsense "FUND INF INFT" once partyKey() stripped the transfer-
+  // rail codes and the word SELF out of the grouping key - the same tell
+  // seen in the broker/MF false positives before those got excluded here.
+  // isSelfTransferTxn() is the SAME check frequent_transfers uses for its
+  // own is_self flag - tested against the raw description, since partyKey()
+  // strips the word SELF before grouping and a holderTokens-name check
+  // alone can't catch a narration that never prints the holder's name at
+  // all. Mirrors the same exclusion detectSecondaryIncome uses below.
+  const credits = txns.filter(t => num(t.credit) > 0 && !isBrokerTxn(t.description) && !isMutualFundTxn(t.description) && !has(t.description, DICT.wallets) && !has(t.description, DICT.lenders) && !isSelfTransferTxn(t.description));
   const groups = {};
   credits.forEach(t => {
     let key = has(t.description, DICT.salaryKeywords) ? 'SALARY::' + partyKey(t.description) : partyKey(t.description);
@@ -308,6 +1037,15 @@ function detectSalary(txns, holderTokens) {
     const score = list.length * salaryHint * (cv < 0.3 ? 1.5 : 1) * mean;
     if (score > bestScore) { bestScore = score; best = { key: key.replace('SALARY::', ''), list, mean, cv }; }
   });
+  if (best) {
+    // Best-effort only - employer_name is just the same canonical party
+    // key already used for grouping, surfaced under a clearer name rather
+    // than recomputed. If the narration is a personal name or generic
+    // ("SAL CR"), this legitimately comes back looking unclear - that's
+    // partyKey()'s existing behavior, not something to paper over here.
+    best.employer_name = best.key;
+    best.salary_date = computeSalaryDate(best.list);
+  }
   return best;
 }
 
@@ -326,9 +1064,15 @@ function detectSecondaryIncome(txns, holderTokens, primaryKey) {
     if (!key || key === primaryKey) return;
     // Exclude self/family transfers and recognized lenders/wallets - those
     // are already surfaced by frequent_transfers / small_loan_disbursals
-    // and would double-count as "income" here otherwise.
+    // and would double-count as "income" here otherwise. Two DIFFERENT
+    // self-transfer shapes, both needed: holderTokens catches a narration
+    // that prints the account holder's own name as the beneficiary;
+    // isSelfTransferTxn() (the same check frequent_transfers/detectSalary
+    // use) catches the generic ".../Self" narration shape that never prints
+    // the holder's name at all and would otherwise sail through this first
+    // check untouched.
     if (holderTokens.some(tok => key.includes(tok))) return;
-    if (has(t.description, DICT.lenders) || has(t.description, DICT.wallets)) return;
+    if (has(t.description, DICT.lenders) || has(t.description, DICT.wallets) || isBrokerTxn(t.description) || isMutualFundTxn(t.description) || isSelfTransferTxn(t.description)) return;
     if (!groups[key]) groups[key] = [];
     groups[key].push(t);
   });
@@ -347,6 +1091,75 @@ function detectSecondaryIncome(txns, holderTokens, primaryKey) {
     .slice(0, 5);
 }
 
+// The original fintech/BNPL-app lender list, BEFORE the mainstream NBFC
+// additions (Bajaj Finance, Tata Capital, etc. fund consumer/auto loans,
+// not BNPL/app-based small loans, so they're deliberately excluded here).
+const BNPL_APP_LENDERS = ['KREDITBEE', 'KREDIT BEE', 'KRAZYBEE', 'NAVI', 'LAZYPAY', 'LAZY PAY', 'MONEYTAP', 'MONEY TAP', 'CASHE', 'EARLYSALARY', 'EARLY SALARY', 'FIBE', 'KISSHT', 'PAYSENSE', 'PAY SENSE', 'SMARTCOIN', 'SMART COIN', 'STASHFIN', 'STASH FIN', 'MPOKKET', 'M POKKET', 'SLICE', 'BRANCH', 'DHANI', 'RUPEEREDEE', 'TRUEBALANCE', 'TRUE BALANCE', 'AVAIL FINANCE', 'BHARAT LOAN', 'LOANTAP', 'LOAN TAP', 'POCKETCASH', 'KREDITONE', 'ZESTMONEY', 'ZEST MONEY', 'KISETSU', 'KISETSU SAISON', 'RESPO FINANCIAL', 'RESPO', 'INCRED FINANCE', 'INCRED', 'AMAZON PAY LATER'];
+const HOME_LOAN_HINTS = ['HOME LOAN', 'HOUSING LOAN', 'HL '];
+const HOME_LOAN_LENDERS = ['LIC HOUSING', 'PNB HOUSING', 'INDIABULLS HOUSING', 'HDFC LTD'];
+// 'CC LIMIT' requires the word LIMIT alongside it - bare 'CC' alone is too
+// ambiguous with "credit card" to use as a business-loan signal on its own.
+const BUSINESS_LOAN_HINTS = ['BUSINESS LOAN', 'MSME', 'WORKING CAPITAL', 'OD LIMIT', 'CC LIMIT'];
+// Classifies a recognized EMI/lender debit into a loan-type bucket for
+// underwriting. Order matters: CREDIT_CARD and the other specific-narration
+// buckets are checked before the generic BNPL-app-lender/PERSONAL fallback,
+// so a narration matching more than one hint resolves to its most specific
+// bucket rather than always falling through to PERSONAL.
+function classifyLoanType(party, description) {
+  const p = up(party || '');
+  if (hasBillPaymentApp(description) || /\bPAVC\b/i.test(description) || /CREDIT\s*CARD|CC\s*PAYMENT/i.test(description)) return 'CREDIT_CARD';
+  if (has(description, HOME_LOAN_HINTS) || HOME_LOAN_LENDERS.some(l => p.includes(l))) return 'HOME';
+  if (has(description, BUSINESS_LOAN_HINTS)) return 'BUSINESS';
+  // Only an EXPLICIT auto/vehicle-loan phrase counts - the generic AUTO_CD/
+  // AUTO CD autodebit-marker keywords (still in DICT.emiKeywords, kept
+  // there for detecting that a debit is EMI-like AT ALL) are NOT a
+  // vehicle-loan signal on their own. Confirmed real: a Bajaj Finance
+  // PERSONAL loan auto-debited via "CMS/.../BAJAJ_AUTO_CD__ICIC..." was
+  // wrongly classified AUTO purely because the narration contains the bare
+  // substring "AUTO" - "AUTO_CD" here is almost certainly generic NACH
+  // terminology ("Automatic Clearing Debit"), not "auto/vehicle loan". No
+  // lender in DICT.lenders is unambiguously auto-loan-specific today - if
+  // one is ever added (e.g. a manufacturer-captive auto-finance arm with
+  // its own distinct brand name), add it as a lender-name check here
+  // rather than loosening this description match back to a bare 'AUTO'.
+  if (has(description, ['VEHICLE LOAN', 'CAR LOAN', 'AUTO LOAN'])) return 'AUTO';
+  if (BNPL_APP_LENDERS.some(l => p.includes(l))) return 'BNPL';
+  return 'PERSONAL';
+}
+
+// Splits a list of debits that already share the same lender/party
+// grouping key into amount-consistent clusters, using the SAME Rs.500
+// -or-15% tolerance style reconcileCibilVsBank() (cibilReconciliation.js)
+// already uses to match CIBIL obligations to bank-statement EMIs.
+// detectLenderName() only confirms WHO the lender is, not that every debit
+// under that name is the SAME loan/product - a customer can genuinely have
+// two obligations with the same NBFC (e.g. a large personal loan and a
+// small BNPL-style purchase EMI). Confirmed real-world failure: 5 "Bajaj
+// Finance" debits (~Rs.22,198, ~Rs.590, ~Rs.1,212, ~Rs.365, ~Rs.225) - two
+// financially distinct obligations sharing a lender name - were previously
+// collapsed into ONE obligation at the median (~Rs.590), silently
+// discarding the ~Rs.22,198 figure entirely and understating FOIR. Sorted
+// ascending first so nearby amounts cluster together in order rather than
+// by chance transaction sequence; each new amount is compared only against
+// the MOST RECENT cluster's running mean (sufficient for the small, mostly
+// -monotonic amount sets a single lender's debits form in one statement).
+function clusterByAmount(list) {
+  const sorted = [...list].sort((a, b) => num(a.debit) - num(b.debit));
+  const clusters = [];
+  sorted.forEach(t => {
+    const amt = num(t.debit);
+    const last = clusters[clusters.length - 1];
+    const tol = last ? Math.max(500, last.refAmount * 0.15) : 0;
+    if (last && Math.abs(amt - last.refAmount) <= tol) {
+      last.items.push(t);
+      last.refAmount = last.items.reduce((s, x) => s + num(x.debit), 0) / last.items.length;
+    } else {
+      clusters.push({ refAmount: amt, items: [t] });
+    }
+  });
+  return clusters.map(c => c.items);
+}
+
 function detectEmiObligations(txns) {
   // A repayment debit qualifies either because the line itself is
   // EMI/ACH/NACH-labeled, OR because the counterparty is a recognized
@@ -356,29 +1169,44 @@ function detectEmiObligations(txns) {
   // Excludes recognized stock/mutual-fund brokers (e.g. "ACH-DR-Indian
   // Clearing Corp") - the generic ACH-DR keyword would otherwise catch
   // routine broker settlement debits as if they were loan EMIs.
-  const debits = txns.filter(t => num(t.debit) > 0 && !has(t.description, DICT.brokers) && (has(t.description, DICT.emiKeywords) || has(t.description, DICT.lenders) || /\bEMI\b/i.test(t.description)));
+  const debits = txns.filter(t => num(t.debit) > 0 && !isBrokerTxn(t.description) && (hasEmiKeyword(t.description) || has(t.description, DICT.lenders)));
   const groups = {};
   debits.forEach(t => {
     // Group by the canonical lender name when one is recognized, so the
     // same lender printed under different description wording across
-    // months (e.g. "Navi Finserv Limited" vs "Navi Loans") is counted as
-    // one obligation instead of splitting into separate under-threshold
-    // groups. Falls back to the free-text party parser for EMI-labeled
-    // debits with no recognized lender name (e.g. bank ACH-DR auto-debits).
-    const lenderMatch = has(t.description, DICT.lenders);
+    // months (e.g. "Navi Finserv Limited" vs "Navi Loans", or "BAJAJ_AUTO_CD"
+    // vs "AD~1ADBAJAJFINNEW~...") is counted as one obligation instead of
+    // splitting into separate under-threshold groups. Falls back to the
+    // free-text party parser for EMI-labeled debits with no recognized
+    // lender name (e.g. bank ACH-DR auto-debits).
+    const lenderMatch = detectLenderName(t.description);
     const k = lenderMatch || partyKey(t.description) || 'EMI';
     if (!groups[k]) groups[k] = [];
     groups[k].push(t);
   });
-  return Object.entries(groups).filter(([, list]) => list.length >= 2).map(([party, list]) => {
-    const amounts = list.map(t => num(t.debit)).sort((a, b) => a - b);
-    const median = amounts[Math.floor(amounts.length / 2)];
-    const dates = sortDateStrings(list.map(t => t.date).filter(Boolean));
-    // Individual transaction dates/amounts kept alongside the aggregate
-    // stats - buildEmiPaymentGrid() needs these to know WHICH months this
-    // obligation was actually paid in, not just the overall count.
-    return { party, amount: median, type: has(list[0].description, ['NACH']) ? 'NACH' : has(list[0].description, ['ECS']) ? 'ECS' : 'EMI', first_seen: dates[0] || '', last_seen: dates[dates.length - 1] || '', count: list.length, transactions: list.map(t => ({ date: t.date, amount: num(t.debit) })) };
+  const obligations = [];
+  Object.entries(groups).filter(([, list]) => list.length >= 2).forEach(([party, list]) => {
+    // Every amount cluster becomes its OWN obligation row - never merged
+    // or arbitrarily picked - so a genuine second product with the same
+    // lender surfaces distinctly instead of corrupting one blended figure.
+    // The >=2-occurrence filter above (unchanged from before this fix)
+    // already establishes this lender/party is a real recurring
+    // counterparty, not a coincidental one-off match, so an individual
+    // cluster is trusted even if it itself only has one payment in this
+    // statement window (e.g. a second loan taken out late in the period) -
+    // dropping it would silently understate the obligation again, exactly
+    // the bug being fixed here.
+    clusterByAmount(list).forEach(clusterList => {
+      const amounts = clusterList.map(t => num(t.debit)).sort((a, b) => a - b);
+      const median = amounts[Math.floor(amounts.length / 2)];
+      const dates = sortDateStrings(clusterList.map(t => t.date).filter(Boolean));
+      // Individual transaction dates/amounts kept alongside the aggregate
+      // stats - buildEmiPaymentGrid() needs these to know WHICH months
+      // this obligation was actually paid in, not just the overall count.
+      obligations.push({ party, amount: median, type: has(clusterList[0].description, ['NACH']) ? 'NACH' : has(clusterList[0].description, ['ECS']) ? 'ECS' : 'EMI', loan_type: classifyLoanType(party, clusterList[0].description), first_seen: dates[0] || '', last_seen: dates[dates.length - 1] || '', count: clusterList.length, transactions: clusterList.map(t => ({ date: t.date, amount: num(t.debit) })) });
+    });
   });
+  return obligations;
 }
 
 // Turns "this obligation exists, N payments seen" into a month-by-month
@@ -414,6 +1242,57 @@ function buildEmiPaymentGrid(emiObligations, txns) {
   });
 }
 
+// Inferred bounce via EMI due-date drift. The keyword-driven ecs_returns
+// detector (see runBehaviourDetectors above) can only catch a bounce the
+// bank itself printed an explicit RETURN/BOUNCE/INSUFFICIENT-FUNDS/charge
+// line for - but a real NACH first-presentment failure very often retries
+// automatically the next business day with NO separate "returned" line at
+// all. Confirmed real: a Bajaj Finance EMI that debits on the 2nd of the
+// month in 7 of its 8 occurrences debited on the 3rd exactly once, with
+// zero explicit bounce/charge text anywhere in the statement for that
+// month - the ONLY evidence is the date itself landing later than usual.
+// This can NEVER be a confirmed bounce from bank-statement text alone (a
+// due date landing on a weekend/bank holiday can also shift a genuinely
+// healthy payment by a day or two) - every finding here is a MEDIUM
+// -confidence inference for manual verification, not folded into the
+// HIGH-confidence bank-confirmed ecs_returns list at the same weight (see
+// how computeCreditAssessment() merges the two below).
+function detectEmiDateDrift(emiObligations, txns) {
+  const findings = [];
+  (emiObligations || []).forEach(ob => {
+    const dated = (ob.transactions || [])
+      .map(t => ({ ...t, d: parseDateFlexible(t.date) }))
+      .filter(t => t.d)
+      .sort((a, b) => a.d - b.d);
+    // Needs enough occurrences to establish a real "usual day" pattern - a
+    // 2-payment obligation has nothing meaningful to drift away from.
+    if (dated.length < 3) return;
+    const dayCounts = {};
+    dated.forEach(t => { const day = t.d.getDate(); dayCounts[day] = (dayCounts[day] || 0) + 1; });
+    // Most frequent day-of-month wins; ties broken toward the earlier day
+    // (arbitrary but deterministic - a genuine tie is rare in practice).
+    const modal_day = +Object.entries(dayCounts).sort(([dayA, cA], [dayB, cB]) => cB - cA || dayA - dayB)[0][0];
+    dated.forEach(t => {
+      const actual_day = t.d.getDate();
+      const drift_days = actual_day - modal_day;
+      // Only LATER-than-usual counts - paid early is never a bounce signal.
+      if (drift_days <= 0) return;
+      findings.push({
+        pattern_type: 'EMI_DATE_DRIFT_SUSPECTED',
+        confidence: 'MEDIUM',
+        party: ob.party,
+        date: t.date,
+        amount: t.amount,
+        modal_day,
+        actual_day,
+        drift_days,
+        notes: `Inferred from date drift - usual due date is the ${ordinal(modal_day)}, this month's debit landed on the ${ordinal(actual_day)}. Not an explicit bank-reported return; verify manually before treating as a confirmed bounce.`,
+      });
+    });
+  });
+  return findings;
+}
+
 function detectCcVendorFunding(txns) {
   return txns.filter(t => num(t.credit) > 0 && has(t.description, DICT.lenders)).map(t => ({ vendor: has(t.description, DICT.lenders), date: t.date, amount: num(t.credit), description: t.description }));
 }
@@ -423,10 +1302,15 @@ function detectMonthlyCashflow(txns, ecsReturns) {
   txns.forEach(t => {
     const d = parseDateFlexible(t.date);
     const key = d ? monthSortKey(d) : -1;
-    if (!byMonth[key]) byMonth[key] = { key, label: monthLabel(d), total_credit: 0, total_debit: 0, closing_balance: 0, lastDate: d, bounce_count: 0 };
+    if (!byMonth[key]) byMonth[key] = { key, label: monthLabel(d), total_credit: 0, total_debit: 0, closing_balance: 0, minimum_balance: Infinity, lastDate: d, bounce_count: 0 };
     byMonth[key].total_credit += num(t.credit);
     byMonth[key].total_debit += num(t.debit);
     if (!byMonth[key].lastDate || (d && d >= byMonth[key].lastDate)) { byMonth[key].closing_balance = num(t.balance); byMonth[key].lastDate = d; }
+    // Lowest point this account touched during the month - distinct from
+    // (and complements) detectLowBalanceDays, which flags specific days
+    // crossing a FIXED threshold; this is useful even for an account that
+    // never crosses any threshold at all.
+    byMonth[key].minimum_balance = Math.min(byMonth[key].minimum_balance, num(t.balance));
   });
   ecsReturns.forEach(r => {
     const d = parseDateFlexible(r.return_date);
@@ -434,7 +1318,7 @@ function detectMonthlyCashflow(txns, ecsReturns) {
     const key = monthSortKey(d);
     if (byMonth[key]) byMonth[key].bounce_count += 1;
   });
-  return Object.values(byMonth).filter(m => m.key >= 0).sort((a, b) => a.key - b.key).map(m => ({ month: m.label, total_credit: round2(m.total_credit), total_debit: round2(m.total_debit), closing_balance: round2(m.closing_balance), bounce_count: m.bounce_count }));
+  return Object.values(byMonth).filter(m => m.key >= 0).sort((a, b) => a.key - b.key).map(m => ({ month: m.label, total_credit: round2(m.total_credit), total_debit: round2(m.total_debit), closing_balance: round2(m.closing_balance), minimum_balance: round2(m.minimum_balance === Infinity ? 0 : m.minimum_balance), bounce_count: m.bounce_count }));
 }
 
 function detectRepeatParties(txns) {
@@ -489,6 +1373,16 @@ function detectRiskFlagsWatchlistPositive(txns, detectors, salaryList, emiPaymen
   // turnover-inflation pattern.
   detectors.circular_transactions.forEach(c => {
     risk_flags.push({ type: 'CIRCULAR_TRANSACTION', date: c.pairs[0]?.out_date || '', description: `${c.round_trip_count} round-trip(s) with ${c.party} - possible turnover inflation`, amount: c.total_debit + c.total_credit, severity: c.round_trip_count >= 3 ? 'HIGH' : 'MEDIUM' });
+  });
+
+  // Card-to-bank cash-out / wallet round-trip findings - LOW-confidence
+  // findings (e.g. CREDIT_FUNDS_CC_REPAYMENT) are genuinely ambiguous,
+  // ordinary liquidity rotation and deliberately excluded from risk_flags
+  // entirely so they can't inflate overall_risk the way a real finding
+  // would; they still surface in cashout_patterns/the Excel sheet as
+  // informational only.
+  (detectors.cashout_patterns || []).filter(f => f.confidence !== 'LOW').forEach(f => {
+    risk_flags.push({ type: 'CASHOUT_PATTERN', date: f.transactions[0]?.date || '', description: `${f.pattern_type}: ${f.notes}`, amount: f.transactions.reduce((s, t) => s + (t.amount || 0), 0), severity: f.confidence === 'HIGH' ? 'HIGH' : 'MEDIUM' });
   });
 
   const nearZero = txns.filter(t => t.balance !== undefined && t.balance !== null && num(t.balance) >= 0 && num(t.balance) < 500);
@@ -556,6 +1450,36 @@ export function computeCreditAssessment(transactions, fullText, detectors, accou
   const emi_payment_grid = buildEmiPaymentGrid(emi_obligations, transactions);
   const total_emi_burden = round2(emi_obligations.reduce((s, e) => s + e.amount, 0));
   const foir_estimate = estimated_monthly_income > 0 ? Math.round((total_emi_burden / estimated_monthly_income) * 100) : 0;
+  const emi_date_drift = detectEmiDateDrift(emi_obligations, transactions);
+  // Merges the bank-confirmed (keyword-matched) bounces with the new
+  // inferred-from-date-drift ones into ONE list, tagged so an underwriter
+  // can tell them apart (bounce_type: 'CONFIRMED' vs
+  // 'INFERRED_DATE_DRIFT') - this is what feeds the Bounce Detail sheet and
+  // its TOTAL BOUNCES count in bsaExcelExport.js. Deliberately does NOT
+  // replace detectors.ecs_returns for bounceCount/risk_flags/
+  // monthly_cashflow below - an unverified date-drift inference must not
+  // silently escalate overall_risk to HIGH/REJECT the same way an explicit,
+  // bank-confirmed return does.
+  const ecs_returns = [
+    ...detectors.ecs_returns.map(r => ({ ...r, bounce_type: 'CONFIRMED' })),
+    ...emi_date_drift.map(f => {
+      const idx = transactions.findIndex(x => x.date === f.date && round2(num(x.debit)) === round2(f.amount));
+      const src = idx >= 0 ? transactions[idx] : null;
+      const prev = idx > 0 ? transactions[idx - 1] : null;
+      return {
+        party: f.party,
+        return_type: 'EMI_DATE_DRIFT',
+        return_date: f.date,
+        return_amount: f.amount,
+        balance_before: prev ? num(prev.balance) : null,
+        balance_after: src ? num(src.balance) : null,
+        charge_date: '',
+        charge_amount: 0,
+        charge_description: f.notes,
+        bounce_type: 'INFERRED_DATE_DRIFT',
+      };
+    }),
+  ];
 
   const cc_vendor_funding = detectCcVendorFunding(transactions);
   const monthly_cashflow = detectMonthlyCashflow(transactions, detectors.ecs_returns);
@@ -563,9 +1487,14 @@ export function computeCreditAssessment(transactions, fullText, detectors, accou
   const { risk_flags, watchlist, positive_signals } = detectRiskFlagsWatchlistPositive(transactions, detectors, salary, emi_payment_grid);
 
   const bounceCount = detectors.ecs_returns.filter(r => r.return_date).length;
+  // LOW-confidence cashout_patterns findings (e.g. CREDIT_FUNDS_CC_REPAYMENT)
+  // deliberately do NOT factor in here - they're genuinely ambiguous,
+  // ordinary liquidity rotation, not a risk signal on their own.
+  const hasHighCashout = (detectors.cashout_patterns || []).some(f => f.confidence === 'HIGH');
+  const hasMediumCashout = (detectors.cashout_patterns || []).some(f => f.confidence === 'MEDIUM');
   let overall_risk = 'LOW', recommendation = 'PROCEED';
-  if (foir_estimate >= 50 || bounceCount >= 2 || detectors.small_loan_disbursals.frequent) { overall_risk = 'HIGH'; recommendation = 'REJECT'; }
-  else if (foir_estimate >= 30 || bounceCount === 1 || detectors.cc_card_rotation.detected) { overall_risk = 'MEDIUM'; recommendation = 'CAUTION'; }
+  if (foir_estimate >= 50 || bounceCount >= 2 || detectors.small_loan_disbursals.frequent || hasHighCashout) { overall_risk = 'HIGH'; recommendation = 'REJECT'; }
+  else if (foir_estimate >= 30 || bounceCount === 1 || detectors.cc_card_rotation.detected || hasMediumCashout) { overall_risk = 'MEDIUM'; recommendation = 'CAUTION'; }
 
   const summary_notes = [
     salary ? `Recurring credit pattern detected (${salary.list.length}x, avg Rs.${estimated_monthly_income.toLocaleString('en-IN')}).` : 'No clear recurring salary pattern found - income estimate uses average monthly credits.',
@@ -587,8 +1516,10 @@ export function computeCreditAssessment(transactions, fullText, detectors, accou
     },
     credit_assessment: {
       overall_risk, income_stability, estimated_monthly_income, total_emi_burden, foir_estimate, recommendation, summary_notes,
+      employer_name: salary ? salary.employer_name : '',
+      salary_date: salary ? salary.salary_date : '',
     },
-    risk_flags, watchlist, positive_signals, emi_obligations, emi_payment_grid, cc_vendor_funding, monthly_cashflow, repeat_parties, secondary_income,
+    risk_flags, watchlist, positive_signals, emi_obligations, emi_payment_grid, emi_date_drift, ecs_returns, cc_vendor_funding, monthly_cashflow, repeat_parties, secondary_income,
   };
 }
 
@@ -672,10 +1603,54 @@ export function linesToTransactions(lines, defaultYear = '', mergeStrategy = 'TR
     }
     heldLine = null;
   };
-  for (const raw of lines) {
-    const line = raw.replace(/\s+/g, ' ').trim();
+  // ICICI's PDF table renders the S.No. column at a slightly different
+  // baseline than the rest of its own row often enough that pdfToLines()'s
+  // row-bucketing keeps it on the SAME reconstructed line as the date, but
+  // the S.No. is otherwise indistinguishable from real narration text - a
+  // bare "9 04.08.2026 ... EBA//20260804183025 1300.00 279940.65" row would
+  // otherwise leave a stray "9" in the parsed description. Only strips a
+  // short (1-3 digit) leading token when it's immediately followed by
+  // something date-shaped, so this can't eat a legitimate narration that
+  // happens to start with a number. Scoped to HEADER_AND_TRAILING
+  // (ICICI/PNB) since that's the only observed layout with this artifact.
+  const SNO_PREFIX_RE = /^(\d{1,3})\s+(?=\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b|\d{1,2}[-\s][A-Za-z]{3}\b)/;
+  // Confirmed real (not a rendering artifact): some ICICI statement export
+  // templates embed literal `<style fontName='...' fontSize='...'>text
+  // </style>` markup directly in the extracted PDF text layer around each
+  // narration fragment. Stripped as early as possible - right when `line`
+  // is first built from the raw row text, before ANY keyword matching,
+  // partyKey(), or display - so every downstream consumer benefits, not
+  // just this function. Keeps the inner text, drops only the tags
+  // themselves.
+  const STYLE_TAG_RE = /<\/?style[^>]*>/gi;
+  // Pre-pass: find the index of the LAST line that will actually parse as
+  // a real transaction row (has both a date and an amount). Anything AFTER
+  // it, if it never becomes part of a LATER transaction (there is none by
+  // definition), is trailing text at the TRUE end of the document - a
+  // bank's own sign-off/footer boilerplate ("Sincerly, Team ICICI Bank" -
+  // the bank's own wording, typo included, confirmed real) rather than a
+  // continuation of the last real transaction's narration. Every bank's
+  // exact sign-off wording differs, so this is positional (before vs.
+  // after the last real row), not a keyword list to maintain - the same
+  // root problem class as the S.No. leak above, just at the other end of
+  // the document.
+  let lastTxnLineIndex = -1;
+  lines.forEach((raw, i) => {
+    const cleaned = raw.replace(STYLE_TAG_RE, ' ').replace(/\s+/g, ' ').trim();
+    if (!cleaned || NON_TXN_LABELS.some(l => cleaned.toUpperCase().includes(l))) return;
+    const hasDate = DATE.test(cleaned) || (defaultYear && MONTH_DAY_NO_YEAR.test(cleaned));
+    const hasAmount = !!cleaned.match(AMT);
+    if (hasDate && hasAmount) lastTxnLineIndex = i;
+  });
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const raw = lines[lineIdx];
+    let line = raw.replace(STYLE_TAG_RE, ' ').replace(/\s+/g, ' ').trim();
     if (!line) continue;
     if (NON_TXN_LABELS.some(l => line.toUpperCase().includes(l))) { heldLine = null; pending = ''; trailingTarget = null; continue; }
+    if (mergeStrategy === 'HEADER_AND_TRAILING') {
+      const snoMatch = line.match(SNO_PREFIX_RE);
+      if (snoMatch) line = line.slice(snoMatch[0].length);
+    }
     let dm = line.match(DATE);
     let resolvedDate = dm ? dm[0] : '';
     if (!dm && defaultYear) {
@@ -684,6 +1659,10 @@ export function linesToTransactions(lines, defaultYear = '', mergeStrategy = 'TR
     }
     const amounts = line.match(AMT);
     if (!dm || !amounts) {
+      // Nothing left to attach to at the true end of the document -
+      // discard rather than merging into the last transaction's
+      // description or holding it for a "next" header that will never come.
+      if (lastTxnLineIndex >= 0 && lineIdx > lastTxnLineIndex) { heldLine = null; continue; }
       if (mergeStrategy === 'TRAILING_ONLY') {
         if (trailingTarget && trailingCount < MAX_TRAILING_LINES) {
           trailingTarget.description = (trailingTarget.description + ' ' + line).replace(/\s+/g, ' ').trim();
@@ -710,7 +1689,7 @@ export function linesToTransactions(lines, defaultYear = '', mergeStrategy = 'TR
     if (isFirst && amount > 0) {
       const u = desc.toUpperCase();
       if (/\bCR\b|CREDIT/.test(u) || has(desc, DICT.salaryKeywords)) credit = amount;
-      else if (/\bDR\b|DEBIT/.test(u) || has(desc, DICT.returnWords) || has(desc, DICT.emiKeywords)) debit = amount;
+      else if (/\bDR\b|DEBIT/.test(u) || has(desc, DICT.returnWords) || hasEmiKeyword(desc)) debit = amount;
     }
     const txn = { date: resolvedDate, description: desc, debit, credit, balance };
     txns.push(txn);
@@ -776,21 +1755,32 @@ function categorizeTxn(t) {
   if (num(t.credit) > 0 && has(d, DICT.lenders)) return 'CC_FUNDING';
   if (num(t.credit) > 0 && has(d, DICT.posAggregators)) return 'CC_FUNDING';
   if (num(t.credit) > 0 && has(d, DICT.salaryKeywords)) return 'SALARY';
-  if (num(t.debit) > 0 && has(d, DICT.emiKeywords)) return 'EMI';
+  if (num(t.debit) > 0 && hasEmiKeyword(d)) return 'EMI';
   if (has(d, DICT.atm)) return 'ATM';
   if (has(d, DICT.gst)) return 'GST';
   if (has(d, DICT.insurance)) return 'INSURANCE';
   if (has(d, DICT.epf)) return 'EPF';
-  if (has(d, DICT.brokers)) return 'STOCK';
+  if (isMutualFundTxn(d)) return 'MUTUAL_FUND';
+  if (isBrokerTxn(d)) return 'STOCK';
   if (has(d, DICT.forex)) return 'FOREX';
+  if (hasBillPaymentApp(d)) return 'CREDIT_CARD_BILL_PAYMENT';
   if (/UPI/i.test(d)) return 'UPI';
-  if (has(d, DICT.transferRails)) return 'TRANSFER';
+  if (hasTransferRail(d)) return 'TRANSFER';
   return 'OTHER';
 }
-function buildAllTransactions(transactions) {
+// Exported (unlike most helpers in this file) specifically so external
+// tooling - e.g. scripts/smoke-test-bsa.js - can build a complete,
+// analyzeBankStatement()-shaped result object from a synthetic/pre-parsed
+// transaction list without duplicating this mapping logic.
+export function buildAllTransactions(transactions) {
   return transactions.map(t => {
     const category = categorizeTxn(t);
-    return { date: t.date, description: t.description, debit: t.debit, credit: t.credit, balance: t.balance, category, flag: (category === 'BOUNCE' || category === 'GAMBLING') ? category : '' };
+    // Same partyKey() every other detector in this file already uses for
+    // internal grouping, just surfaced directly here rather than only
+    // computed and discarded - empty string (partyKey()'s own existing
+    // behavior) when nothing distinctive is left after stripping, never a
+    // fabricated fallback.
+    return { date: t.date, description: t.description, debit: t.debit, credit: t.credit, balance: t.balance, category, flag: (category === 'BOUNCE' || category === 'GAMBLING') ? category : '', entity: partyKey(t.description) };
   });
 }
 
@@ -816,7 +1806,23 @@ export async function analyzeBankStatement(arrayBuffer, accountHolderOverride = 
   const mergeStrategy = detectMergeStrategy(earlyBankName);
   const transactions = linesToTransactions(lines, defaultYear, mergeStrategy);
   const fullText = lines.join('\n');
-  const detectors = runBehaviourDetectors(transactions, accountHolderOverride);
+  // Resolve the account holder the SAME way computeCreditAssessment()
+  // resolves it internally (override, falling back to the statement's own
+  // detected header) before handing it to runBehaviourDetectors(). Without
+  // this, runBehaviourDetectors()'s internal detectSalary/
+  // detectSecondaryIncome calls (used only to build irregular_credits) see
+  // an empty holderTokens whenever accountHolderOverride is '' - which is
+  // every real call site (Dashboard.js, Admin.js both always pass '') -
+  // while computeCreditAssessment()'s OWN calls correctly use the
+  // statement-detected name. That mismatch let detectSecondaryIncome's
+  // self-transfer exclusion (`holderTokens.some(tok => key.includes(tok))`)
+  // disagree between the two call sites: a self-transfer-to-own-account
+  // credit group could get silently swallowed into BOTH functions'
+  // "claimed" sets for different reasons, vanishing from secondary_income
+  // AND irregular_credits at once instead of correctly surfacing in
+  // irregular_credits.
+  const resolvedAccountHolder = accountHolderOverride || detectHeader(fullText, transactions).account_holder;
+  const detectors = runBehaviourDetectors(transactions, resolvedAccountHolder);
   const assessment = computeCreditAssessment(transactions, fullText, detectors, accountHolderOverride);
   return {
     transactionCount: transactions.length,
