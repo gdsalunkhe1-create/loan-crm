@@ -303,8 +303,14 @@ function parseCibil(raw) {
   // (customer: PRADYUMNA ISHWAR GONDIL) prints "Name  PRADYUMNA ISHWAR..."
   // with no title at all, which the old title-required regex silently
   // missed entirely, leaving customerName as ''.
-  const nf = raw.match(/\bName\s+(?:(MR|MS|MRS|DR)\.?\s+)?([A-Z][A-Z ]{3,60}?)(?=\s*Date|\s*Gender|\n)/i)
+  const nf = raw.match(/(?<!Member\s)\bName\s+(?:(MR|MS|MRS|DR)\.?\s+)?([A-Z][A-Z .\/'-]{3,60}?)(?=\s*Date|\s*Gender|\n)/i)
   const customerName = nf ? ((nf[1] ? nf[1] + ' ' : '') + nf[2]).replace(/\s+/g, ' ').trim() : ''
+  const panM = raw.match(/(?:Income\s*Tax\s*ID\s*Number\s*\(PAN\)|PAN\s*Card\s*Number)[\s\S]{0,300}?\b([A-Z]{5}\d{4}[A-Z])\b/i)
+  const pan = panM ? panM[1] : ''
+  const mobileM = raw.match(/Mobile\s*Phone[\s\S]{0,60}?\b(\d{10})\b/i)
+  const mobile = mobileM ? mobileM[1] : ''
+  const emailM = raw.match(/\bEmail\b[\s\S]{0,300}?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/i)
+  const email = emailM ? emailM[1] : ''
   const rd = text.match(/(?:CIBIL\s*Score\s*is\s*\d{3}\s*as\s*of\s*Date|Report\s*Date)\s*:\s*(\d{2}\/\d{2}\/\d{4})/i) ||
              text.match(/\bDate\s*:\s*(\d{2}\/\d{2}\/\d{4})/)
   const anchor = rd ? dmy(rd[1]) : new Date()
@@ -390,7 +396,7 @@ function parseCibil(raw) {
       status: cibilStatusTag,
     })
   }
-  return { accounts, score, customerName, enquiries, reportDate: anchor, pageGaps }
+  return { accounts, score, customerName, pan, mobile, email, enquiries, reportDate: anchor, pageGaps }
 }
 
 // ── PAISABAZAAR PARSER ────────────────────────────────────────────────────────
@@ -406,6 +412,13 @@ function parsePaisaBazaar(text) {
   const nm = text.match(/Hey\s+([A-Za-z][A-Za-z ]{2,60}?),/i) ||
              text.match(/Hey\s+([A-Za-z][A-Za-z ]{2,60})\s*\n/i)
   const customerName = nm ? nm[1].trim() : ''
+
+  const panM = text.match(/(?:Income\s*Tax\s*ID\s*Number\s*\(PAN\)|PAN\s*Card\s*Number)[\s\S]{0,300}?\b([A-Z]{5}\d{4}[A-Z])\b/i)
+  const pan = panM ? panM[1] : ''
+  const mobileM = text.match(/Mobile\s*Phone[\s\S]{0,60}?\b(\d{10})\b/i)
+  const mobile = mobileM ? mobileM[1] : ''
+  const emailM = text.match(/\bEmail\b[\s\S]{0,300}?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/i)
+  const email = emailM ? emailM[1] : ''
 
   const rdM = text.match(/Report\s*Date\s*:?\s*(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/i)
   const anchor = rdM ? mkDate(rdM[1], rdM[2], rdM[3]) : new Date()
@@ -540,7 +553,7 @@ function parsePaisaBazaar(text) {
       settlement, writtenOff, writtenOffTotal, suitFiled, status
     })
   }
-  return { accounts, score, customerName, enquiries, reportDate }
+  return { accounts, score, customerName, pan, mobile, email, enquiries, reportDate }
 }
 
 const inr = (v) => {
@@ -566,6 +579,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const ocrCancelRef = useRef(false)
   const [score,setScore]                 = useState(null)
   const [customerName,setCustomerName]   = useState('')
+  const [customerPAN,setCustomerPAN]     = useState('')
+  const [customerMobile,setCustomerMobile] = useState('')
+  const [customerEmail,setCustomerEmail] = useState('')
   const [enquiries,setEnquiries]         = useState(null)
   const [reportDate,setReportDate]       = useState(null)
   const [showAll,setShowAll]             = useState(false)
@@ -599,7 +615,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
   const parseFile = useCallback(async(file,password='')=>{
     setError('');setParsing(true);setPwdErr('');setFormatWarning('')
-    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setEnquiries(null);setDebugText('');setReportDate(null);setPageGapWarning('');setPageGapInfo(null);setOcrLog('')
+    setAccounts([]);setFormat('');setScore(null);setCustomerName('');setCustomerPAN('');setCustomerMobile('');setCustomerEmail('');setEnquiries(null);setDebugText('');setReportDate(null);setPageGapWarning('');setPageGapInfo(null);setOcrLog('')
     try{
       const { text, pdf, pdfjsLib } = await extractTextFromPDF(file,password)
       pdfDocRef.current = pdf
@@ -655,6 +671,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
       if(result.accounts.length===0){ setError(`Detected "${fmt}" but 0 accounts found. Check Debug Panel.`); setShowDebug(true) }
       setAccounts(result.accounts); setScore(result.score); setCustomerName(result.customerName); setEnquiries(result.enquiries||null)
+      setCustomerPAN(result.pan||''); setCustomerMobile(result.mobile||''); setCustomerEmail(result.email||'')
       setReportDate(result.reportDate || null)
       if (result.pageGaps) {
         const { missing, total } = result.pageGaps
@@ -709,9 +726,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   }
 
   // "Recover this page" action for pages the text layer missed entirely (see detectMissingPages).
-  // Runs OCR page-by-page (sequentially, since Tesseract is CPU-heavy) but auto-continues through
-  // every missing page on a single click, updating ocrLog after each page so progress is visible
-  // without repeated clicks. Cancellable via ocrCancelRef — see the unmount effect above.
+  // Runs OCR in batches of BATCH_SIZE concurrent pages (a small worker pool, one page per worker)
+  // rather than one page at a time, auto-continuing through every missing page on a single click
+  // and updating ocrLog as pages finish so progress is visible without repeated clicks.
+  // Cancellable via ocrCancelRef — see the unmount effect above.
   const runOcrRecovery = async () => {
     if (!pageGapInfo || !pdfDocRef.current) return
     setOcrBusy(true)
@@ -722,16 +740,17 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     const wholeDocEmpty = pageGapInfo.missing.length === pageGapInfo.total
     const log = []
     let summaryTried = false
-    let worker = null
+    const BATCH_SIZE = 3
+    let workers = []
     try {
       const Tesseract = await loadTesseract()
-      // One worker for the whole run — createWorker('eng') loads the English model and
-      // initializes it once, instead of reloading it on every page's recognize() call.
-      worker = await Tesseract.createWorker('eng')
-      for (let i = 0; i < pagesToTry.length; i++) {
-        if (ocrCancelRef.current) return
-        const pageNum = pagesToTry[i]
-        setOcrLog([...log, `Recovering page ${pageNum} (${i + 1} of ${pagesToTry.length})...`].join('\n'))
+      // A pool of workers processed concurrently (one page per worker) instead of a single
+      // worker running every page sequentially — cuts total OCR time on multi-page documents
+      // roughly BATCH_SIZE-fold. createWorker('eng') loads the English model and initializes
+      // each worker once, up front.
+      workers = await Promise.all(Array.from({ length: BATCH_SIZE }, () => Tesseract.createWorker('eng')))
+
+      const processPage = async (pageNum, worker) => {
         try {
           const ocrText = await ocrPage(pdfDocRef.current, pageNum, worker)
           if (ocrCancelRef.current) return
@@ -754,19 +773,26 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         } catch (pageErr) {
           log.push(`Page ${pageNum}: OCR failed — ${pageErr.message}`)
         }
+        if (!ocrCancelRef.current) setOcrLog(log.join('\n'))
+      }
+
+      for (let b = 0; b < pagesToTry.length; b += BATCH_SIZE) {
         if (ocrCancelRef.current) return
-        setOcrLog(log.join('\n'))
+        const batch = pagesToTry.slice(b, b + BATCH_SIZE)
+        setOcrLog([...log, `Recovering page(s) ${batch.join(', ')} (${b + 1}-${b + batch.length} of ${pagesToTry.length})...`].join('\n'))
+        await Promise.all(batch.map((pageNum, j) => processPage(pageNum, workers[j])))
       }
     } catch (e) {
       if (!ocrCancelRef.current) setOcrLog('OCR recovery failed to start: ' + e.message)
     } finally {
-      if (worker) await worker.terminate()
+      await Promise.all(workers.map(w => w.terminate()))
       if (!ocrCancelRef.current) setOcrBusy(false)
     }
   }
 
   const reset=()=>{
     setAccounts([]);setFileName('');setFormat('');setScore(null);setCustomerName('')
+    setCustomerPAN('');setCustomerMobile('');setCustomerEmail('')
     setSelectedLead(null);setLeadSearch('');setEnquiries(null);setFormatWarning('');setReportDate(null);setPageGapWarning('');setPageGapInfo(null);setOcrLog('');pdfDocRef.current=null
     setDebugText('');setShowDebug(false);setNeedsPwd(false);setPwd('');setPwdErr('')
   }
@@ -911,6 +937,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
           <div style={{...S.crd,padding:'20px 24px',display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
             {customerName&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>👤 {customerName}</div>}
             {reportDate&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📅 {fmtD(reportDate)}</div>}
+            {customerMobile&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📱 {customerMobile}</div>}
+            {customerEmail&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📧 {customerEmail}</div>}
+            {customerPAN&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>🆔 {customerPAN}</div>}
             {score!==null&&(
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <div style={{background:scB(score),color:scC(score),padding:'8px 20px',borderRadius:24,fontWeight:800,fontSize:22}}>{score}</div>
