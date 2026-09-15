@@ -719,7 +719,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     try{
       const accountsForExport = accounts.map(a=>({...a, emi: monthlyObligation(a) || a.emi}))
       await downloadCibilWorkbook({
-        customerName, score, format, reportDate, accounts: accountsForExport, enquiries,
+        customerName, score, format, reportDate,
+        mobile: customerMobile, email: customerEmail, pan: customerPAN,
+        accounts: accountsForExport, enquiries,
         fileLabel: customerName || 'Report'
       })
     }catch(e){ setError('Excel export failed: '+e.message) }
@@ -937,9 +939,6 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
           <div style={{...S.crd,padding:'20px 24px',display:'flex',alignItems:'center',gap:20,flexWrap:'wrap'}}>
             {customerName&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>👤 {customerName}</div>}
             {reportDate&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📅 {fmtD(reportDate)}</div>}
-            {customerMobile&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📱 {customerMobile}</div>}
-            {customerEmail&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>📧 {customerEmail}</div>}
-            {customerPAN&&<div style={{fontSize:15,fontWeight:700,color:'#2D3748'}}>🆔 {customerPAN}</div>}
             {score!==null&&(
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <div style={{background:scB(score),color:scC(score),padding:'8px 20px',borderRadius:24,fontWeight:800,fontSize:22}}>{score}</div>

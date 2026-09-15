@@ -55,7 +55,7 @@ function styleHeaderRow(row, fill = HEADER_FILL, font = HEADER_FONT) {
   row.height = 20
 }
 
-export async function downloadCibilWorkbook({ customerName, score, format, reportDate, accounts = [], enquiries, fileLabel }) {
+export async function downloadCibilWorkbook({ customerName, score, format, reportDate, mobile, email, pan, accounts = [], enquiries, fileLabel }) {
   const wb = new ExcelJS.Workbook()
   wb.creator = 'CALL-Q PRO'
   wb.created = new Date()
@@ -133,6 +133,9 @@ export async function downloadCibilWorkbook({ customerName, score, format, repor
     ['Report Date', reportDate ? fmtDMY(new Date(reportDate)) : ''],
     ['Credit Score', score ?? ''],
     ['Report Source', format === 'cibil' ? 'CIBIL.com' : format === 'paisabazaar' ? 'PaisaBazaar' : format || ''],
+    ['Mobile Number', mobile || ''],
+    ['Email', email || ''],
+    ['PAN Number', pan || ''],
     ['Total Accounts (parsed)', accounts.length],
     ['Total High Credit/Sanctioned Amount', totalHighCredit],
     ['Current Balance (all accounts)', currentBalance],
