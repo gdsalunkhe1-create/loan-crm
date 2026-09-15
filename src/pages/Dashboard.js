@@ -1385,13 +1385,26 @@ function AgentDashboard({ userId }) {
   // role org-wide instead of only whoever the RLS policy lets see the underlying row.
   const broadcastDisbursement=async(assignedTo,disbursedAmount,leadName,leadId)=>{
     try{
-      const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString()
+      const monthStr=istToday().slice(0,7)
+      const [byy,bmm]=monthStr.split('-').map(Number)
+      const monthStart=new Date(byy,bmm-1,1)
+      const monthEndExclusive=new Date(byy,bmm,1)
       const [{data:agentProfile},{data:monthRows}]=await Promise.all([
         supabase.from('profiles').select('full_name').eq('id',assignedTo).single(),
-        supabase.from('leads').select('id,assigned_to,disbursed_amount').eq('status','Disbursed').gte('updated_at',monthStart)
+        supabase.from('leads').select('id,assigned_to,disbursed_amount,status,stage_history').eq('status','Disbursed')
       ])
+      // Same getStatusChangeTime/isCurrentlyInStatus month-scoping computeTargetProgress
+      // uses for the Per-Agent Breakdown MTD figures (see its own comment on this same
+      // guard) — updated_at alone drifts from "this month" the instant an old disbursed
+      // lead gets any unrelated edit, which bumps updated_at without it having disbursed
+      // this month. That's what was making this total read as an all-time sum.
       const totals={}
-      ;(monthRows||[]).forEach(r=>{ totals[r.assigned_to]=(totals[r.assigned_to]||0)+(parseFloat(r.disbursed_amount)||0) })
+      ;(monthRows||[]).forEach(l=>{
+        if(!isCurrentlyInStatus(l,'Disbursed')) return
+        const t=getStatusChangeTime(l,'Disbursed')
+        if(!t||t<monthStart||t>=monthEndExclusive) return
+        totals[l.assigned_to]=(totals[l.assigned_to]||0)+disbAmt(l)
+      })
       if(!(monthRows||[]).some(r=>r.id===leadId)){
         totals[assignedTo]=(totals[assignedTo]||0)+(parseFloat(disbursedAmount)||0)
       }
