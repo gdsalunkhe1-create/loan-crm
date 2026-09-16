@@ -735,6 +735,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const runOcrRecovery = async () => {
     if (!pageGapInfo || !pdfDocRef.current) return
     setOcrBusy(true)
+    // Clear the initial "PDF appears empty or image-only" failure from parseFile — that error
+    // fired once, synchronously, before OCR ever ran, and nothing since has cleared it. Without
+    // this it sits on screen forever showing a stale failure while OCR recovery runs fine underneath.
+    setError('')
     ocrCancelRef.current = false
     const pagesToTry = pageGapInfo.missing
     // Whole-document-empty case: no page anywhere had a text layer, so parseCibil/parsePaisaBazaar
