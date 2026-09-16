@@ -47,49 +47,15 @@ async function ocrPage(pdf, pageNum, worker) {
   return data.text || ''
 }
 
-// OCR text is noisy (misread characters, collapsed spacing, broken line breaks), so this uses
-// looser matching than the main text-layer regexes — tolerant of a missing space or two, but
-// still anchored to the same field labels CIBIL always prints. Returns null if it can't find
-// enough to be worth adding (avoids pushing garbage rows from a failed OCR read).
-function extractAccountFromOcrText(raw) {
-  const t = raw.replace(/[|]/g, 'I').replace(/\s+/g, ' ')
-  const g = (rx) => { const m = t.match(rx); return m ? m[1].replace(/,/g, '').trim() : '' }
-  const bankName = g(/Member\s*Name\s*[:.]?\s*([A-Z][A-Z &.]{2,40}?)(?=\s*(?:Account\s*Type|https?:))/i)
-  const loanType = g(/Account\s*Type\s*[:.]?\s*([A-Za-z][A-Za-z /]{2,40}?)(?=\s*(?:Account\s*Number|Ownership))/i)
-  const accountNum = g(/Account\s*Number\s*[:.]?\s*([A-Za-z0-9]{4,25})/i)
-  const loanAmount = g(/Sanctioned\s*Amount\s*[₹Rs.]*\s*([\d,]{3,12})/i) || g(/High\s*Credit\s*[₹Rs.]*\s*([\d,]{3,12})/i)
-  const outstanding = g(/Current\s*Balance\s*[₹Rs.]*\s*([\d,]{1,12})/i)
-  const overdue = g(/Amount\s*Overdue\s*[₹Rs.]*\s*([\d,]{1,12})/i)
-  const openDate = g(/Date\s*Opened\s*\/?\s*Disbursed\s*[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i)
-  const closedDateM = t.match(/Date\s*Closed\s*[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i)
-  const closedDate = closedDateM ? closedDateM[1] : ''
-  if (!bankName || !loanType) return null
-  return {
-    bankName, loanType, accountNum, loanAmount, outstanding,
-    emi: '', openDate, closedDate,
-    dpds: '', overdue: (!overdue || overdue === '0') ? '' : overdue,
-    settlement: '', writtenOff: '',
-    status: closedDate ? 'Closed' : 'Active',
-    ocrExtracted: true,
-  }
-}
-
-// Same loose/tolerant matching as extractAccountFromOcrText, but for the report-level fields
-// (score/name/date) instead of an account row. Only meaningful against page 1's OCR text — used
-// once per whole-document-empty PDF, since that's the only case where parseCibil/parsePaisaBazaar
-// never got a text layer to read these from in the first place.
-function extractSummaryFromOcrText(raw) {
-  const t = raw.replace(/[|]/g, 'I').replace(/\s+/g, ' ')
-  const g = (rx) => { const m = t.match(rx); return m ? m[1].trim() : '' }
-  const scoreStr = g(/CIBIL\s*(?:TransUnion\s*)?Score\s*[:.]?\s*(\d{3})\b/i)
-  const customerName = g(/\bName\s*[:.]?\s*([A-Z][A-Za-z .]{2,40}?)(?=\s*(?:Date\s*of\s*Birth|Gender|Address|Mobile|Email|PAN|Father|$))/i)
-  const reportDate = g(/\bDate\s*(?!\s*of\s*Birth)[:.]?\s*(\d{2}\/\d{2}\/\d{4})/i)
-  return {
-    score: scoreStr ? parseInt(scoreStr, 10) : null,
-    customerName,
-    reportDate,
-  }
-}
+// NOTE: OCR'd page text used to be parsed per page, independently, as each page finished (see
+// runOcrRecovery). That broke any account whose fields span a page boundary — e.g. a bank's
+// "Member Name"/"Sanctioned Amount" on one recovered page and "Current Balance"/"EMI Amount" on
+// the next — since a single page's isolated text never contains both halves. runOcrRecovery now
+// joins every recovered page's OCR text into one continuous string (in page order) and runs the
+// real parseCibil/parsePaisaBazaar just once against the joined result, the same way the normal
+// text-layer path already does — so multi-page accounts join correctly and multiple accounts
+// among the recovered pages are all still found (a single-shot per-field regex over the whole
+// joined string, as the old per-page extractor did, would only ever have caught the first one).
 
 // pdf.js emits text items in content-stream order, which for grid/table-based printed
 // reports (like CIBIL.com's and PaisaBazaar's account-detail pages) does not always match
@@ -745,6 +711,11 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   // "Try OCR recovery" button below still calls this too, as a fallback/retry, in which case it
   // reads pageGapInfo from state as before. A raw DOM event (e.g. the button's click event) isn't
   // a valid override — the .missing check below rejects it and falls back to state.
+  //
+  // Each page's OCR text is only collected here as it finishes — the actual account/summary
+  // parsing runs once, at the end, against all recovered pages joined in document order (see the
+  // NOTE above ocrPage()) so that fields split across a page boundary (label on one recovered
+  // page, values on the next) get joined correctly instead of being parsed in isolation per page.
   const runOcrRecovery = async (gapInfoOverride) => {
     const gapInfo = (gapInfoOverride && gapInfoOverride.missing) ? gapInfoOverride : pageGapInfo
     if (!gapInfo || !pdfDocRef.current) return
@@ -756,12 +727,16 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     ocrCancelRef.current = false
     const pagesToTry = gapInfo.missing
     // Whole-document-empty case: no page anywhere had a text layer, so parseCibil/parsePaisaBazaar
-    // never ran and never populated score/customerName/reportDate — recover them once from page 1.
+    // never ran at all — recover score/customerName/reportDate/enquiries/etc. from the joined OCR
+    // text too, the same way parseFile would have from a real text layer.
     const wholeDocEmpty = gapInfo.missing.length === gapInfo.total
     const log = []
-    let summaryTried = false
     const BATCH_SIZE = 3
     let workers = []
+    // Keyed by page number, not push order — pages within a batch resolve via Promise.all in
+    // whichever order OCR finishes, not necessarily page order, so this has to be joined back by
+    // page number afterward rather than relying on completion order.
+    const pageTexts = {}
     try {
       const Tesseract = await loadTesseract()
       // A pool of workers processed concurrently (one page per worker) instead of a single
@@ -772,25 +747,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
       const processPage = async (pageNum, worker) => {
         try {
-          const ocrText = await ocrPage(pdfDocRef.current, pageNum, worker)
-          if (ocrCancelRef.current) return
-
-          if (wholeDocEmpty && pageNum === 1 && !summaryTried) {
-            summaryTried = true
-            const summary = extractSummaryFromOcrText(ocrText)
-            if (summary.score !== null) setScore(prev => prev === null ? summary.score : prev)
-            if (summary.customerName) setCustomerName(prev => prev ? prev : summary.customerName)
-            if (summary.reportDate) setReportDate(prev => prev ? prev : summary.reportDate)
-          }
-
-          const extracted = extractAccountFromOcrText(ocrText)
-          if (extracted) {
-            setAccounts(prev => [...prev, extracted])
-            log.push(`Page ${pageNum}: recovered ${extracted.bankName} — ${extracted.loanType} (verify against PDF)`)
-          } else {
-            log.push(`Page ${pageNum}: OCR ran but couldn't confidently extract an account — check this page manually`)
-          }
+          pageTexts[pageNum] = await ocrPage(pdfDocRef.current, pageNum, worker)
+          if (!ocrCancelRef.current) log.push(`Page ${pageNum}: OCR complete`)
         } catch (pageErr) {
+          console.error(`OCR failed on page ${pageNum}:`, pageErr)
           log.push(`Page ${pageNum}: OCR failed — ${pageErr.message}`)
         }
         if (!ocrCancelRef.current) setOcrLog(log.join('\n'))
@@ -802,6 +762,38 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         setOcrLog([...log, `Recovering page(s) ${batch.join(', ')} (${b + 1}-${b + batch.length} of ${pagesToTry.length})...`].join('\n'))
         await Promise.all(batch.map((pageNum, j) => processPage(pageNum, workers[j])))
       }
+      if (ocrCancelRef.current) return
+
+      // Join in page order (not completion order) — same principle as extractTextFromPDF's own
+      // page-by-page concatenation for the normal text-layer path.
+      const joinedText = pagesToTry.map(p => pageTexts[p] || '').join('\n')
+      const tagOcr = accts => accts.map(a => ({ ...a, ocrExtracted: true }))
+
+      if (wholeDocEmpty) {
+        const fmt = source || detectFormat(joinedText)
+        let result = { accounts: [], score: null, customerName: '', pan: '', mobile: '', email: '', enquiries: null, reportDate: null }
+        if (fmt === 'cibil')            result = parseCibil(joinedText)
+        else if (fmt === 'paisabazaar') result = parsePaisaBazaar(joinedText)
+        setFormat(fmt)
+        setAccounts(prev => [...prev, ...tagOcr(result.accounts)])
+        setScore(result.score)
+        setCustomerName(result.customerName)
+        setCustomerPAN(result.pan || '')
+        setCustomerMobile(result.mobile || '')
+        setCustomerEmail(result.email || '')
+        setEnquiries(result.enquiries || null)
+        setReportDate(result.reportDate || null)
+        log.push(`OCR complete — recovered ${result.accounts.length} account(s) from ${pagesToTry.length} page(s) (verify against PDF).`)
+      } else {
+        // Partial gap: score/customerName/etc. already came from the real text layer on the
+        // non-gap pages — only the recovered pages' accounts need adding here.
+        let result = { accounts: [] }
+        if (format === 'cibil')            result = parseCibil(joinedText)
+        else if (format === 'paisabazaar') result = parsePaisaBazaar(joinedText)
+        setAccounts(prev => [...prev, ...tagOcr(result.accounts)])
+        log.push(`OCR complete — recovered ${result.accounts.length} account(s) from ${pagesToTry.length} page(s) (verify against PDF).`)
+      }
+      setOcrLog(log.join('\n'))
     } catch (e) {
       if (!ocrCancelRef.current) setOcrLog('OCR recovery failed to start: ' + e.message)
     } finally {
