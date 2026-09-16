@@ -624,12 +624,19 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         // Whole-document version of the same gap the OCR recovery flow already handles per-page:
         // some export paths (e.g. "Microsoft: Print to PDF") flatten every page's text into vector
         // outlines with no text layer, so pdf.js reads 0 chars on every page. Previously this just
-        // threw and dead-ended — now it still fails the parse (nothing to auto-extract) but wires up
-        // the exact same page-gap/OCR-recovery UI as a partial gap, just for every page in the file.
+        // threw and dead-ended (showing a "Parse failed" error and waiting for a manual OCR-recovery
+        // click) — now it auto-starts OCR recovery immediately instead of stopping. No throw/setError
+        // here: this isn't a failure state anymore, so it shouldn't show one — the warning banner
+        // below still explains what's happening while OCR runs underneath it. gapInfo is passed
+        // directly into runOcrRecovery() rather than relying on the pageGapInfo state setter having
+        // taken effect yet (state updates aren't synchronous, and runOcrRecovery is called in the
+        // same tick as setPageGapInfo below).
         const total = pdf.numPages
-        setPageGapInfo({ missing: Array.from({length: total}, (_,i)=>i+1), total })
-        setPageGapWarning(`This PDF has no readable text on any of its ${total} pages — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery below can read it page by page automatically — for a ${total}-page report that can take a few minutes, so just let it run.`)
-        throw new Error('PDF appears empty or image-only.')
+        const gapInfo = { missing: Array.from({length: total}, (_,i)=>i+1), total }
+        setPageGapInfo(gapInfo)
+        setPageGapWarning(`This PDF has no readable text on any of its ${total} pages — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery has started automatically below — for a ${total}-page report that can take a few minutes, so just let it run.`)
+        runOcrRecovery(gapInfo)
+        return
       }
 
       const detected = detectFormat(text)
@@ -732,18 +739,25 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   // rather than one page at a time, auto-continuing through every missing page on a single click
   // and updating ocrLog as pages finish so progress is visible without repeated clicks.
   // Cancellable via ocrCancelRef — see the unmount effect above.
-  const runOcrRecovery = async () => {
-    if (!pageGapInfo || !pdfDocRef.current) return
+  //
+  // Auto-started by parseFile the instant a no-text-layer PDF is detected (gapInfoOverride is
+  // passed in that case, since pageGapInfo state hasn't committed yet at that point) — the manual
+  // "Try OCR recovery" button below still calls this too, as a fallback/retry, in which case it
+  // reads pageGapInfo from state as before. A raw DOM event (e.g. the button's click event) isn't
+  // a valid override — the .missing check below rejects it and falls back to state.
+  const runOcrRecovery = async (gapInfoOverride) => {
+    const gapInfo = (gapInfoOverride && gapInfoOverride.missing) ? gapInfoOverride : pageGapInfo
+    if (!gapInfo || !pdfDocRef.current) return
     setOcrBusy(true)
     // Clear the initial "PDF appears empty or image-only" failure from parseFile — that error
     // fired once, synchronously, before OCR ever ran, and nothing since has cleared it. Without
     // this it sits on screen forever showing a stale failure while OCR recovery runs fine underneath.
     setError('')
     ocrCancelRef.current = false
-    const pagesToTry = pageGapInfo.missing
+    const pagesToTry = gapInfo.missing
     // Whole-document-empty case: no page anywhere had a text layer, so parseCibil/parsePaisaBazaar
     // never ran and never populated score/customerName/reportDate — recover them once from page 1.
-    const wholeDocEmpty = pageGapInfo.missing.length === pageGapInfo.total
+    const wholeDocEmpty = gapInfo.missing.length === gapInfo.total
     const log = []
     let summaryTried = false
     const BATCH_SIZE = 3
@@ -857,11 +871,13 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
           <div>⚠️ {pageGapWarning}</div>
           <div style={{marginTop:8}}>
             <button
-              onClick={runOcrRecovery}
+              onClick={()=>runOcrRecovery()}
               disabled={ocrBusy}
               style={{background:ocrBusy?'#FCA5A5':'#DC2626',color:'#fff',border:'none',borderRadius:6,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:ocrBusy?'default':'pointer'}}
             >
-              {ocrBusy ? '🔍 Reading page(s) with OCR — this can take a bit…' : '🔍 Try OCR recovery on missing page(s)'}
+              {/* OCR recovery auto-starts as soon as a no-text-layer PDF is detected (see parseFile) —
+                  this button is now just a manual fallback/retry in case that auto-start ever doesn't fire. */}
+              {ocrBusy ? '🔍 Reading page(s) with OCR — this can take a bit…' : '🔍 Retry OCR recovery on missing page(s)'}
             </button>
           </div>
           {ocrLog&&<pre style={{marginTop:8,whiteSpace:'pre-wrap',fontSize:12,fontFamily:'inherit',fontWeight:400,color:'#7F1D1D'}}>{ocrLog}</pre>}
