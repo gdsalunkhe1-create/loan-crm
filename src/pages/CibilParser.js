@@ -30,11 +30,31 @@ function loadTesseract() {
   })
 }
 
+// Tesseract.js v5 (loaded from cdnjs, see loadTesseract) does NOT return a flat data.words array —
+// per-word confidence is nested under data.blocks[].paragraphs[].lines[].words[], each word carrying
+// {text, confidence, bbox, ...}. worker.recognize(canvas) with no third argument already defaults to
+// { blocks: true, text: true, hocr: true, tsv: true } (see tesseract.js's createWorker.js), so blocks
+// data is present without any extra opt-in — this just flattens it into a plain list.
+function flattenOcrWords(blocks) {
+  const words = []
+  for (const block of blocks || []) {
+    for (const para of block.paragraphs || []) {
+      for (const line of para.lines || []) {
+        for (const word of line.words || []) {
+          if (word && word.text) words.push({ text: word.text, confidence: word.confidence })
+        }
+      }
+    }
+  }
+  return words
+}
+
 // Renders a single PDF page to a canvas image and runs OCR on it, for pages whose text layer
 // pdf.js couldn't read at all (see detectMissingPages) — most commonly disputed-account blocks
 // CIBIL renders as a flattened image instead of selectable text. Takes an already-initialized
 // Tesseract worker (see runOcrRecovery) rather than the Tesseract module itself, so the 'eng'
-// model is loaded once per run instead of once per page.
+// model is loaded once per run instead of once per page. Returns the per-word confidence list
+// alongside the plain text — see annotateOcrConfidence below for how it's used.
 async function ocrPage(pdf, pageNum, worker) {
   const page = await pdf.getPage(pageNum)
   const viewport = page.getViewport({ scale: 2.5 })
@@ -44,7 +64,7 @@ async function ocrPage(pdf, pageNum, worker) {
   const ctx = canvas.getContext('2d')
   await page.render({ canvasContext: ctx, viewport }).promise
   const { data } = await worker.recognize(canvas)
-  return data.text || ''
+  return { text: data.text || '', words: flattenOcrWords(data.blocks) }
 }
 
 // NOTE: OCR'd page text used to be parsed per page, independently, as each page finished (see
@@ -522,6 +542,113 @@ function parsePaisaBazaar(text) {
   return { accounts, score, customerName, pan, mobile, email, enquiries, reportDate }
 }
 
+// ── OCR confidence + sanity-check helpers ─────────────────────────────────────
+// Per-field confidence via char-offset tracking (matching a field's position in the final parsed
+// text back to a position in the raw OCR output) was tried and dropped: cleanCibilText() above
+// iteratively rewrites the text (merging letter-spaced runs like "P R A D" -> "PRAD" over up to 12
+// passes) before parseCibil/parsePaisaBazaar ever see it, which shifts every downstream offset in a
+// way that can't be reliably mapped back to the original OCR words. Numeric field VALUES are
+// unaffected by that rewriting (the merge regexes only touch [A-Za-z] runs), so those can still be
+// located verbatim in a page's raw OCR words — this gets real per-field confidence for fields whose
+// exact digit string survives as a single OCR'd word, and falls back to a whole-account flag
+// (ocrLowConfidence, based on the account's attributed page(s) rather than the exact field) for
+// everything else.
+const OCR_CONFIDENCE_THRESHOLD = 70
+const OCR_NUMERIC_FIELDS = ['loanAmount', 'outstanding', 'emi', 'overdue', 'interestRate', 'tenure']
+
+const digitsOnly = (s) => String(s || '').replace(/[^\d.]/g, '')
+
+// Which recovered page(s) a given account's text actually came from — located by searching for its
+// account number (digits survive cleanCibilText's letter-merging untouched, so it's a reliable
+// literal substring of the raw per-page OCR text) or, failing that, its bank name. Falls back to
+// "could be any of the recovered pages in this batch" when neither is locatable, which is the least
+// precise case but keeps the whole-account flag meaningful rather than silently skipping it.
+function findAccountPages(acc, pagesToTry, pageTexts) {
+  const acctNo = digitsOnly(acc.accountNum)
+  if (acctNo.length >= 4) {
+    const hits = pagesToTry.filter(p => digitsOnly(pageTexts[p]).includes(acctNo))
+    if (hits.length) return hits
+  }
+  const bankTok = (acc.bankName || '').toUpperCase().replace(/[^A-Z]/g, '')
+  if (bankTok.length >= 4) {
+    const hits = pagesToTry.filter(p => String(pageTexts[p] || '').toUpperCase().replace(/[^A-Z]/g, '').includes(bankTok))
+    if (hits.length) return hits
+  }
+  return pagesToTry
+}
+
+// Mutates each account with ocrLowConfidence (whole-account fallback, from every word on its
+// attributed page(s)) and, where a numeric field's exact value could be matched to a single OCR'd
+// word, lowConfidenceFields (real per-field flags).
+function annotateOcrConfidence(accounts, pagesToTry, pageTexts, pageWords) {
+  for (const acc of accounts) {
+    const pages = findAccountPages(acc, pagesToTry, pageTexts)
+    const words = pages.flatMap(p => pageWords[p] || [])
+    if (!words.length) continue
+    acc.ocrLowConfidence = words.some(w => typeof w.confidence === 'number' && w.confidence < OCR_CONFIDENCE_THRESHOLD)
+    const lowFields = []
+    for (const field of OCR_NUMERIC_FIELDS) {
+      const val = digitsOnly(acc[field])
+      // Skip very short values (e.g. a 12-month tenure) — too short to match a specific OCR word
+      // without risking a coincidental hit against unrelated page noise (a page number, a year, etc).
+      if (val.replace('.', '').length < 3) continue
+      const hit = words.find(w => digitsOnly(w.text) === val)
+      if (hit && typeof hit.confidence === 'number' && hit.confidence < OCR_CONFIDENCE_THRESHOLD) {
+        lowFields.push(field)
+      }
+    }
+    if (lowFields.length) acc.lowConfidenceFields = lowFields
+  }
+}
+
+// Sanity validation — independent of OCR confidence, applies to every account (OCR-recovered or not).
+function isValidCalendarDate(str) {
+  if (!str) return true
+  let d, mo, y
+  let m = String(str).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (m) { d = +m[1]; mo = +m[2]; y = +m[3] }
+  else {
+    m = String(str).match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/)
+    if (m) { d = +m[1]; const mi = MON[m[2].slice(0, 3).toLowerCase()]; mo = mi != null ? mi + 1 : NaN; y = +m[3] }
+    else return true // unrecognised format — not confident enough to call it invalid
+  }
+  if (!d || !mo || !y) return false
+  const dt = new Date(y, mo - 1, d)
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d
+}
+
+// Outstanding balance can run over the original sanctioned/credit-limit amount (accrued interest,
+// penal charges) but not by an order of magnitude — 1.5x is a loose enough margin to not flag normal
+// accounts while still catching a figure that's clearly wrong (e.g. an OCR digit misread).
+const IMPLAUSIBLE_OUTSTANDING_MARGIN = 1.5
+
+function computeSanityWarnings(acc) {
+  const warnings = []
+  const loanAmt = parseInt(digitsOnly(acc.loanAmount)) || 0
+  const emiAmt = parseInt(digitsOnly(acc.emi)) || 0
+  const outAmt = parseInt(digitsOnly(acc.outstanding)) || 0
+  if (loanAmt > 0 && emiAmt > loanAmt) warnings.push('EMI exceeds loan amount')
+  if (loanAmt > 0 && outAmt > loanAmt * IMPLAUSIBLE_OUTSTANDING_MARGIN) warnings.push('Outstanding significantly exceeds loan amount')
+  if (!isValidCalendarDate(acc.openDate)) warnings.push('Open date is not a valid calendar date')
+  if (!isValidCalendarDate(acc.closedDate)) warnings.push('Closed date is not a valid calendar date')
+  return warnings
+}
+
+// Reasons to show a per-cell warning icon next to one specific field, combining the real per-field
+// OCR-confidence flags with whichever sanity check targets that same field — used by the table below.
+function fieldFlagReasons(acc, field) {
+  const reasons = []
+  if (acc.lowConfidenceFields && acc.lowConfidenceFields.includes(field)) reasons.push('Low OCR confidence for this figure — verify against the PDF')
+  if (field === 'emi' && acc.sanityWarnings && acc.sanityWarnings.includes('EMI exceeds loan amount')) reasons.push('EMI exceeds loan amount')
+  if (field === 'outstanding' && acc.sanityWarnings && acc.sanityWarnings.includes('Outstanding significantly exceeds loan amount')) reasons.push('Outstanding significantly exceeds loan amount')
+  return reasons
+}
+
+function FieldWarnIcon({ reasons }) {
+  if (!reasons || reasons.length === 0) return null
+  return <span title={reasons.join(' · ')} style={{marginLeft:4,color:'#DC2626',cursor:'help',fontSize:11}}>⚠️</span>
+}
+
 const inr = (v) => {
   if (!v || v === '0') return '—'
   const n = parseInt(String(v).replace(/[^0-9]/g, ''))
@@ -643,6 +770,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       }
 
       if(result.accounts.length===0){ setError(`Detected "${fmt}" but 0 accounts found. Check Debug Panel.`); setShowDebug(true) }
+      result.accounts.forEach(a => { a.sanityWarnings = computeSanityWarnings(a) })
       setAccounts(result.accounts); setScore(result.score); setCustomerName(result.customerName); setEnquiries(result.enquiries||null)
       setCustomerPAN(result.pan||''); setCustomerMobile(result.mobile||''); setCustomerEmail(result.email||'')
       setReportDate(result.reportDate || null)
@@ -701,10 +829,10 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   }
 
   // "Recover this page" action for pages the text layer missed entirely (see detectMissingPages).
-  // Runs OCR in batches of BATCH_SIZE concurrent pages (a small worker pool, one page per worker)
-  // rather than one page at a time, auto-continuing through every missing page on a single click
-  // and updating ocrLog as pages finish so progress is visible without repeated clicks.
-  // Cancellable via ocrCancelRef — see the unmount effect above.
+  // Runs OCR across a pool of POOL_SIZE concurrent workers (each with its own independent queue
+  // of pages, round-robin assigned) rather than one page at a time, auto-continuing through every
+  // missing page on a single click and updating ocrLog as pages finish so progress is visible
+  // without repeated clicks. Cancellable via ocrCancelRef — see the unmount effect above.
   //
   // Auto-started by parseFile the instant a no-text-layer PDF is detected (gapInfoOverride is
   // passed in that case, since pageGapInfo state hasn't committed yet at that point) — the manual
@@ -731,23 +859,32 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     // text too, the same way parseFile would have from a real text layer.
     const wholeDocEmpty = gapInfo.missing.length === gapInfo.total
     const log = []
-    const BATCH_SIZE = 3
+    // 4 concurrent workers is a balance point, not an arbitrary round number: each Tesseract
+    // worker loads its own ~10-20MB 'eng' model into browser memory (independent of the others —
+    // workers don't share loaded models), so going much higher risks slowing down or crashing
+    // lower-end machines rather than helping, while lower leaves speed on the table.
+    const POOL_SIZE = 4
     let workers = []
-    // Keyed by page number, not push order — pages within a batch resolve via Promise.all in
-    // whichever order OCR finishes, not necessarily page order, so this has to be joined back by
-    // page number afterward rather than relying on completion order.
+    // Keyed by page number, not push order — workers finish pages out of order relative to each
+    // other, so this has to be joined back by page number afterward rather than relying on
+    // completion order.
     const pageTexts = {}
+    // Per-page word-confidence lists, keyed the same way — used by annotateOcrConfidence below to
+    // flag low-confidence accounts/fields once the joined text has been parsed.
+    const pageWords = {}
     try {
       const Tesseract = await loadTesseract()
       // A pool of workers processed concurrently (one page per worker) instead of a single
       // worker running every page sequentially — cuts total OCR time on multi-page documents
-      // roughly BATCH_SIZE-fold. createWorker('eng') loads the English model and initializes
+      // roughly POOL_SIZE-fold. createWorker('eng') loads the English model and initializes
       // each worker once, up front.
-      workers = await Promise.all(Array.from({ length: BATCH_SIZE }, () => Tesseract.createWorker('eng')))
+      workers = await Promise.all(Array.from({ length: POOL_SIZE }, () => Tesseract.createWorker('eng')))
 
       const processPage = async (pageNum, worker) => {
         try {
-          pageTexts[pageNum] = await ocrPage(pdfDocRef.current, pageNum, worker)
+          const { text, words } = await ocrPage(pdfDocRef.current, pageNum, worker)
+          pageTexts[pageNum] = text
+          pageWords[pageNum] = words
           if (!ocrCancelRef.current) log.push(`Page ${pageNum}: OCR complete`)
         } catch (pageErr) {
           console.error(`OCR failed on page ${pageNum}:`, pageErr)
@@ -756,18 +893,34 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         if (!ocrCancelRef.current) setOcrLog(log.join('\n'))
       }
 
-      for (let b = 0; b < pagesToTry.length; b += BATCH_SIZE) {
-        if (ocrCancelRef.current) return
-        const batch = pagesToTry.slice(b, b + BATCH_SIZE)
-        setOcrLog([...log, `Recovering page(s) ${batch.join(', ')} (${b + 1}-${b + batch.length} of ${pagesToTry.length})...`].join('\n'))
-        await Promise.all(batch.map((pageNum, j) => processPage(pageNum, workers[j])))
-      }
+      setOcrLog(`Recovering ${pagesToTry.length} page(s) across ${POOL_SIZE} workers...`)
+      // Round-robin: each worker gets its own slice of pages and works through it sequentially,
+      // independent of the other workers. A fixed-size-batch loop (wait for all N pages in a
+      // round before starting the next round) would let one slow page stall the other workers
+      // that already finished their page in that round — a per-worker queue doesn't have that
+      // stall, since a worker moves on to its own next page as soon as it's free, regardless of
+      // what the other workers are doing. A per-page try/catch already exists above, so one
+      // page failing doesn't stop that worker's loop (or the other workers) from continuing.
+      const workerQueues = Array.from({ length: POOL_SIZE }, (_, i) =>
+        pagesToTry.filter((_, idx) => idx % POOL_SIZE === i)
+      )
+      await Promise.all(workerQueues.map(async (pages, i) => {
+        for (const pageNum of pages) {
+          if (ocrCancelRef.current) return
+          await processPage(pageNum, workers[i])
+        }
+      }))
       if (ocrCancelRef.current) return
 
       // Join in page order (not completion order) — same principle as extractTextFromPDF's own
       // page-by-page concatenation for the normal text-layer path.
       const joinedText = pagesToTry.map(p => pageTexts[p] || '').join('\n')
-      const tagOcr = accts => accts.map(a => ({ ...a, ocrExtracted: true }))
+      // Confidence flags are computed against the per-page OCR words BEFORE tagOcr's spread copies
+      // them onto the new account objects — annotateOcrConfidence mutates result.accounts in place.
+      const tagOcr = accts => {
+        annotateOcrConfidence(accts, pagesToTry, pageTexts, pageWords)
+        return accts.map(a => ({ ...a, ocrExtracted: true, sanityWarnings: computeSanityWarnings(a) }))
+      }
 
       if (wholeDocEmpty) {
         const fmt = source || detectFormat(joinedText)
@@ -817,6 +970,11 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const highDpd = accounts.some(a=>{ const d=parseInt(a.dpds)||0; return d>90||(a.dpds&&String(a.dpds).includes('90+')) })
   const hasSett    = accounts.some(a=>a.settlement&&a.settlement!=='0')
   const hasWritten = accounts.some(a=>a.writtenOff&&a.writtenOff!=='0')
+  // PAN/mobile are report-level fields (one per customer, not per account) so — unlike the
+  // per-account sanityWarnings above — these live outside the accounts array; see the header card.
+  const identityWarnings = []
+  if (customerPAN && !/^[A-Z]{5}\d{4}[A-Z]$/.test(customerPAN)) identityWarnings.push('PAN does not match the expected format (5 letters, 4 digits, 1 letter)')
+  if (customerMobile && !/^\d{10}$/.test(customerMobile)) identityWarnings.push('Mobile number is not exactly 10 digits')
 
   // Page title / subtitle based on source prop
   const pageTitle    = source==='paisabazaar' ? '📊 PaisaBazaar Analyzer' : source==='cibil' ? '📊 CIBIL.com Analyzer' : '📊 CIBIL Parser'
@@ -959,6 +1117,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
                   <div style={{fontSize:13,fontWeight:700,color:scC(score)}}>{scL(score)}</div>
                 </div>
               </div>
+            )}
+            {identityWarnings.length>0&&(
+              <div title={identityWarnings.join(' · ')} style={{fontSize:11,fontWeight:600,color:'#B91C1C',background:'#FEF2F2',padding:'5px 10px',borderRadius:8,cursor:'help'}}>⚠️ {identityWarnings.join(' · ')}</div>
             )}
             <div style={{fontSize:12,color:'#718096',marginLeft:'auto'}}>📄 {fileName}</div>
           </div>
@@ -1111,11 +1272,11 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
                         </>):(<>
                           <td style={{...S.td,fontWeight:600}}>{acc.bankName}</td>
                           <td style={S.td}>{acc.loanType}</td>
-                          <td style={S.td}>{inr(acc.loanAmount)}</td>
-                          <td style={{...S.td,color:acc.outstanding&&acc.outstanding!=='0'?'#854F0B':'#718096',fontWeight:500}}>{inr(acc.outstanding)}</td>
+                          <td style={S.td}>{inr(acc.loanAmount)}<FieldWarnIcon reasons={fieldFlagReasons(acc,'loanAmount')}/></td>
+                          <td style={{...S.td,color:acc.outstanding&&acc.outstanding!=='0'?'#854F0B':'#718096',fontWeight:500}}>{inr(acc.outstanding)}<FieldWarnIcon reasons={fieldFlagReasons(acc,'outstanding')}/></td>
                           <td style={{...S.td,color:'#534AB7',fontWeight:500}}>
                             {obl>0
-                              ? <div>{inr(obl)}{oblNote&&<div style={{fontSize:10,color:'#718096',marginTop:1}}>{oblNote}</div>}</div>
+                              ? <div>{inr(obl)}<FieldWarnIcon reasons={fieldFlagReasons(acc,'emi')}/>{oblNote&&<div style={{fontSize:10,color:'#718096',marginTop:1}}>{oblNote}</div>}</div>
                               : <span style={{color:'#A0AEC0'}}>—</span>
                             }
                           </td>
@@ -1135,15 +1296,23 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
                               </div>
                             ):<span style={{color:'#A0AEC0',fontSize:12}}>—</span>
                           })()}</td>
-                          <td style={{...S.td,color:acc.overdue?'#DC2626':'#718096'}}>{inr(acc.overdue)}</td>
+                          <td style={{...S.td,color:acc.overdue?'#DC2626':'#718096'}}>{inr(acc.overdue)}<FieldWarnIcon reasons={fieldFlagReasons(acc,'overdue')}/></td>
                           <td style={{...S.td,color:acc.settlement?'#DC2626':'#718096'}}>{inr(acc.settlement)}</td>
                           <td style={S.td}>{(()=>{
                             const isActive=acc.status==='Active', isSett=acc.status?.includes('Settled'), isWO=acc.status?.includes('Written-off')
                             const sbg=isActive?'#E1F5EE':isSett?'#FFFBEB':isWO?'#FEF2F2':'#F1F5F9'
                             const sfg=isActive?'#0F6E56':isSett?'#B45309':isWO?'#DC2626':'#718096'
+                            const lowFields=acc.lowConfidenceFields||[]
+                            const ocrTip = lowFields.length
+                              ? `Low OCR confidence on: ${lowFields.join(', ')} — double check against the PDF`
+                              : acc.ocrLowConfidence
+                                ? 'Recovered via OCR — some text on this page had low confidence; verify all figures against the PDF'
+                                : 'Recovered via OCR from an image-only page — double check against the PDF'
+                            const sanity = acc.sanityWarnings||[]
                             return <>
                               <span style={S.bdg(sbg,sfg)}>{acc.status}</span>
-                              {acc.ocrExtracted&&<span title="Recovered via OCR from an image-only page — double check against the PDF" style={{...S.bdg('#FEF2F2','#B91C1C'),marginLeft:4}}>🔍 verify</span>}
+                              {acc.ocrExtracted&&<span title={ocrTip} style={{...S.bdg('#FEF2F2','#B91C1C'),marginLeft:4}}>🔍 verify{lowFields.length?` (${lowFields.length})`:''}</span>}
+                              {sanity.length>0&&<span title={sanity.join(' · ')} style={{...S.bdg('#FFFBEB','#B45309'),marginLeft:4}}>⚠️ check</span>}
                             </>
                           })()}</td>
                           <td style={{...S.td,whiteSpace:'nowrap'}}>
