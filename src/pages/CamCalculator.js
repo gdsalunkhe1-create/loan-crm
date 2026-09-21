@@ -14,13 +14,13 @@ const PAID_BY      = ['Self', 'Both', 'Co-applicant'];
 const PAID_BY_TYPES = ['Housing Loan', 'Mortgage Loan', 'Property Loan', 'Car Loan'];
 
 function obligatedEMI(row) {
-  const emi = +row.emi || 0;
-  const out = +row.outstanding || 0;
+  const emi = num(row.emi);
+  const out = num(row.outstanding);
   if (row.status === 'Closed') return { val: 0, reason: 'Closed' };
   if (row.status === 'BT')     return { val: 0, reason: 'BT — 0%' };
   if (row.loanType === 'Credit Card') return { val: out * 0.05, reason: '5% of o/s' };
   if (row.loanType === 'Gold Loan')   return { val: out * 0.01, reason: '1% of o/s' };
-  const rem = (row.remEmi !== '' && row.remEmi != null) ? +row.remEmi : (emi > 0 ? Math.floor(out / emi) : 0);
+  const rem = (row.remEmi !== '' && row.remEmi != null) ? num(row.remEmi) : (emi > 0 ? Math.floor(out / emi) : 0);
   if (rem < 3) return { val: 0, reason: '< 3 EMIs left' };
   if (PAID_BY_TYPES.includes(row.loanType)) {
     if (row.paidBy === 'Co-applicant') return { val: 0,         reason: 'Co-applicant 0%' };
@@ -41,6 +41,14 @@ const newRowId = () => {
 };
 
 const clean = v => String(v == null ? '' : v).replace(/[^0-9]/g, '');
+// Manually typed numeric fields can contain commas, ₹, spaces, etc. (unlike
+// CIBIL-imported values, which already go through clean()). Strip everything
+// except digits and a decimal point before parsing so typed values compute
+// correctly instead of silently becoming NaN -> 0 via `+value || 0`.
+const num = v => {
+  const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+};
 const isClosedStatus = s => /closed|settled|written/i.test(s || '');
 const mapCibilType = (t = '') => {
   const s = t.toLowerCase();
@@ -142,14 +150,14 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const calc = useMemo(() => {
-    const net = +netSalary || 0;
-    const varInc = +variableIncome || 0;
+    const net = num(netSalary);
+    const varInc = num(variableIncome);
     const income = net + varInc;
 
-    const foir = (parseFloat(foirManual) || 0) / 100;
-    const mult = parseFloat(multiplier) || 0;
-    const r = (parseFloat(rateAnnual) || 0) / 1200;
-    const n = parseInt(tenureMonths) || 0;
+    const foir = num(foirManual) / 100;
+    const mult = num(multiplier);
+    const r = num(rateAnnual) / 1200;
+    const n = Math.trunc(num(tenureMonths));
 
     const rows = obligations.map(row => {
       const o = obligatedEMI(row);
@@ -167,13 +175,13 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
     const multEligible = mult > 0 ? Math.max(0, Math.round((mult * income) / 10000) * 10000) : null;
     const totalEligibility = multEligible != null ? Math.min(foirEligible, multEligible) : foirEligible;
 
-    const reqAmt = +requiredAmount || 0;
+    const reqAmt = num(requiredAmount);
     const offered = reqAmt > 0 ? Math.min(reqAmt, totalEligibility) : totalEligibility;
     const offeredEMI = emiOf(offered);
     const requiredEMI = emiOf(reqAmt);
 
     const btRows = obligations.filter(x => x.status === 'BT');
-    const btPOS = btRows.reduce((s, x) => s + (+x.outstanding || 0), 0);
+    const btPOS = btRows.reduce((s, x) => s + num(x.outstanding), 0);
     const btPL = btRows.filter(x => x.loanType === 'Personal Loan').length;
     const btCard = btRows.filter(x => x.loanType === 'Credit Card').length;
     const btOther = btRows.length - btPL - btCard;
@@ -219,8 +227,8 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
     aoa.push(['Financier', 'Open Date', 'Ownership', 'Loan Type', 'Status', 'Loan Amt', 'Outstanding', 'EMI', 'Rem. EMI', 'Paid By', 'Obligated EMI', 'Reason']);
     calc.rows.forEach(r => aoa.push([
       r.financier, r.openDate, r.ownership, r.loanType, r.status,
-      +r.loanAmount || 0, +r.outstanding || 0, +r.emi || 0,
-      r.remEmi === '' ? '' : (+r.remEmi || 0),
+      num(r.loanAmount), num(r.outstanding), num(r.emi),
+      r.remEmi === '' ? '' : num(r.remEmi),
       PAID_BY_TYPES.includes(r.loanType) ? r.paidBy : '',
       Math.round(r.obligatedVal), r.obligatedReason,
     ]));
@@ -238,8 +246,8 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
     const lines = [];
     lines.push(['Financier', 'Open Date', 'Ownership', 'Loan Type', 'Status', 'Loan Amt', 'Outstanding', 'EMI', 'Rem. EMI', 'Paid By', 'Obligated EMI', 'Reason'].map(esc).join(','));
     calc.rows.forEach(r => lines.push([
-      r.financier, r.openDate, r.ownership, r.loanType, r.status, +r.loanAmount || 0, +r.outstanding || 0, +r.emi || 0,
-      r.remEmi === '' ? '' : (+r.remEmi || 0), PAID_BY_TYPES.includes(r.loanType) ? r.paidBy : '',
+      r.financier, r.openDate, r.ownership, r.loanType, r.status, num(r.loanAmount), num(r.outstanding), num(r.emi),
+      r.remEmi === '' ? '' : num(r.remEmi), PAID_BY_TYPES.includes(r.loanType) ? r.paidBy : '',
       Math.round(r.obligatedVal), r.obligatedReason,
     ].map(esc).join(',')));
     lines.push('');
