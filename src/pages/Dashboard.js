@@ -26,6 +26,8 @@ import CompanyCategoryChecker from './CompanyCategoryChecker'
 import DateInput from '../components/DateInput'
 import TimeInput from '../components/TimeInput'
 import SaveBsaToLead from '../components/SaveBsaToLead'
+import ChampionChangeAnimation from '../components/ChampionChangeAnimation'
+import { getChampionGender } from '../constants/championAnimationConfig'
 import {
   IconLayoutDashboard, IconUsers, IconPhoneCall, IconCheckbox,
   IconChartBar, IconSettings, IconAdjustments, IconPhone,
@@ -235,6 +237,31 @@ const lastMonthRange=()=>{
   const monthStr=istToday().slice(0,7)
   const [yy,mm]=monthStr.split('-').map(Number)
   return { monthStart:new Date(yy,mm-2,1), monthEndExclusive:new Date(yy,mm-1,1) }
+}
+
+// Current + previous month's champion (rank-1 of get_monthly_leaderboard for each
+// range) plus each one's profiles.gender, in a single RPC — backs both the
+// "Last Month's Champion" callout and the "New Champion" celebration's gender
+// lookup, so neither has to guess gender from a name. See get_champion_change()
+// in supabase/migrations/20261001120000_add_profiles_gender_and_champion_change_rpc.sql.
+const fetchChampionChange=async()=>{
+  const monthStr=istToday().slice(0,7)
+  const [yy,mm]=monthStr.split('-').map(Number)
+  const monthStart=new Date(yy,mm-1,1)
+  const monthEndExclusive=new Date(yy,mm,1)
+  const {monthStart:prevMonthStart,monthEndExclusive:prevMonthEndExclusive}=lastMonthRange()
+  const{data,error}=await supabase.rpc('get_champion_change',{
+    month_start: monthStart.toISOString(),
+    month_end: monthEndExclusive.toISOString(),
+    prev_month_start: prevMonthStart.toISOString(),
+    prev_month_end: prevMonthEndExclusive.toISOString(),
+  })
+  if(error||!data||!data.length) return null
+  const row=data[0]
+  return {
+    current: row.current_agent_id?{agentId:row.current_agent_id,name:row.current_name,amount:Number(row.current_amount),gender:row.current_gender}:null,
+    previous: row.previous_agent_id?{agentId:row.previous_agent_id,name:row.previous_name,amount:Number(row.previous_amount),gender:row.previous_gender}:null,
+  }
 }
 
 const TIME_OPTIONS = (()=>{
@@ -716,6 +743,17 @@ function AgentDashboard({ userId }) {
   // ── Last Month's Champion callout — additive, reuses get_monthly_leaderboard
   // with last month's range instead of the current month's ──
   const [lastMonthChampion,setLastMonthChampion] = useState(null)
+  const [lastMonthChampionLoading,setLastMonthChampionLoading] = useState(true)
+  // Current champion + both genders from get_champion_change() — the "Last Month's
+  // Champion" callout above only needs .previous; the celebration below needs both.
+  const [championChange,setChampionChange] = useState(null)
+
+  // ── "New Champion" one-time celebration — reuses the same current-month
+  // leaderboard[0] / lastMonthChampion the callouts above already compute.
+  // Shown once per user per calendar month (localStorage flag), only when
+  // the champion actually changed month-over-month ──
+  const [showChampionAnim,setShowChampionAnim] = useState(false)
+  const [championAnimPayload,setChampionAnimPayload] = useState(null)
 
   // ── Login motivation nudge banner — dismissible per page load ──
   const [showNudge,setShowNudge]                 = useState(true)
@@ -755,11 +793,44 @@ function AgentDashboard({ userId }) {
   useEffect(()=>{ fetchLeaderboard() },[])
   useEffect(()=>{
     (async()=>{
-      const {monthStart,monthEndExclusive}=lastMonthRange()
-      const rows=await fetchLeaderboardRows(monthStart,monthEndExclusive)
-      setLastMonthChampion(rows&&rows.length>0?rows[0]:null)
+      const change=await fetchChampionChange()
+      setChampionChange(change)
+      setLastMonthChampion(change?.previous||null)
+      setLastMonthChampionLoading(false)
     })()
   },[])
+
+  // "New Champion" celebration trigger — fires once both this month's leaderboard
+  // and last month's champion have finished loading. Data-driven: compares the
+  // two agentIds already fetched above, never a hardcoded name.
+  useEffect(()=>{
+    if(leaderboardLoading||lastMonthChampionLoading) return
+    if(!userId) return
+    const current=leaderboard[0]
+    if(!current||!lastMonthChampion) return
+    if(current.agentId===lastMonthChampion.agentId) return // champion unchanged — nothing to celebrate
+
+    const monthKey=istToday().slice(0,7)
+    const seenKey=`champAnim_seen_${monthKey}_${userId}`
+    const forceReplay=(()=>{
+      try{ return new URLSearchParams(window.location.search).get('champAnim')==='1' }catch{ return false }
+    })()
+    if(!forceReplay){
+      try{ if(localStorage.getItem(seenKey)==='1') return }catch{}
+    }
+
+    // get_champion_change() already resolved profiles.gender for this exact agent —
+    // only fall back to AGENT_GENDER_MAP (inside getChampionGender) when that's null.
+    const currentDbGender=championChange?.current?.agentId===current.agentId?championChange.current.gender:null
+
+    setChampionAnimPayload({
+      seenKey,
+      current:{ ...current, gender:getChampionGender(current.agentId,currentDbGender) },
+      previous:{ ...lastMonthChampion, gender:getChampionGender(lastMonthChampion.agentId,lastMonthChampion.gender) },
+    })
+    setShowChampionAnim(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[leaderboardLoading,lastMonthChampionLoading,leaderboard,lastMonthChampion,championChange,userId])
 
   useEffect(()=>{
     if(!viewLead) return
@@ -2374,6 +2445,19 @@ function AgentDashboard({ userId }) {
           .cb-bell-icon { animation: cb-bell-pulse 1.4s ease-in-out infinite; }
         `}
       </style>
+
+      {/* NEW CHAMPION CELEBRATION — one-time per user per month, only when the
+          current-month leader differs from last month's */}
+      {showChampionAnim && championAnimPayload && (
+        <ChampionChangeAnimation
+          currentChampion={championAnimPayload.current}
+          previousChampion={championAnimPayload.previous}
+          onClose={()=>{
+            try{ localStorage.setItem(championAnimPayload.seenKey,'1') }catch{}
+            setShowChampionAnim(false)
+          }}
+        />
+      )}
 
       {/* CALLING WORKSPACE */}
       {showWorkspace&&(leadQueue[queueIndex]||callingLead)&&!queueComplete&&(
