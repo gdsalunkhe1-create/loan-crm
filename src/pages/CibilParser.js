@@ -25,7 +25,8 @@ function loadPdfJs() {
 // is genuinely stuck rather than just slow. OCR recovery is NOT covered by this: it runs detached
 // from parseFile with its own progress UI and legitimately takes minutes.
 export const PARSE_TIMEOUT_MS = 30000
-export const PARSE_TIMEOUT_MSG = 'Parsing took too long — this report may be unusually large or have unexpected formatting. Try the OCR recovery option, or contact support with this file.'
+export const PARSE_TIMEOUT_MSG_NO_DOC = 'Parsing took too long — the PDF could not be opened. Check your connection and try again, or contact support with this file.'
+export const PARSE_TIMEOUT_MSG ='Parsing took too long — this report may be unusually large or have unexpected formatting. Try the OCR recovery option, or contact support with this file.'
 
 // TEMP instrumentation for the 99-page "stuck on Parsing…" report — remove once the culprit is found.
 async function timeStep(label, fn) {
@@ -108,7 +109,14 @@ function reconstructPageText(items) {
   return rows.map(r => r.items.map(i => i.str).join(' ')).join('\n')
 }
 
-async function extractTextFromPDF(file, password = '', { isStale = () => false, onDoc } = {}) {
+// How many leading pages to sample before committing to full text extraction. A real text-layer
+// CIBIL/PaisaBazaar report always has text on its first page (score/name header), so a few pages
+// with essentially nothing on them means there's no text layer at all.
+const TEXT_PROBE_PAGES = 3
+const TEXT_PROBE_MIN_CHARS = 50
+
+async function extractTextFromPDF(file, password = '', { isStale = () => false, onDoc, onPhase = () => {} } = {}) {
+  onPhase('loading pdf.js')
   const pdfjsLib = await timeStep('loadPdfJs', loadPdfJs)
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -121,16 +129,37 @@ async function extractTextFromPDF(file, password = '', { isStale = () => false, 
         task.onPassword = (cb, reason) => {
           reject(new Error(reason === 2 ? 'WRONG_PASSWORD' : 'NEEDS_PASSWORD'))
         }
+        onPhase('opening PDF')
         const pdf = await timeStep('getDocument', () => task.promise)
         // Handed back early so parseFile can still offer OCR recovery if page extraction stalls.
         if (onDoc) onDoc(pdf)
+
+        // Cheap text-layer probe before the full page walk: raw getTextContent() on the first few
+        // pages only. No text there → hand back empty text straight away so parseFile goes to its
+        // no-text-layer (auto-OCR) branch without extracting every page first.
+        onPhase('text-layer probe')
+        const probeCount = Math.min(TEXT_PROBE_PAGES, pdf.numPages)
+        const probed = []
+        let probeChars = 0
+        for (let i = 1; i <= probeCount; i++) {
+          if (isStale()) return
+          const content = await (await pdf.getPage(i)).getTextContent()
+          probed.push(content)
+          for (const it of content.items) probeChars += (it.str || '').trim().length
+        }
+        if (probeChars < TEXT_PROBE_MIN_CHARS) {
+          console.log(`[cibil] text-layer probe: ${probeChars} chars on first ${probeCount} page(s) — no text layer`)
+          resolve({ text: '', pdf, pdfjsLib })
+          return
+        }
+
         let text = ''
         console.time('[cibil] page text extraction')
         for (let i = 1; i <= pdf.numPages; i++) {
           // Stop walking pages once parseFile has given up on this run (timeout / newer upload).
           if (isStale()) { console.timeEnd('[cibil] page text extraction'); return }
-          const page = await pdf.getPage(i)
-          const content = await page.getTextContent()
+          onPhase(`text extraction (page ${i}/${pdf.numPages})`)
+          const content = probed[i - 1] || await (await pdf.getPage(i)).getTextContent()
           text += reconstructPageText(content.items) + '\n'
         }
         console.timeEnd('[cibil] page text extraction')
@@ -615,17 +644,25 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
     const runId = ++parseRunRef.current
     const isStale = () => parseRunRef.current !== runId
     const startedAt = Date.now()
+    // Which step is running right now — logged on timeout so we can see where the time went.
+    let phase = 'starting'
+    const setPhase = p => { phase = p }
     const abortForTimeout = () => {
       if (isStale()) return
       parseRunRef.current++
-      console.error(`[cibil] parse exceeded ${PARSE_TIMEOUT_MS}ms — aborted`)
-      setError(PARSE_TIMEOUT_MSG)
-      // If the PDF itself loaded, make the OCR option the message points to actually available.
+      console.error(`[cibil] parse exceeded ${PARSE_TIMEOUT_MS}ms — aborted during: ${phase}`)
+      // If the PDF itself loaded, put up the OCR banner + "Retry OCR recovery" button so the
+      // message's suggestion is actionable. NOT auto-started: the file may well have a real text
+      // layer and just be huge, so whole-document OCR is left as the user's call.
       const doc = pdfDocRef.current
       if (doc) {
         const total = doc.numPages
+        setError(PARSE_TIMEOUT_MSG)
         setPageGapInfo({ missing: Array.from({length: total}, (_,i)=>i+1), total })
-        setPageGapWarning(`Normal text extraction didn't finish for this ${total}-page report. OCR recovery reads every page as an image instead — for a report this size it can take several minutes.`)
+        setPageGapWarning(`Normal text extraction didn't finish for this ${total}-page report. You can run OCR recovery below instead — it reads every page as an image, so for a report this size it can take several minutes.`)
+      } else {
+        // pdf.js never opened the document, so there's nothing for OCR to read either.
+        setError(PARSE_TIMEOUT_MSG_NO_DOC)
       }
       setParsing(false)
     }
@@ -641,6 +678,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       const { text, pdf, pdfjsLib } = await extractTextFromPDF(file,password,{
         isStale,
         onDoc: doc => { if (!isStale()) pdfDocRef.current = doc },
+        onPhase: setPhase,
       })
       if (isStale()) return
       pdfDocRef.current = pdf
@@ -659,11 +697,12 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
         const total = pdf.numPages
         const gapInfo = { missing: Array.from({length: total}, (_,i)=>i+1), total }
         setPageGapInfo(gapInfo)
-        setPageGapWarning(`This PDF has no readable text on any of its ${total} pages — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery has started automatically below — for a ${total}-page report that can take a few minutes, so just let it run.`)
+        setPageGapWarning(`This PDF has no readable text layer (${total} pages) — it looks like it was exported with a "print to PDF" tool that flattens text into vector shapes instead of selectable text. If you can, re-download the report directly from CIBIL/PaisaBazaar as a normal PDF — that will parse instantly. Otherwise, OCR recovery has started automatically below — for a ${total}-page report that can take a few minutes, so just let it run.`)
         runOcrRecovery(gapInfo)
         return
       }
 
+      setPhase('parse')
       const detected = timeStepSync('detectFormat', () => detectFormat(text))
 
       // TASK 1: if source prop provided, force that parser; warn if mismatch
@@ -682,6 +721,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
       // PART B: enrich PaisaBazaar accounts with canvas-extracted late payment data
       if (fmt === 'paisabazaar' && result.accounts.length > 0) {
         try {
+          setPhase('DPD operator walk')
           const late = await timeStep('extractLatePayments', () => extractLatePayments(pdf, pdfjsLib))
           if (isStale()) return
           console.log('[PART B] account accountNums:', result.accounts.map(a=>a.accountNum))
