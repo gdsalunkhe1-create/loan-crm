@@ -40,16 +40,16 @@ export default function Reports({ userRole, userId }) {
     else if (dateRange==='week') startDate.setDate(now.getDate()-7)
     else if (dateRange==='month') startDate.setDate(1)
 
-    const [leadsRes, callsRes, tasksRes, profilesRes] = await Promise.all([
+    const [leadsRes, callsRes, tasksRes, completedRes, profilesRes] = await Promise.all([
       supabase.from('leads').select('*').gte('created_at',startDate.toISOString()),
       supabase.from('calls').select('*').gte('created_at',startDate.toISOString()),
-      supabase.from('tasks').select('*'),
+      supabase.from('tasks').select('id',{count:'exact',head:true}).in('status',['Pending','In Progress']).lt('due_date',now.toISOString()), // timestamptz vs UTC ISO — safe server-side
+      supabase.from('tasks').select('id',{count:'exact',head:true}).eq('status','Completed'),
       supabase.from('profiles').select('*').eq('role','agent')
     ])
 
     const leads = leadsRes.data||[]
     const calls = callsRes.data||[]
-    const tasks = tasksRes.data||[]
     const agents = profilesRes.data||[]
 
     setStats({
@@ -59,8 +59,9 @@ export default function Reports({ userRole, userId }) {
       callback: calls.filter(c=>c.call_outcome==='Callback').length,
       approved: leads.filter(l=>l.status==='Approved').length,
       disbursed: leads.filter(l=>l.status==='Disbursed').length,
-      overdueTasks: tasks.filter(t=>t.status==='Overdue').length,
-      completedTasks: tasks.filter(t=>t.status==='Completed').length,
+      // 'Overdue' is never a stored status — overdue = open task whose due_date has passed
+      overdueTasks: tasksRes.count||0,
+      completedTasks: completedRes.count||0,
     })
 
     const agentData = agents.map(agent => {

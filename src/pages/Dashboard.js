@@ -1324,7 +1324,7 @@ function AgentDashboard({ userId }) {
         fetchLeadsPaged(()=>supabase.from('leads').select(LEAD_COLUMNS).eq('assigned_to',userId).order('created_at',{ascending:false}).order('id',{ascending:false})),
         fetchLeadsPaged(()=>supabase.from('leads').select(LEAD_COLUMNS).contains('mirror_agents',[userId]).order('created_at',{ascending:false}).order('id',{ascending:false})),
         supabase.from('calls').select('*').eq('agent_id',userId).gte('created_at',sd.toISOString()),
-        supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}),
+        fetchLeadsPaged(()=>supabase.from('tasks').select('*').eq('assigned_to',userId).order('due_date',{ascending:true}).order('id',{ascending:true})).then(data=>({data})), // paginated: agents with 1000+ tasks were losing their newest (pending/overdue) tasks to the 1000-row cap
         supabase.from('profiles').select('*').eq('id',userId).single(),
       ])
       const leads=[...myLeadsData,...mirLeadsData.filter(m=>!myLeadsData.find(l=>l.id===m.id)).map(m=>({...m,status:(m.mirror_agent_statuses||{})[userId]||m.status}))]
