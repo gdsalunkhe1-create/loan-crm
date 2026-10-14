@@ -1,0 +1,239 @@
+{
+  "bank": "ICICI Bank",
+  "bank_id": "icici",
+  "own_bank_match": [
+    "ICICI"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v1-2026-10-14",
+  "sources": {
+    "rules": "Gauri's policy notes, 14 Oct 2026"
+  },
+  "eligibility": {
+    "method": "foir_only",
+    "salary_basis": "net monthly salary",
+    "foir_slabs": [
+      {
+        "salary_min_incl": 40000,
+        "salary_max_excl": 60000,
+        "foir_pct": 55
+      },
+      {
+        "salary_min_incl": 60000,
+        "salary_max_excl": 75000,
+        "foir_pct": 60
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "foir_pct": 70
+      }
+    ],
+    "tenure_slabs": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 125000,
+        "months": [
+          60
+        ]
+      },
+      {
+        "salary_min_incl": 125000,
+        "salary_max_excl": 300000,
+        "months": [
+          60,
+          72
+        ]
+      },
+      {
+        "salary_min_incl": 300000,
+        "salary_max_excl": null,
+        "months": [
+          60,
+          72,
+          84
+        ]
+      }
+    ],
+    "roi_slabs_by_loan_amount": [
+      {
+        "cibil_min_incl": 775,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 9.99
+      },
+      {
+        "cibil_min_incl": 775,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 11.29
+      },
+      {
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 775,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.5
+      },
+      {
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 775,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 11.75
+      },
+      {
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 750,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 11.29
+      },
+      {
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 750,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.75
+      }
+    ],
+    "roi_note": "No rate given for loans below 10L - engine uses the highest rate of the score band and flags it",
+    "max_loan": 12500000
+  },
+  "min_net_salary": {
+    "_all": 40000
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "category_source": "ICICI list in Company Category Checker (Open Market, Preferred, Superprime, Elite, Government)",
+    "category_rule_status": "TO CONFIRM: same rules for all ICICI categories?"
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 6,
+      "nbfc": 6
+    },
+    "min_emis_note": "Gauri: 'more than 6' - set to 6 paid; confirm if 7 needed",
+    "nbfc_mode": "all_except",
+    "product_types": [
+      "PL",
+      "BL",
+      "CONSUMER",
+      "OTHER"
+    ],
+    "non_bt_note": "Overdraft/flexi products (Bajaj Flexi, ABFL OD, Tata Capital OD, Chola OD, Poonawalla OD) are not BT - mark type OD or treatment Obligate if CIBIL shows them as PL",
+    "lender_blacklist": [
+      {
+        "name": "Fibe / EarlySalary",
+        "match": [
+          "FIBE",
+          "EARLYSALARY",
+          "EARLY SALARY",
+          "SOCIAL WORTH"
+        ]
+      },
+      {
+        "name": "KreditBee",
+        "match": [
+          "KREDITBEE",
+          "KRAZYBEE",
+          "KRAZY BEE"
+        ]
+      },
+      {
+        "name": "Moneyview",
+        "match": [
+          "MONEYVIEW",
+          "MONEY VIEW",
+          "WHIZDM"
+        ]
+      },
+      {
+        "name": "mPokket",
+        "match": [
+          "MPOKKET"
+        ]
+      },
+      {
+        "name": "CASHe",
+        "match": [
+          "CASHE",
+          "TSLC"
+        ]
+      },
+      {
+        "name": "Kissht / Si Creva",
+        "match": [
+          "KISSHT",
+          "SI CREVA",
+          "ONEMI"
+        ]
+      },
+      {
+        "name": "Stashfin / Akara",
+        "match": [
+          "STASHFIN",
+          "AKARA"
+        ]
+      },
+      {
+        "name": "SmartCoin",
+        "match": [
+          "SMARTCOIN"
+        ]
+      },
+      {
+        "name": "Branch",
+        "match": [
+          "BRANCH INTERNATIONAL"
+        ]
+      },
+      {
+        "name": "PaySense",
+        "match": [
+          "PAYSENSE"
+        ]
+      }
+    ],
+    "blacklist_status": "Gauri named Fibe and KreditBee; rest are proposed defaults - TO CONFIRM",
+    "credit_card_bt": false
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 8,
+      "exempt_if_total_outstanding_lte_net_salary": false,
+      "prelogin_paydown": "own_bank_cards_only",
+      "rule": "8% of outstanding; payment counts only once reflected in CIBIL, except ICICI's own cards"
+    },
+    "card_loan": "Loan on credit card / card EMI obligated at full EMI if in CIBIL",
+    "one_pct_types": [
+      "GOLD",
+      "OD"
+    ],
+    "one_pct_note": "Gold 1%, bank overdraft 1%. NBFC flexi/OD obligation TO CONFIRM",
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "pct_of_emi": null,
+      "rule": "Joint HL: 0 if EMI paid by co-applicant; if applicant pays, check co-applicant income/obligations - if co-applicant can't bear it, 100%",
+      "status": "TO CONFIRM: % when applicant pays and co-applicant income is OK"
+    },
+    "payment_before_login": "Loan prepayment/closure before login accepted with source-of-funds verification; card payments must reflect in CIBIL (except ICICI cards)"
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    }
+  ],
+  "hard_rejects_status": "TO CONFIRM: ICICI rules for DPD / settlements / own-bank history",
+  "enquiries": {
+    "max_90d": 6,
+    "deviation_possible": true
+  },
+  "subject_to_closure_allowed": true,
+  "test_cases": []
+}

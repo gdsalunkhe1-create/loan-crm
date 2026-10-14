@@ -28,13 +28,14 @@ function loadPdfJs() {
     document.head.appendChild(s)
   })
 }
-async function extractTextFromPDF(file) {
+// `password` is optional; a protected PDF without it rejects with pdf.js's PasswordException.
+export async function extractTextFromPDF(file, password = '') {
   const pdfjsLib = await loadPdfJs()
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = async (e) => {
       try {
-        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(e.target.result) }).promise
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(e.target.result), ...(password ? { password } : {}) }).promise
         let text = ''
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i)
@@ -57,7 +58,7 @@ async function extractTextFromPDF(file) {
 // document and grab a completely unrelated number many lines away. Capping
 // the gap makes a field resolve to "not found" instead of a wrong number.
 const GAP = 40
-function parseSalaryText(text) {
+export function parseSalaryText(text) {
   const num = (s) => parseFloat(String(s).replace(/,/g, '')) || 0
   const after = (label) => {
     const re = new RegExp(label + `[^0-9]{0,${GAP}}([0-9][0-9,]*\\.?[0-9]*)`, 'i')
@@ -76,6 +77,10 @@ function parseSalaryText(text) {
   const pt = after('Prof\\s*Tax') || after('PTAX') || after('Professional\\s*Tax')
   const bonus = after('Annual\\s*Bonus') || after('Bonus') || after('Incentive')
   const nps = after('Employer\\s*NPS') || after('NPS')
+  // Monthly take-home as printed on the payslip (used by Underwriting Desk; the
+  // tax calculator itself doesn't read it). Most specific labels first.
+  const netPay = after('Net\\s*Amount\\s*Payable') || after('Net\\s*Payable') || after('Net\\s*Pay(?!able)')
+    || after('Net\\s*Salary') || after('Take\\s*Home')
 
   // Payslip earnings tables often have more line items than Basic/HRA/Special
   // (e.g. "Professional Development", "Conveyance", "LTA" ...). Summing only
@@ -107,6 +112,7 @@ function parseSalaryText(text) {
     professionalTaxAnnual: Math.round(pt * mult),
     employerNPSAnnual: Math.round(nps * mult),
     bonusAnnual: Math.round(bonus), // annual as-is
+    netPayMonthly: Math.round(netPay),
     ok: regularMonthly > 0,
     isPayslip,
   }

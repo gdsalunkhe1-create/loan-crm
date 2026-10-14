@@ -1731,8 +1731,8 @@ function detectMergeStrategy(bankName) {
   if (HEADER_ONLY_BANKS.includes(bankName)) return 'HEADER_ONLY';
   return 'TRAILING_ONLY';
 }
-async function pdfToLines(arrayBuffer) {
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise; const allLines = [];
+async function pdfToLines(arrayBuffer, password = '') {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, ...(password ? { password } : {}) }).promise; const allLines = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p); const content = await page.getTextContent(); const rows = {};
     content.items.forEach(it => { if (!it.str || !it.str.trim()) return; const y = Math.round(it.transform[5]); const key = Math.round(y / 3) * 3; (rows[key] = rows[key] || []).push({ x: it.transform[4], s: it.str }); });
@@ -1784,8 +1784,10 @@ export function buildAllTransactions(transactions) {
   });
 }
 
-export async function analyzeBankStatement(arrayBuffer, accountHolderOverride = '') {
-  const lines = await pdfToLines(arrayBuffer);
+// `password` is optional (Underwriting Desk passes it for protected statements);
+// without it a protected PDF rejects with pdf.js's PasswordException.
+export async function analyzeBankStatement(arrayBuffer, accountHolderOverride = '', password = '') {
+  const lines = await pdfToLines(arrayBuffer, password);
   // Bound the header block the same way detectHeader() does - before the
   // ledger actually starts - not a fixed line count. A crude "first N
   // lines" cutoff lets transaction narration text leak in on short

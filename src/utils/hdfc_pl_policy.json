@@ -1,0 +1,987 @@
+{
+  "bank": "HDFC Bank",
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v7-2026-10-14",
+  "sources": {
+    "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
+    "rules": "Gauri's policy notes, 12 Oct 2026"
+  },
+  "eligibility": {
+    "method": "show_both_foir_and_multiplier",
+    "method_status": "Confirmed by Gauri: show both; decision is case to case",
+    "default_tenure_months": 60,
+    "alt_tenure_months": 72,
+    "alt_tenure_condition": "6-year (72M) FOIR calc shown in addition to 5-year when net salary >= 75,000; multiplier grid has no 72M row",
+    "roi_pct_for_foir_emi": null,
+    "foir_slabs": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 50000,
+        "foir_pct": 60
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "foir_pct": 65
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "foir_pct": 70
+      }
+    ],
+    "salary_basis": "net monthly salary",
+    "tenures_months": {
+      "salary_below_75000": [
+        60
+      ],
+      "salary_75000_and_above": [
+        60,
+        72
+      ]
+    },
+    "roi_slabs_by_loan_amount": [
+      {
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 9.99
+      },
+      {
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 10.5
+      },
+      {
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 11.0
+      }
+    ],
+    "roi_selection": "compute at 9.99%; if result < 15L recompute at 10.5%; if < 10L recompute at 11%",
+    "foir_formula": "max_emi = net_salary * foir_pct - obligations_after_bt; loan = PV(max_emi, roi, tenure)",
+    "multiplier_formula": "loan = (net_salary - obligations_after_bt) * multiplier; grid column chosen on net_salary band, category and risk band",
+    "bt_loans": "loans selected for BT are excluded from obligations; their outstanding is paid off from the new loan (net in hand = loan - BT outstanding)",
+    "roi_note": "No separate 6-year rate: 72M uses the same loan-amount ROI slabs (confirmed by Gauri)"
+  },
+  "min_net_salary": {
+    "CAT A": 25000,
+    "CAT B": 30000,
+    "CAT C": {
+      "hdfc_salary_account": 35000,
+      "other_salary_account": 50000
+    },
+    "CAT D": {
+      "hdfc_salary_account": 35000,
+      "other_salary_account": 50000
+    },
+    "_other_categories": "NOT GIVEN - Super A, DA/DB/DC, E/New, GA-GF, MED/EDU, Pension, Skilled, Defence, Police"
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "category_source": "HDFC company category list (to upload into Company Category Checker)",
+    "duplicate_category_rule": "Name listed with two categories -> show both, agent must select the banker-confirmed one before calculation",
+    "excluded_categories": [
+      "CAT E",
+      "CAT NEW",
+      "CAT F"
+    ],
+    "excluded_categories_note": "Per Gauri: ignore CAT E and CAT F (CAT NEW grouped with E) - engine shows HDFC 'Not eligible - category not considered'"
+  },
+  "multiplier_grids": {
+    "SUPER A": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 12,
+          "48": 14,
+          "60": 15
+        }
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 10,
+          "36": 14,
+          "48": 16,
+          "60": 19
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 6,
+          "24": 10,
+          "36": 16,
+          "48": 16,
+          "60": 20
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 23,
+          "60": 25
+        },
+        "risk_band": "A1-B3"
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 21,
+          "60": 23
+        },
+        "risk_band": "B4-C9"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 23,
+          "60": 27
+        },
+        "risk_band": "A1-B9"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 22,
+          "60": 24
+        },
+        "risk_band": "C1-C9"
+      }
+    ],
+    "CAT A": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": 13,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 10,
+          "36": 14,
+          "48": 16,
+          "60": 19
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 6,
+          "24": 10,
+          "36": 14,
+          "48": 17,
+          "60": 20
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 23,
+          "60": 25
+        },
+        "risk_band": "A1-B3"
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 21,
+          "60": 23
+        },
+        "risk_band": "B4-C9"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 23,
+          "60": 27
+        },
+        "risk_band": "A1-B9"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 22,
+          "60": 24
+        },
+        "risk_band": "C1-C9"
+      }
+    ],
+    "CAT B": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": 13,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 13,
+          "48": 15,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 13,
+          "48": 15,
+          "60": 18
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 11,
+          "36": 15,
+          "48": 18,
+          "60": 20
+        }
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 23,
+          "60": 27
+        },
+        "risk_band": "A1-B3",
+        "label": "Elite"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 22,
+          "60": 24
+        },
+        "risk_band": "B4-C9",
+        "label": "Elite"
+      }
+    ],
+    "CAT C": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": 11,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 7,
+          "24": 11,
+          "36": 13,
+          "48": 15,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 11,
+          "36": 13,
+          "48": 15,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 23,
+          "60": 23
+        },
+        "risk_band": "A1-B3",
+        "label": "Elite"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 22,
+          "60": null
+        },
+        "risk_band": "B4-C9",
+        "label": "Elite"
+      }
+    ],
+    "CAT D": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      }
+    ],
+    "CAT DA": [
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": 11,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 11,
+          "48": 13,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 13,
+          "48": 15,
+          "60": null
+        }
+      }
+    ],
+    "CAT DB": [
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": 11,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": 13,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 13,
+          "48": 15,
+          "60": null
+        }
+      }
+    ],
+    "CAT DC": [
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": 13,
+          "60": null
+        }
+      }
+    ],
+    "SKILLED WORKER": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": 12,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 12,
+          "48": 15,
+          "60": null
+        }
+      }
+    ],
+    "CAPF GD (PL SAL BSF)": [
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 11,
+          "36": 13,
+          "48": 15,
+          "60": 18
+        }
+      }
+    ],
+    "CAPF GE (PL SAL BSF)": [
+      {
+        "salary_min_incl": 25001,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 11,
+          "36": 13,
+          "48": 15,
+          "60": 18
+        }
+      }
+    ],
+    "CAPF GF (PL SAL BSF)": [
+      {
+        "salary_min_incl": 25001,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": 11,
+          "60": 15
+        }
+      }
+    ],
+    "DEFENCE GD/GE/GF": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 11,
+          "36": 13,
+          "48": 15,
+          "60": null
+        }
+      }
+    ],
+    "POLICE GP (Sub Insp. & above)": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      }
+    ],
+    "CAT GC": [
+      {
+        "salary_min_incl": 15000,
+        "salary_max_excl": 30001,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      }
+    ],
+    "CAT GB": [
+      {
+        "salary_min_incl": 30001,
+        "salary_max_excl": 38000,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 11,
+          "48": 14,
+          "60": null
+        }
+      }
+    ],
+    "CAT GA": [
+      {
+        "salary_min_incl": 38000,
+        "salary_max_excl": 50000,
+        "multipliers": {
+          "12": 6,
+          "24": 10,
+          "36": 15,
+          "48": 17,
+          "60": 20
+        }
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 21,
+          "60": 25
+        },
+        "risk_band": "A1-B3"
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 21,
+          "60": 23
+        },
+        "risk_band": "B4-C9"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 21,
+          "60": 25
+        },
+        "risk_band": "A1-B9"
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 13,
+          "36": 18,
+          "48": 21,
+          "60": 23
+        },
+        "risk_band": "C1-C9"
+      }
+    ],
+    "CAT MED/EDU": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 20000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 20000,
+        "salary_max_excl": 35000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": 11,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50001,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": 13,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 50001,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 5,
+          "24": 9,
+          "36": 13,
+          "48": 15,
+          "60": 18
+        }
+      }
+    ],
+    "CAT PENSION": [
+      {
+        "salary_min_incl": 20000,
+        "salary_max_excl": 25000,
+        "multipliers": {
+          "12": 5,
+          "24": 7,
+          "36": 9,
+          "48": null,
+          "60": null
+        }
+      },
+      {
+        "salary_min_incl": 25001,
+        "salary_max_excl": null,
+        "multipliers": {
+          "12": 7,
+          "24": 9,
+          "36": 11,
+          "48": null,
+          "60": null
+        }
+      }
+    ]
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 4,
+      "nbfc": 6
+    },
+    "all_banks_eligible": true,
+    "nbfc_whitelist": [
+      {
+        "name": "Aditya Birla Finance",
+        "match": [
+          "ADITYA BIRLA",
+          "ABFL",
+          "ABCL"
+        ]
+      },
+      {
+        "name": "Bajaj Finance",
+        "match": [
+          "BAJAJ FIN"
+        ]
+      },
+      {
+        "name": "L&T Finance",
+        "match": [
+          "L&T FIN",
+          "L AND T FIN",
+          "LT FINANCE",
+          "LTFS"
+        ]
+      },
+      {
+        "name": "Navi Finserv",
+        "match": [
+          "NAVI"
+        ]
+      },
+      {
+        "name": "Cholamandalam",
+        "match": [
+          "CHOLAMANDALAM"
+        ]
+      },
+      {
+        "name": "Piramal Capital",
+        "match": [
+          "PIRAMAL"
+        ]
+      },
+      {
+        "name": "AU Small Finance Bank",
+        "match": [
+          "AU SMALL FIN"
+        ],
+        "note": "listed as NBFC by Gauri - confirm 4 or 6 EMIs"
+      },
+      {
+        "name": "Tata Capital",
+        "match": [
+          "TATA CAPITAL",
+          "TATA CAP",
+          "TCL",
+          "TCFSL"
+        ]
+      },
+      {
+        "name": "SMFG India Credit (SMICC, ex-Fullerton)",
+        "match": [
+          "SMFG",
+          "SMICC",
+          "FULLERTON"
+        ]
+      }
+    ],
+    "non_whitelisted_nbfc": "cannot be BT'd - stays as obligation",
+    "credit_card_bt": false
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": true,
+      "exempt_scope": "TOTAL outstanding across all credit cards (confirmed by Gauri)",
+      "rule": "if sum(all CC outstanding) <= net monthly salary -> 0 obligation; else 5% of total outstanding",
+      "pre_login_paydown": "customer may pay down before login (with verified proof) to bring total under net salary"
+    },
+    "gold_loan": {
+      "pct": 1
+    },
+    "overdraft": {
+      "pct": 1,
+      "base": "TO CONFIRM: limit or outstanding"
+    },
+    "kisan_credit_card": {
+      "pct": 1
+    },
+    "home_loan_joint": {
+      "pct_of_emi": 50,
+      "conditions": [
+        "reported as joint in CIBIL",
+        "co-applicant income sufficient (manual check)"
+      ]
+    },
+    "loan_with_emis_remaining_lte": 2,
+    "loan_with_emis_remaining_lte_treatment": "not obligated",
+    "payment_before_login": "accepted with verified proof (CC paydown, loan closure/prepayment)",
+    "payment_after_login": "not accepted"
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "excluded_category",
+      "categories": [
+        "CAT E",
+        "CAT NEW",
+        "CAT F"
+      ]
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades",
+      "note": "DPD/late payment reported in every track -> decline"
+    },
+    {
+      "rule": "hdfc_own_settlement_or_writeoff",
+      "note": "any settlement/write-off with HDFC -> decline"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after",
+      "note": "settled/WO accounts and no bank/NBFC loan sanctioned after -> decline"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after",
+      "treatment": "allowed only after 12 EMIs paid on the post-settlement loan (non-HDFC settlements only)"
+    },
+    {
+      "rule": "bad_hdfc_internal_repayment_history",
+      "status": "decline"
+    }
+  ],
+  "enquiries": {
+    "limits": null,
+    "note": "HDFC has no enquiry bands"
+  },
+  "subject_to_closure_allowed": false,
+  "not_yet_provided": [
+    "min CIBIL score",
+    "age limits",
+    "job stability",
+    "min/max loan amount"
+  ],
+  "risk_band": {
+    "source": "Not from HDFC system; CRM gives an indication from CIBIL + banking",
+    "indicative_rules": [
+      "No bounces / overdue in last 12 months (banking + CIBIL) -> better band column (A1-B3 / A1-B9)",
+      "Recent bounces or overdue within 12 months -> lower band column (B4-C9 / C1-C9), flagged as 'chance'",
+      "Bounces only on credit card or gold loan -> case possible, flagged"
+    ],
+    "status": "Engine shows both band amounts with the indicated band highlighted"
+  },
+  "test_cases": [
+    {
+      "name": "Gauri example 1",
+      "input": {
+        "net_salary": 100000,
+        "category": "CAT A",
+        "risk_band": "A1-B9",
+        "obligations": [
+          {
+            "lender": "ICICI Bank",
+            "type": "PL",
+            "outstanding": 150000,
+            "emi": 32000,
+            "emis_paid": 5
+          },
+          {
+            "type": "Home Loan",
+            "emi": 25000
+          }
+        ]
+      },
+      "expected": {
+        "foir_pct": 70,
+        "bt": [
+          "ICICI Bank PL (bank, 5>=4 EMIs paid)"
+        ],
+        "obligations_after_bt": 25000,
+        "foir_60m_at_9_99": 2118432,
+        "multiplier_60m": 2025000,
+        "foir_72m_at_9_99": 2429701
+      }
+    }
+  ],
+  "bank_id": "hdfc_bank",
+  "own_bank_match": [
+    "HDFC"
+  ]
+}

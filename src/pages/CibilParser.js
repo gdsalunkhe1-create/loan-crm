@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
 import { downloadCibilWorkbook } from './cibilExcelExport'
 
-function loadPdfJs() {
+export function loadPdfJs() {
   return new Promise((resolve, reject) => {
     if (window['pdfjs-dist/build/pdf']) { resolve(window['pdfjs-dist/build/pdf']); return }
     const s = document.createElement('script')
@@ -85,7 +85,7 @@ async function ocrPage(pdf, pageNum, worker) {
 // worth of items. Reconstructing rows from each item's actual (x, y) position — the same
 // approach pdftotext's -layout mode uses — keeps every label next to its own value in the
 // extracted text, which is what every "Label\s+(value)" regex in this file depends on.
-function reconstructPageText(items) {
+export function reconstructPageText(items) {
   const Y_TOL = 2 // points — items within this y-distance are treated as the same visual row
   const rows = []
   for (const it of items) {
@@ -115,7 +115,7 @@ function reconstructPageText(items) {
 const TEXT_PROBE_PAGES = 3
 const TEXT_PROBE_MIN_CHARS = 50
 
-async function extractTextFromPDF(file, password = '', { isStale = () => false, onDoc, onPhase = () => {} } = {}) {
+export async function extractTextFromPDF(file, password = '', { isStale = () => false, onDoc, onPhase = () => {} } = {}) {
   onPhase('loading pdf.js')
   const pdfjsLib = await timeStep('loadPdfJs', loadPdfJs)
   return new Promise((resolve, reject) => {
@@ -173,7 +173,7 @@ async function extractTextFromPDF(file, password = '', { isStale = () => false, 
 }
 
 // CIBIL.com PDFs inject page headers throughout text AND space out letters
-function cleanCibilText(raw) {
+export function cleanCibilText(raw) {
   let t = raw
   // NOTE: header date can print as DD/MM/YYYY *or* single-digit M/D/YY (e.g. "7/28/26, 7:25 PM")
   // depending on how the report was exported — \d{1,2}\/\d{1,2}\/\d{2,4} covers both so this
@@ -196,7 +196,7 @@ function cleanCibilText(raw) {
   return t
 }
 
-function detectFormat(raw) {
+export function detectFormat(raw) {
   const t = raw.toLowerCase()
   if (t.includes('enquiry control number') ||
       t.includes('credit health report') ||
@@ -242,7 +242,7 @@ const fmtD = d => d ? new Date(d).toLocaleDateString('en-GB',{day:'2-digit',mont
 // ── PART B: Late-payment extraction via pdf.js operator list ─────────────────
 // PaisaBazaar draws the month grid as colored filled circles; getTextContent()
 // never sees them. We read fill-color + path coordinates from the draw operators.
-async function extractLatePayments(pdf, pdfjsLib) {
+export async function extractLatePayments(pdf, pdfjsLib) {
   const { OPS, Util } = pdfjsLib
   const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
   const ORANGE = [255,138,0], RED = [214,38,23]
@@ -315,7 +315,7 @@ function detectMissingPages(raw) {
   return missing.length ? { missing, total } : null
 }
 
-function parseCibil(raw) {
+export function parseCibil(raw) {
   const pageGaps = detectMissingPages(raw)
   const text = cleanCibilText(raw)
   const MONTHS_RX = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec'
@@ -422,7 +422,7 @@ function parseCibil(raw) {
 }
 
 // ── PAISABAZAAR PARSER ────────────────────────────────────────────────────────
-function parsePaisaBazaar(text) {
+export function parsePaisaBazaar(text) {
   // Score
   const sm = text.match(/Credit\s*Health\s*Report\s*\n?\s*(\d{3})(?!\d)/i) ||
              text.match(/Powered\s*by\s*\n?\s*(\d{3})(?!\d)/i) ||

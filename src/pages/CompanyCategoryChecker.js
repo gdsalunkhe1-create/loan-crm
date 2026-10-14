@@ -38,6 +38,70 @@ function scoreCatHeader(h) {
   if (/status/i.test(h)) return 0.5;
   return 0;
 }
+// Matches "CIN", "CIN NO", "CIN Number", "LLPIN", "CIN/LLPIN" — whole tokens
+// only, so headers like "Principal" or "Cincinnati Branch" don't qualify.
+function isCinHeader(h) {
+  const tokens = String(h || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  return tokens.includes('CIN') || tokens.includes('LLPIN');
+}
+
+// Collapses rows sharing a normalized name into one upsert row. Duplicates
+// keep every (cin, category) pair in `variants`; `variants` is always set
+// (null when unique) so a re-upload clears stale ones. `cin` is only sent
+// when the file has a CIN column, so banks without one keep existing CINs.
+function buildUpsertRows(groups, { bankId, sheetName, hasCin }) {
+  const out = [];
+  for (const entries of groups.values()) {
+    const first = entries[0];
+    const row = { bank: bankId, company_name: first.name, source_sheet: sheetName };
+    let cin;
+    if (entries.length === 1) {
+      row.category = first.category;
+      row.variants = null;
+      cin = first.cin;
+    } else {
+      const variants = entries.map((e) => ({ cin: e.cin, category: e.category }));
+      const categories = [...new Set(entries.map((e) => e.category))];
+      if (categories.length === 1) {
+        row.category = categories[0];
+        cin = entries.every((e) => e.cin === first.cin) ? first.cin : null;
+      } else {
+        row.category = `${categories.join(' / ')} (check CIN)`;
+        cin = null;
+      }
+      row.variants = variants;
+    }
+    if (hasCin) row.cin = cin;
+    out.push(row);
+  }
+  return out;
+}
+
+function formatCinLine(row) {
+  const parts = [];
+  if (row.cin) parts.push(`CIN ${row.cin}`);
+  if (row.incorporation_year) parts.push(`Inc. ${row.incorporation_year}`);
+  return parts.join(' · ');
+}
+
+function CompanyMeta({ row }) {
+  const line = formatCinLine(row);
+  if (!line) return null;
+  return <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>{line}</div>;
+}
+
+function VariantList({ variants }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+      {variants.map((v, i) => (
+        <div key={i} style={{ fontSize: 13 }}>
+          <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>{v.cin ? `CIN ${v.cin}` : 'No CIN'}</span>{' '}
+          <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{v.category || '—'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 async function upsertCompanyCategoryBatch(batch) {
   const { error } = await supabase
@@ -273,10 +337,20 @@ function SearchPanel({ banks }) {
                   </div>
                   {exact && (
                     <>
-                      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                        {exact.category || '—'}
-                      </div>
+                      {Array.isArray(exact.variants) && exact.variants.length > 0 ? (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                            Listed {exact.variants.length} times — check CIN:
+                          </div>
+                          <VariantList variants={exact.variants} />
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                          {exact.category || '—'}
+                        </div>
+                      )}
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Matched: {exact.company_name}</div>
+                      <CompanyMeta row={exact} />
                     </>
                   )}
                   {!exact && r.rows.length > 0 && (
@@ -288,7 +362,11 @@ function SearchPanel({ banks }) {
                         {r.rows.map((m, i) => (
                           <div key={i} style={{ fontSize: 13, borderTop: '1px solid var(--border-light)', paddingTop: 8 }}>
                             <span style={{ color: 'var(--text-secondary)' }}>{m.company_name}</span>{' '}
-                            <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{m.category || '—'}</span>
+                            {!(Array.isArray(m.variants) && m.variants.length > 0) && (
+                              <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{m.category || '—'}</span>
+                            )}
+                            <CompanyMeta row={m} />
+                            {Array.isArray(m.variants) && m.variants.length > 0 && <VariantList variants={m.variants} />}
                           </div>
                         ))}
                       </div>
@@ -430,8 +508,9 @@ function BankUploadCard({ bank }) {
       const cs = scoreCatHeader(h);
       if (cs > bestCatScore) { bestCatScore = cs; catIdx = i; }
     });
+    const cinIdx = headers.findIndex(isCinHeader); // -1 = no CIN column
 
-    setMapping({ workbook, sheetNames, sheetName, headers, dataRows, nameIdx, catIdx });
+    setMapping({ workbook, sheetNames, sheetName, headers, dataRows, nameIdx, catIdx, cinIdx });
   };
 
   const changeSheet = (sheetName) => {
@@ -451,17 +530,20 @@ function BankUploadCard({ bank }) {
     setBusy(true);
     setErrorText(null);
     try {
-      const { nameIdx, catIdx, dataRows, sheetName } = mapping;
-      const seen = new Map(); // normalized name -> row
+      const { nameIdx, catIdx, cinIdx, dataRows, sheetName } = mapping;
+      const hasCin = cinIdx >= 0;
+      const groups = new Map(); // normalized name -> [{ name, category, cin }]
       for (const r of dataRows) {
         const name = String(r[nameIdx] || '').trim();
         if (!name) continue;
-        const cat = String(r[catIdx] || '').trim();
         const key = dbNormalize(name);
         if (!key) continue;
-        seen.set(key, { bank: bank.id, company_name: name, category: cat, source_sheet: sheetName });
+        const category = String(r[catIdx] || '').trim();
+        const cin = hasCin ? (String(r[cinIdx] || '').trim().toUpperCase() || null) : null;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ name, category, cin });
       }
-      const clean = Array.from(seen.values());
+      const clean = buildUpsertRows(groups, { bankId: bank.id, sheetName, hasCin });
 
       const total = clean.length;
       let done = 0;
@@ -554,6 +636,18 @@ function BankUploadCard({ bank }) {
                   ))}
                 </select>
               </MapRow>
+              <MapRow label="CIN column (optional)">
+                <select
+                  className="form-input"
+                  value={mapping.cinIdx}
+                  onChange={(e) => setMapping({ ...mapping, cinIdx: parseInt(e.target.value, 10) })}
+                >
+                  <option value={-1}>(none — keep existing CINs)</option>
+                  {mapping.headers.map((h, i) => (
+                    <option key={i} value={i}>{h || `(column ${i + 1})`}</option>
+                  ))}
+                </select>
+              </MapRow>
 
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0' }}>
                 {mapping.dataRows.length.toLocaleString()} rows on this sheet. Preview:
@@ -565,7 +659,7 @@ function BankUploadCard({ bank }) {
                       {mapping.headers.map((h, i) => (
                         <th
                           key={i}
-                          style={{ color: i === mapping.nameIdx || i === mapping.catIdx ? 'var(--primary)' : undefined }}
+                          style={{ color: i === mapping.nameIdx || i === mapping.catIdx || i === mapping.cinIdx ? 'var(--primary)' : undefined }}
                         >
                           {h || `(col ${i + 1})`}
                         </th>
@@ -579,7 +673,7 @@ function BankUploadCard({ bank }) {
                           <td
                             key={i}
                             style={{
-                              color: i === mapping.nameIdx || i === mapping.catIdx ? 'var(--primary)' : undefined,
+                              color: i === mapping.nameIdx || i === mapping.catIdx || i === mapping.cinIdx ? 'var(--primary)' : undefined,
                               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220,
                             }}
                           >
