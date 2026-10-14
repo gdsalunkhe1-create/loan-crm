@@ -35,36 +35,42 @@ export default function Tasks({ userRole, userId, orgId }) {
 
   useEffect(() => { fetchTasks(); fetchLeads() }, [userId, userRole])
 
-  const fetchTasks = async () => {
-    let query = supabase.from('tasks').select('*').order('due_date',{ascending:true})
-    if (userRole === 'admin' || userRole === 'manager') {
-      const { data } = await query
-      if (data) {
-        const updated = data.map(t => {
-          if (t.status!=='Completed' && new Date(t.due_date)<new Date()) return {...t,status:'Overdue'}
-          return t
-        })
-        setTasks(updated)
-      }
-    } else {
-      const { data } = await query.eq('assigned_to', userId)
-      if (data) {
-        const updated = data.map(t => {
-          if (t.status!=='Completed' && new Date(t.due_date)<new Date()) return {...t,status:'Overdue'}
-          return t
-        })
-        setTasks(updated)
-      }
+  // Supabase caps every select at 1000 rows. Tasks are ordered oldest-first,
+  // so with 2000+ tasks org-wide the newest (pending/overdue) ones were the
+  // ones being silently dropped. Page through everything instead.
+  const fetchAllPaged = async (builder) => {
+    let all = [], from = 0
+    while (true) {
+      const { data, error } = await builder().range(from, from + 999)
+      if (error) { console.error('[Tasks] page failed at offset', from, error); break }
+      if (!data) break
+      all = [...all, ...data]
+      if (data.length < 1000) break
+      from += 1000
     }
+    return all
+  }
+
+  const fetchTasks = async () => {
+    const isAll = userRole === 'admin' || userRole === 'manager'
+    const data = await fetchAllPaged(() => {
+      let q = supabase.from('tasks').select('*').order('due_date',{ascending:true}).order('id',{ascending:true})
+      return isAll ? q : q.eq('assigned_to', userId)
+    })
+    const updated = data.map(t => {
+      if (t.status!=='Completed' && new Date(t.due_date)<new Date()) return {...t,status:'Overdue'}
+      return t
+    })
+    setTasks(updated)
   }
 
   const fetchLeads = async () => {
-    let query = supabase.from('leads').select('id,full_name,mobile')
-    if (userRole !== 'admin' && userRole !== 'manager') {
-      query = query.eq('assigned_to', userId)
-    }
-    const { data } = await query
-    if (data) setLeads(data)
+    const data = await fetchAllPaged(() => {
+      let q = supabase.from('leads').select('id,full_name,mobile').order('id',{ascending:true})
+      if (userRole !== 'admin' && userRole !== 'manager') q = q.eq('assigned_to', userId)
+      return q
+    })
+    setLeads(data)
   }
 
   const handleSubmit = async (e) => {
