@@ -6816,6 +6816,7 @@ export default function Dashboard({ session }) {
     const [agentDupMobiles,setAgentDupMobiles] = useState(new Set())
     const [importing,setImporting]       = useState(false)
     const [importResult,setImportResult] = useState(null)
+    const [showAllPreview,setShowAllPreview] = useState(false)
     const [adminNotifs,setAdminNotifs]   = useState([])
     const [unreadCount,setUnreadCount]   = useState(0)
     const [showBell,setShowBell]         = useState(false)
@@ -7241,7 +7242,7 @@ export default function Dashboard({ session }) {
         setFileHeaders(headers)
         setRawRows(rows)
         setColMap(autoMapHeaders(headers))
-        setCsvError(''); setImportResult(null)
+        setCsvError(''); setImportResult(null); setShowAllPreview(false)
       }catch(err){setCsvError('Parse error: '+err.message)}
     }
 
@@ -7323,7 +7324,7 @@ export default function Dashboard({ session }) {
           <p>Welcome, {profile?.full_name||'Admin'} — {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:IST_TZ})}</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <button onClick={()=>{setShowImport(true);fetchCSVAgents();setRawRows([]);setFileHeaders([]);setColMap({});setCsvError('');setImportResult(null)}}
+          <button onClick={()=>{setShowImport(true);fetchCSVAgents();setRawRows([]);setFileHeaders([]);setColMap({});setCsvError('');setImportResult(null);setShowAllPreview(false)}}
             style={{display:'flex',alignItems:'center',gap:6,background:'#185FA5',color:'white',border:'none',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
             <IconDownload size={15}/> Import Leads
           </button>
@@ -7451,7 +7452,7 @@ export default function Dashboard({ session }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {csvRows.slice(0,8).map(r=>(
+                        {(showAllPreview?csvRows:csvRows.slice(0,8)).map(r=>(
                           <tr key={r._row} style={{borderTop:'1px solid #F3F4F6',opacity:(r._valid&&!r._dupAgent)?1:0.4}}>
                             <td style={{padding:'7px 12px',color:'#9CA3AF'}}>{r._row}</td>
                             <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'—'}</td>
@@ -7471,7 +7472,12 @@ export default function Dashboard({ session }) {
                             }</td>
                           </tr>
                         ))}
-                        {csvRows.length>8&&<tr><td colSpan={6} style={{padding:'7px 12px',color:'#9CA3AF',textAlign:'center'}}>...and {csvRows.length-8} more rows</td></tr>}
+                        {csvRows.length>8&&<tr style={{borderTop:'1px solid #F3F4F6'}}><td colSpan={7} style={{padding:'8px 12px',textAlign:'center'}}>
+                          <button type="button" onClick={()=>setShowAllPreview(v=>!v)}
+                            style={{background:'none',border:'none',padding:0,color:'#1a56a8',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                            {showAllPreview?'Show less ▲':`See all ${csvRows.length-8} more rows ▼`}
+                          </button>
+                        </td></tr>}
                       </tbody>
                     </table>
                   </div>
