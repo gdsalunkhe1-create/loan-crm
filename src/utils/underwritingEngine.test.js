@@ -134,3 +134,37 @@ test('ICICI: score band changes ROI, enquiries over 6 is a deviation, 3L salary 
   expect(rich.best.conservativeAmount).toBe(12500000);
   expect(evaluateBank(icici, { ...iBase, netSalary: 39000 }).status).toBe('NOT_ELIGIBLE');
 });
+
+test('HDFC: card late payment does not lower band; late payment on HDFC PL rejects; only PL with outstanding is BT', () => {
+  const card = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'AXIS BANK', productType: 'CC', inLast12m: true }] } });
+  expect(card.risk.band).toBe('better');
+  expect(card.notes.join()).toMatch(/still does the case/);
+  const ownCard = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK', productType: 'CC', inLast12m: true }] } });
+  expect(ownCard.status).toBe('ELIGIBLE');
+  const ownPl = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK LTD', productType: 'PL', inLast12m: false }] } });
+  expect(ownPl.status).toBe('NOT_ELIGIBLE');
+  const plLate = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'SBI', productType: 'PL', inLast12m: true }] } });
+  expect(plLate.risk.band).toBe('lower');
+  const bt = evaluateBank(policy, { ...base, loans: [
+    { id: 'cd', lender: 'BAJAJ FIN LTD', productType: 'CONSUMER', outstanding: 20000, emi: 2000, emisPaid: 8, emisRemaining: 5 },
+    { id: 'zero', lender: 'BAJAJ FIN LTD', productType: 'PL', outstanding: 0, emi: 3000, emisPaid: 20, emisRemaining: 5 },
+    { id: 'pl', lender: 'TCL', productType: 'PL', outstanding: 384000, emi: 12000, emisPaid: 10, emisRemaining: 30 },
+  ] });
+  expect(Object.fromEntries(bt.obligations.loans.map((l) => [l.id, l.bt.ok]))).toEqual({ cd: false, zero: false, pl: true });
+});
+
+test('Card plan: closes fewest cards to get under salary and shows the gain; missing EMI needs input', () => {
+  const r = evaluateBank(policy, { ...base, cards: [
+    { id: 'c1', issuer: 'SBI CARD', outstanding: 150000 }, { id: 'c2', issuer: 'YES BANK', outstanding: 250000 }, { id: 'c3', issuer: 'KOTAK BANK', outstanding: 9000 },
+  ] });
+  // total 4.09L vs salary 1L -> need 3.09L -> close YES (2.5L) + SBI (1.5L)
+  expect(r.cardPlan.minPaydown).toBe(309000);
+  expect(r.cardPlan.closeCards).toEqual(['c2', 'c1']);
+  expect(r.cardPlan.gain).toBeGreaterThan(0);
+  expect(r.warnings[0]).toMatch(/^Close YES BANK, SBI CARD/);
+  const m = evaluateBank(policy, { ...base, loans: [...base.loans, { id: 'vivi', lender: 'VIVIFIN', productType: 'PL', outstanding: 48202, emi: 0, emisPaid: 9 }] });
+  expect(m.status).toBe('NEEDS_INPUT');
+  expect(m.missingEmi).toEqual(['vivi']);
+  const ab = evaluateBank(policy, { ...base, loans: [{ id: 'ab', lender: 'ADBIRLACAP', productType: 'PL', outstanding: 144000, emi: 7757, emisPaid: 7, emisRemaining: 20 }] });
+  expect(ab.obligations.loans[0].bt.ok).toBe(true);
+});

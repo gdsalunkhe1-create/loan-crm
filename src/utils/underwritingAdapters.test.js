@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanStatus, hlJointPatch, hlPayerPatch } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -47,7 +47,7 @@ test('open loans and cards, EMI progress from open date to report date', () => {
   ] });
   expect(p.loans).toHaveLength(1);
   expect(p.loans[0]).toMatchObject({ productType: 'PL', emi: 10370, emisPaid: 18, emisRemaining: 18 });
-  expect(p.cards).toEqual([{ id: 'C1', issuer: 'HDFC BANK', outstanding: 45000, paidBeforeLoginWithProof: 0 }]);
+  expect(p.cards).toEqual([{ id: 'C1', issuer: 'HDFC BANK', outstanding: 45000, paidBeforeLoginWithProof: 0, action: 'keep' }]);
 });
 
 test('credit flags: settlement, fresh loan after it, HDFC history, recent DPD', () => {
@@ -228,14 +228,13 @@ describe('obligations table helpers', () => {
     expect(treatmentChoice({})).toBe('auto');
   });
 
-  test('status pill per loan from the best scenario', () => {
+  test('Reason column: BT in the best scenario, otherwise the engine rule', () => {
     const best = { bt: ['a'] };
-    const line = (amount) => ({ obligation: { amount } });
-    expect(loanStatus({ id: 'a' }, line(9000), best)).toBe('bt');
-    expect(loanStatus({ id: 'b' }, line(9000), best)).toBe('obligated');
-    expect(loanStatus({ id: 'c' }, line(0), best)).toBe('not_counted');
-    expect(loanStatus({ id: 'd', closedBeforeLoginWithProof: true }, null, null)).toBe('closed');
-    expect(loanStatus({ id: 'e' }, null, null)).toBeNull();
+    const line = (rule) => ({ obligation: { amount: 0, rule } });
+    expect(loanReason({ id: 'a' }, line('Full EMI'), best)).toBe('BT');
+    expect(loanReason({ id: 'b' }, line('Only 2 EMI(s) left — not obligated'), best)).toBe('Only 2 EMI(s) left — not obligated');
+    expect(loanReason({ id: 'c', closedBeforeLoginWithProof: true }, null, null)).toBe('Closed before login (proof)');
+    expect(loanReason({ id: 'd' }, null, null)).toBe('');
   });
 
   test('CIBIL loans carry loan amount and default to Auto treatment', () => {
@@ -299,5 +298,83 @@ describe('HL joint toggle and EMI payer', () => {
   test('unticking Joint clears the payer back to null', () => {
     const paidByCo = apply(apply(hl, hlJointPatch(true)), hlPayerPatch('co_applicant'));
     expect(apply(paidByCo, hlJointPatch(false))).toMatchObject({ isJoint: false, coApplicantIncomeOk: false, hlEmiPaidBy: null });
+  });
+});
+
+describe('dpdAccounts for per-bank late-payment rules', () => {
+  const row = {
+    report_date: '2026-10-09', cibil_score: 770, enquiries: { last90: 2 },
+    accounts: [
+      acc({ bankName: 'AXIS BANK', loanType: 'Credit Card', outstanding: '40000', dpds: '30', lateMonths: ['Mar 2026 (30d)'] }),
+      acc({ bankName: 'SHRIRAMFIN', status: 'Closed', closedDate: '10/10/2023', dpds: '57', lateMonths: ['May 2023 (57d)'] }),
+      acc({ bankName: 'ICICI BANK', openDate: '01/01/2024', emi: '9000', outstanding: '200000', tenure: '48' }),
+    ],
+  };
+
+  test('one entry per late account; cards are CC; 12-month window from the report date', () => {
+    expect(cibilToProfile(row).credit.dpdAccounts).toEqual([
+      { lender: 'AXIS BANK', productType: 'CC', inLast12m: true },
+      { lender: 'SHRIRAMFIN', productType: 'PL', inLast12m: false },
+    ]);
+    // An overdue amount on an open account counts as late now even without a DPD reading.
+    const overdue = cibilToProfile({ ...row, accounts: [acc({ bankName: 'KOTAK', overdue: '5000', dpds: '0' })] });
+    expect(overdue.credit.dpdAccounts).toEqual([{ lender: 'KOTAK', productType: 'PL', inLast12m: true }]);
+  });
+
+  test('HDFC v8: card late payment is an info note, an HDFC PL late payment rejects', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const company = { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A' }, confirmedByBank: {} };
+    const base = { ...buildProfileDraft(row, null), netSalary: 120000, salaryAccountBank: 'ICICI Bank', company };
+    const r = evaluateBank(hdfc, base);
+    expect(r.risk.band).toBe('better');
+    expect(r.notes.join(' ')).toMatch(/AXIS BANK/);
+    const hdfcPlLate = { ...base, credit: { ...base.credit, dpdAccounts: [...base.credit.dpdAccounts, { lender: 'HDFC BANK', productType: 'PL', inLast12m: false }] } };
+    expect(evaluateBank(hdfc, hdfcPlLate).status).toBe('NOT_ELIGIBLE');
+  });
+});
+
+describe('credit card actions and table grouping', () => {
+  const card = { id: 'C1', issuer: 'SBI CARD', outstanding: 80000, paidBeforeLoginWithProof: 0, action: 'keep' };
+
+  test('Action dropdown maps to paidBeforeLoginWithProof', () => {
+    expect(cardActionPatch(card, 'keep')).toEqual({ action: 'keep', paidBeforeLoginWithProof: 0 });
+    expect(cardActionPatch(card, 'paid')).toEqual({ action: 'paid', paidBeforeLoginWithProof: 80000 });
+    expect(cardActionPatch(card, 'close')).toEqual({ action: 'close', paidBeforeLoginWithProof: 80000 });
+    // A close plan keeps covering the whole card when the outstanding is edited.
+    expect(cardOutstandingPatch({ ...card, action: 'close' }, 95000)).toEqual({ outstanding: 95000, paidBeforeLoginWithProof: 95000 });
+    expect(cardOutstandingPatch(card, 95000)).toEqual({ outstanding: 95000 });
+  });
+
+  test("card's share of the counted CC obligation", () => {
+    const calc = { amount: 5000, total: 100000, lines: [{ id: 'C1', remaining: 80000 }, { id: 'C2', remaining: 20000 }] };
+    expect(cardCountedShare(calc, 'C1')).toBe(4000);
+    expect(cardCountedShare(calc, 'C2')).toBe(1000);
+    expect(cardCountedShare({ ...calc, amount: 0 }, 'C1')).toBeNull(); // exempt: not counted
+  });
+
+  test('zero-balance group and missing EMI', () => {
+    expect(isZeroBalanceLoan({ outstanding: 0, emi: 0 })).toBe(true);
+    expect(isZeroBalanceLoan({ outstanding: 0, emi: 0, manual: true })).toBe(false);
+    expect(isZeroBalanceLoan({ outstanding: 5000, emi: 0 })).toBe(false);
+    expect(loanNeedsEmi({ productType: 'PL', outstanding: 5000, emi: 0 })).toBe(true);
+    expect(loanNeedsEmi({ productType: 'GOLD', outstanding: 5000, emi: 0 })).toBe(false);
+    expect(loanNeedsEmi({ productType: 'PL', outstanding: 0, emi: 0 })).toBe(false);
+    expect(loanNeedsEmi({ productType: 'PL', outstanding: 5000, emi: 0, closedBeforeLoginWithProof: true })).toBe(false);
+  });
+
+  test('CIBIL cards get stable ids; engine card plan refers to them (HDFC v9)', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const row = { report_date: '2026-10-09', cibil_score: 770, enquiries: { last90: 1 }, accounts: [
+      acc({ bankName: 'YES BANK', loanType: 'Credit Card', outstanding: '250000' }),
+      acc({ bankName: 'SBI CARD', loanType: 'Credit Card', outstanding: '148000' }),
+      acc({ bankName: 'ICICI BANK', openDate: '01/01/2024', emi: '9000', outstanding: '200000', tenure: '48' }),
+    ] };
+    const d = buildProfileDraft(row, null);
+    expect(d.cards.map((c) => [c.id, c.action])).toEqual([['C0', 'keep'], ['C1', 'keep']]);
+    const company = { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A' }, confirmedByBank: {} };
+    const r = evaluateBank(hdfc, { ...d, netSalary: 150000, salaryAccountBank: 'ICICI Bank', company });
+    expect(r.obligations.cards.lines.map((l) => l.id)).toEqual(['C0', 'C1']);
+    expect(r.cardPlan.closeCards.every((id) => ['C0', 'C1'].includes(id))).toBe(true);
+    expect(r.cardPlan.gain).toBeGreaterThan(0);
   });
 });

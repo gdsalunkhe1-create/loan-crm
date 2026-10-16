@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-
-const BLUE = '#185FA5';
+import { BLUE, card, cardHeader, lbl, inp, cellInp, cellSel, th, td, btnPri, btnSec, SItem } from '../utils/uiStyles';
 
 const fmt  = n => Math.round(+n || 0).toLocaleString('en-IN');
 const fmtL = n => ((+n || 0) / 100000).toFixed(2) + ' L';
@@ -90,17 +89,6 @@ const emptyRow = () => ({
   financier: '', ownership: 'Individual', loanType: 'Personal Loan',
   status: 'Live', loanAmount: '', outstanding: '', emi: '', remEmi: '', paidBy: 'Self', openDate: '',
 });
-
-const card = { background: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.07)', marginBottom: '18px' };
-const cardHeader = { margin: '0 0 16px', fontSize: '15px', color: '#333', fontWeight: 700 };
-const lbl = { fontSize: '12px', fontWeight: 600, color: '#555', marginBottom: '6px', display: 'block' };
-const inp = { width: '100%', padding: '8px 10px', border: '1px solid #dde3ee', borderRadius: '6px', fontSize: '13px', outline: 'none', boxSizing: 'border-box', background: '#fafbfe' };
-const cellInp = { width: '100%', padding: '6px 7px', border: '1px solid #dde3ee', borderRadius: '5px', fontSize: '12px', boxSizing: 'border-box', background: '#fff', outline: 'none' };
-const cellSel = { ...cellInp, cursor: 'pointer' };
-const th = { padding: '9px 7px', fontSize: '11px', fontWeight: 700, color: '#48506b', textAlign: 'left', background: '#f0f4fa', borderBottom: '2px solid #dde3ee', whiteSpace: 'nowrap' };
-const td = { padding: '5px 6px', borderBottom: '1px solid #eef2f7', verticalAlign: 'middle' };
-const btnPri = { padding: '9px 16px', background: BLUE, color: '#fff', border: 'none', borderRadius: '7px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' };
-const btnSec = { padding: '9px 16px', background: '#fff', color: BLUE, border: '1px solid #cdd8ea', borderRadius: '7px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' };
 
 const COLS = [
   ['Financier', 130], ['Open Date', 100], ['Ownership', 95], ['Loan Type', 120], ['Status', 80],
@@ -260,14 +248,6 @@ export default function CamCalculator({ userRole, userId, setActivePage }) {
     a.click();
     URL.revokeObjectURL(a.href);
   };
-
-  const SItem = ({ label, value, sub, strong }) => (
-    <div style={{ padding: '10px 12px', background: '#f7f9fc', borderRadius: '8px', border: '1px solid #eef2f7' }}>
-      <div style={{ fontSize: '11px', color: '#7a8194', fontWeight: 600, marginBottom: '4px' }}>{label}</div>
-      <div style={{ fontSize: strong ? '18px' : '14px', fontWeight: 700, color: strong ? BLUE : '#1a1a2e' }}>{value}</div>
-      {sub && <div style={{ fontSize: '11px', color: '#7a8194', marginTop: '2px' }}>{sub}</div>}
-    </div>
-  );
 
   return (
     <div style={{ padding: '24px', fontFamily: 'Inter, Arial, sans-serif', background: '#f4f6f9', minHeight: '100vh', color: '#1a1a2e' }}>

@@ -22,6 +22,7 @@
 const UNSECURED_BT_TYPES = ['PL', 'BL', 'CONSUMER', 'OTHER'];
 const ONE_PCT_TYPES = ['GOLD', 'OD', 'KCC'];
 
+export const fmtINR = (n) => '₹' + Math.round(n || 0).toLocaleString('en-IN');
 const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const inBand = (x, min, maxExcl) => x >= (min ?? 0) && (maxExcl == null || x < maxExcl);
 
@@ -81,18 +82,31 @@ function lenderKind(policy, loan) {
   return /\bBANK\b/.test(norm(loan.lender)) ? 'bank' : 'nbfc';
 }
 
-function riskIndication(profile) {
+const CARD_TYPES = ['CARD', 'CC', 'CREDIT_CARD'];
+// credit.dpdAccounts: [{ lender, productType, inLast12m }] — one entry per account with DPD > 0.
+function recentDpd(policy, profile) {
   const c = profile.credit || {};
-  if (profile.riskOverride) return { band: profile.riskOverride, reason: 'Agent override' };
-  if ((c.bouncesLast12m || 0) > 0 || c.overdueLast12m) {
-    return {
-      band: 'lower',
-      reason: c.bouncesOnlyCardOrGold
-        ? 'Bounces/overdue in last 12 months on card or gold loan only — chance'
-        : 'Bounces/overdue in last 12 months — chance',
-    };
+  if (!Array.isArray(c.dpdAccounts)) return { counted: c.overdueLast12m ? ['CIBIL overdue'] : [], ignoredCards: [] };
+  const recent = c.dpdAccounts.filter((a) => a.inLast12m);
+  const ignoreCards = !!policy.risk?.ignore_card_dpd;
+  return {
+    counted: recent.filter((a) => !(ignoreCards && CARD_TYPES.includes(a.productType))).map((a) => a.lender),
+    ignoredCards: ignoreCards ? recent.filter((a) => CARD_TYPES.includes(a.productType)).map((a) => a.lender) : [],
+  };
+}
+
+function riskIndication(policy, profile) {
+  const c = profile.credit || {};
+  const dpd = recentDpd(policy, profile);
+  const notes = dpd.ignoredCards.length
+    ? [`Late payment on credit card (${[...new Set(dpd.ignoredCards)].join(', ')}) — ${policy.bank} still does the case`]
+    : [];
+  if (profile.riskOverride) return { band: profile.riskOverride, reason: 'Agent override', notes };
+  if ((c.bouncesLast12m || 0) > 0 || dpd.counted.length) {
+    const what = [(c.bouncesLast12m || 0) > 0 ? `${c.bouncesLast12m} bounce(s)` : null, dpd.counted.length ? `late payment on ${[...new Set(dpd.counted)].join(', ')}` : null].filter(Boolean).join(' and ');
+    return { band: 'lower', reason: `${what} in last 12 months — chance`, notes };
   }
-  return { band: 'better', reason: 'No bounces or overdue in last 12 months' };
+  return { band: 'better', reason: 'No bounces or late payments in last 12 months', notes };
 }
 
 const BETTER_BANDS = ['A1-B3', 'A1-B9'];
@@ -125,12 +139,15 @@ function hardChecks(policy, profile) {
   const has = (...names) => names.some((n) => rules.has(n));
   const excluded = (policy.company?.excluded_categories || []).map(norm);
   const ownSettled = (c.settledLenders || []).some((l) => isOwnBank(policy, l)) || (policy.bank_id === 'hdfc_bank' && c.hdfcSettlementOrWO);
-  const ownBad = (c.dpdLenders || []).some((l) => isOwnBank(policy, l)) || (policy.bank_id === 'hdfc_bank' && c.hdfcBadHistory);
+  const badTypes = policy.own_bank_bad_history_types;   // e.g. ['PL'] — only these products count
+  const ownBad = Array.isArray(c.dpdAccounts)
+    ? c.dpdAccounts.some((a) => isOwnBank(policy, a.lender) && (!badTypes || badTypes.includes(a.productType)))
+    : ((c.dpdLenders || []).some((l) => isOwnBank(policy, l)) || (policy.bank_id === 'hdfc_bank' && c.hdfcBadHistory));
 
   if (!cat) reasons.push(`Company not in ${policy.bank} category list (unlisted not allowed)`);
   else if (excluded.includes(norm(cat))) reasons.push(`${cat} not considered by ${policy.bank}`);
   if (has('own_bank_settlement_or_writeoff', 'hdfc_own_settlement_or_writeoff') && ownSettled) reasons.push(`Settlement / write-off with ${policy.bank}`);
-  if (has('own_bank_bad_history', 'bad_hdfc_internal_repayment_history') && ownBad) reasons.push(`Bad repayment history on earlier ${policy.bank} loan/card`);
+  if (has('own_bank_bad_history', 'bad_hdfc_internal_repayment_history') && ownBad) reasons.push(`Late payment on earlier ${policy.bank} ${badTypes ? badTypes.join('/') : 'loan/card'}`);
   if (has('heavy_dpd_late_payments_across_all_trades') && c.dpdAcrossAllTrades) reasons.push('DPD / late payments reported across all accounts');
   if ((c.settlementsOrWO || 0) > 0) {
     const f = c.freshLoanAfterSettlement || {};
@@ -139,7 +156,7 @@ function hardChecks(policy, profile) {
   }
   if (cat) {
     const min = minSalaryFor(policy, cat, profile.salaryAccountBank);
-    if (min != null && profile.netSalary < min) reasons.push(`Net salary ₹${profile.netSalary} below ${cat} minimum ₹${min}`);
+    if (min != null && profile.netSalary < min) reasons.push(`Net salary ${fmtINR(profile.netSalary)} below ${cat} minimum ${fmtINR(min)}`);
   }
   const enq = policy.enquiries || {};
   if (enq.max_90d != null) {
@@ -178,8 +195,14 @@ function cardObligation(policy, profile) {
   const accepted = (c) => mode === 'all' || (mode === 'own_bank_cards_only' && isOwnBank(policy, c.issuer));
   const ignoredPaydown = (profile.cards || []).filter((c) => (c.paidBeforeLoginWithProof || 0) > 0 && !accepted(c)).map((c) => c.issuer || 'card');
   const total = (profile.cards || []).reduce((s, c) => s + Math.max(0, (c.outstanding || 0) - (accepted(c) ? (c.paidBeforeLoginWithProof || 0) : 0)), 0);
+  const lines = (profile.cards || []).map((c, i) => ({
+    id: c.id ?? `card${i}`, issuer: c.issuer, outstanding: c.outstanding || 0,
+    paid: accepted(c) ? Math.min(c.paidBeforeLoginWithProof || 0, c.outstanding || 0) : 0,
+    paydownAccepted: accepted(c),
+    remaining: Math.max(0, (c.outstanding || 0) - (accepted(c) ? (c.paidBeforeLoginWithProof || 0) : 0)),
+  }));
   if (rule.exempt_if_total_outstanding_lte_net_salary && total <= profile.netSalary) {
-    return { total, amount: 0, rule: 'Total CC outstanding ≤ net salary — not obligated', paydownToExempt: 0, ignoredPaydown };
+    return { total, amount: 0, rule: 'Total CC outstanding ≤ net salary — not obligated', paydownToExempt: 0, ignoredPaydown, lines };
   }
   return {
     total,
@@ -187,6 +210,7 @@ function cardObligation(policy, profile) {
     rule: `${rule.pct_of_outstanding || 5}% of total CC outstanding`,
     paydownToExempt: rule.exempt_if_total_outstanding_lte_net_salary ? total - profile.netSalary : null,
     ignoredPaydown,
+    lines,
   };
 }
 
@@ -195,6 +219,7 @@ function btCandidate(policy, loan) {
   if (!(bt.product_types || UNSECURED_BT_TYPES).includes(loan.productType)) return { ok: false, why: `${loan.productType} not taken in BT` };
   if (wordStartMatch(loan.lender, (bt.lender_blacklist || []).flatMap((b) => b.match))) return { ok: false, why: 'Lender not taken in BT (small fintech / microfinance)' };
   if (loan.closedBeforeLoginWithProof) return { ok: false, why: 'Already closed' };
+  if (!(loan.outstanding > 0)) return { ok: false, why: 'No outstanding to transfer' };
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
     return { ok: false, why: 'Already not obligated (≤2 EMIs left)' };
   }
@@ -224,14 +249,15 @@ export function evaluateBank(policy, profile) {
   if (out.reasons.length) { out.status = 'NOT_ELIGIBLE'; return out; }
 
   const salary = profile.netSalary;
-  const risk = riskIndication(profile);
+  const risk = riskIndication(policy, profile);
   out.risk = risk;
+  out.notes = risk.notes;   // informational, e.g. card late payment that this bank accepts
 
   // Obligations
   const loanLines = (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l), bt: btCandidate(policy, l) }));
   const card = cardObligation(policy, profile);
   out.obligations = { loans: loanLines, cards: card };
-  if (card.paydownToExempt > 0) out.warnings.push(`Paying ₹${Math.ceil(card.paydownToExempt)} on cards before login removes the CC obligation (₹${Math.round(card.amount)}/month)`);
+  if (card.paydownToExempt > 0) out.warnings.push(`Paying ${fmtINR(Math.ceil(card.paydownToExempt))} on cards before login removes the CC obligation (${fmtINR(card.amount)}/month)`);
   if (card.ignoredPaydown?.length) out.warnings.push(`${policy.bank} accepts pre-login card payments only when they reflect in CIBIL (except its own cards) — ignored for: ${card.ignoredPaydown.join(', ')}`);
   if ((profile.loans || []).some((l) => l.productType === 'HL' && l.isJoint && l.coApplicantIncomeOk == null && l.hlEmiPaidBy == null)) {
     out.warnings.push('Joint home loan: confirm who pays the EMI and the co-applicant income');
@@ -249,7 +275,7 @@ export function evaluateBank(policy, profile) {
     : (salary >= 75000 ? policy.eligibility.tenures_months.salary_75000_and_above : policy.eligibility.tenures_months.salary_below_75000);
   const usesGrid = !!policy.multiplier_grids;
   const bands = usesGrid ? gridBands(policy, cat, salary) : null;
-  if (usesGrid && !bands) out.warnings.push(`No multiplier grid for ${cat} at ₹${salary}`);
+  if (usesGrid && !bands) out.warnings.push(`No multiplier grid for ${cat} at ${fmtINR(salary)}`);
   const gridMax = bands ? bestTenure(bands[risk.band], 60) : null;
   const foirTenures = gridMax && gridMax < 60 ? [gridMax] : tenures;
   if (gridMax && gridMax < 60) out.warnings.push(`${cat} grid stops at ${gridMax} months — FOIR also calculated at ${gridMax} months`);
@@ -299,6 +325,45 @@ export function evaluateBank(policy, profile) {
   if (out.best.conservativeAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.reasons.push('No EMI room after obligations'); }
   else if (out.deviations.length) out.status = 'DEVIATION';
   if (out.best.roiAssumed) out.warnings.push(`${policy.bank} has no rate for this loan amount — highest known rate used`);
-  if (cap != null && out.best.conservativeAmount >= cap) out.warnings.push(`Capped at ${policy.bank} maximum loan ₹${cap}`);
+  if (cap != null && out.best.conservativeAmount >= cap) out.warnings.push(`Capped at ${policy.bank} maximum loan ${fmtINR(cap)}`);
+
+  // Loans with a balance but no EMI would silently count as 0 — make the agent fill them.
+  const oneTypes = policy.obligations?.one_pct_types || ONE_PCT_TYPES;
+  const missing = loanLines.filter((l) => (l.outstanding || 0) > 0 && !(l.emi > 0) && !l.closedBeforeLoginWithProof && !oneTypes.includes(l.productType));
+  out.missingEmi = missing.map((l) => l.id);
+  if (missing.length && out.status !== 'NOT_ELIGIBLE') {
+    out.status = 'NEEDS_INPUT';
+    out.reasons.push(`EMI missing for ${missing.map((l) => l.lender).join(', ')} — enter EMI (amounts below count it as 0)`);
+  }
+
+  // Card plan: which cards to close before login and what it adds to eligibility.
+  if (card.amount > 0 && !profile._noCardPlan) {
+    const open = card.lines.filter((c) => c.remaining > 0 && c.paydownAccepted).sort((a, b) => b.remaining - a.remaining);
+    let pick = open;
+    let need = null;
+    if (card.paydownToExempt != null) {
+      need = Math.ceil(card.paydownToExempt);
+      pick = []; let sum = 0;
+      for (const c of open) { if (sum >= need) break; pick.push(c); sum += c.remaining; }
+      if (sum < need) pick = [];   // even closing every accepted card isn't enough
+    }
+    if (pick.length) {
+      const ids = new Set(pick.map((c) => c.id));
+      const sim = evaluateBank(policy, {
+        ...profile, _noCardPlan: true,
+        cards: (profile.cards || []).map((c, i) => (ids.has(c.id ?? `card${i}`) ? { ...c, paidBeforeLoginWithProof: c.outstanding } : c)),
+      });
+      const closeAmount = pick.reduce((sm, c) => sm + c.remaining, 0);
+      out.cardPlan = {
+        minPaydown: need, closeCards: pick.map((c) => c.id), closeAmount,
+        newEligible: sim.best?.conservativeAmount ?? null, newNetInHand: sim.best?.netInHand ?? null,
+        gain: (sim.best?.conservativeAmount ?? 0) - out.best.conservativeAmount,
+        mustReflectInCibil: (policy.obligations?.credit_card?.prelogin_paydown || 'all') !== 'all',
+      };
+      out.warnings.unshift(`Close ${pick.map((c) => c.issuer).join(', ')} before login (${fmtINR(closeAmount)}) → eligible ${fmtINR(out.cardPlan.newEligible)} (+${fmtINR(out.cardPlan.gain)})`);
+    }
+    out.warnings = out.warnings.filter((w) => !w.startsWith('Paying '));   // replaced by the card plan
+    if (need && !pick.length) out.warnings.unshift(`Card outstanding must come down by ${fmtINR(need)} to remove the CC obligation`);
+  }
   return out;
 }

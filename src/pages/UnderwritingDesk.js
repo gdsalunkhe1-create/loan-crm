@@ -15,11 +15,15 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../supabase';
-import { IconSearch, IconScale } from '@tabler/icons-react';
-import { evaluateBank } from '../utils/underwritingEngine';
+import { evaluateBank, fmtINR } from '../utils/underwritingEngine';
+import {
+  BLUE, page, pageTitle, pageSubtitle, card, cardHeader, lbl, inp, cellInp, cellSel, th, td,
+  btnPri, btnSec, btnPriSm, btnSecSm, btnLink, SItem, NotEligibleTile,
+} from '../utils/uiStyles';
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, summarizeEmployer,
-  extractEmployerName, treatmentChoice, treatmentPatch, loanStatus, hlJointPatch, hlPayerPatch,
+  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, hlJointPatch, hlPayerPatch,
+  cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -32,7 +36,7 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 // own fields so the agent's edits elsewhere survive.
 const CIBIL_CREDIT_KEYS = [
   'hdfcSettlementOrWO', 'hdfcBadHistory', 'dpdAcrossAllTrades', 'settlementsOrWO', 'freshLoanAfterSettlement', 'overdueLast12m',
-  'settledLenders', 'dpdLenders', 'enquiries90d',
+  'settledLenders', 'dpdLenders', 'dpdAccounts', 'enquiries90d',
 ];
 const BSA_CREDIT_KEYS = ['bouncesLast12m', 'bouncesOnlyCardOrGold'];
 const EMPTY_UPLOADS = { cibil: null, bsa: null, payslips: [] };
@@ -45,6 +49,7 @@ const fmtL = (n) => {
   return `${n < 0 ? '−' : ''}₹${(Math.abs(n) / 100000).toFixed(2)}L`;
 };
 const fmtR = (n) => (n == null || !isFinite(n) ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
+const fmt = (n) => Math.round(+n || 0).toLocaleString('en-IN'); // table cells: Indian grouping, no ₹
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 const fmtDate = (s) => (s ? new Date(s).toLocaleDateString('en-GB') : '');
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
@@ -113,6 +118,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
   // Invalidates every read still in flight (lead change / mode switch).
   const cancelReads = () => { Object.keys(runsRef.current).forEach((k) => { runsRef.current[k] += 1; }); };
   const [newLeadForm, setNewLeadForm] = useState({ full_name: '', mobile: '', pan: '' });
+  const saveLeadRef = useRef(null); // header "Save as lead" scrolls here
 
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyByBank, setCompanyByBank] = useState(null); // { query, banks: { bankId: { candidates, pick, category, variantIdx } } }
@@ -457,32 +463,52 @@ export default function UnderwritingDesk({ userId, orgId }) {
     });
   }, [draft, policies, companyByBank]);
 
+  const customerName = lead?.full_name || newLeadForm.full_name || sources.uploads.cibil?.parsed.customerName || '';
+  const canUpload = mode === 'new' || !!lead;
+
   return (
-    <div>
-      <div className="page-header">
+    <div style={{ ...page, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <IconScale size={22} strokeWidth={1.6} /> Underwriting Desk
-          </h1>
-          <p>Check bank-wise loan eligibility from CIBIL, banking and payslip.</p>
+          <h2 style={pageTitle}>Underwriting Desk</h2>
+          <p style={pageSubtitle}>Bank-wise eligibility from CIBIL, banking and payslip{customerName ? ` — ${customerName}` : ''}</p>
         </div>
+        {canUpload && (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <HeaderUpload label="⬆ CIBIL" busy={docs.cibil.busy} onFiles={(fs) => uploadCibil(fs[0])} />
+            <HeaderUpload label="⬆ Bank statement" busy={docs.bsa.busy} onFiles={(fs) => uploadBsa(fs[0])} />
+            <HeaderUpload label="⬆ Payslips" multiple busy={docs.payslip.busy} onFiles={uploadPayslips} />
+            {mode === 'new' && sources.uploads.cibil && (
+              <button style={btnPri} onClick={() => saveLeadRef.current && saveLeadRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+                Save as lead
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      <div className="page-body" style={{ maxWidth: '100%', overflowX: 'hidden' }}>
-        <style>{UW_CSS}</style>
-        {policyError && <div className="info-box info-box-red">Could not load bank policies: {policyError}</div>}
 
-        <div className="uw-section-title">1. Customer &amp; documents</div>
+      {policyError && <div className="info-box info-box-red">Could not load bank policies: {policyError}</div>}
 
-        <div className="tabs" style={{ maxWidth: 360 }}>
-          <button className={`tab ${mode === 'lead' ? 'active' : ''}`} onClick={() => mode !== 'lead' && resetAll('lead')}>Existing lead</button>
-          <button className={`tab ${mode === 'new' ? 'active' : ''}`} onClick={() => mode !== 'new' && resetAll('new')}>New customer</button>
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <h3 style={{ ...cardHeader, margin: 0 }}>Customer &amp; documents</h3>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button style={mode === 'lead' ? btnPriSm : btnSecSm} onClick={() => mode !== 'lead' && resetAll('lead')}>Existing lead</button>
+            <button style={mode === 'new' ? btnPriSm : btnSecSm} onClick={() => mode !== 'new' && resetAll('new')}>New customer</button>
+          </div>
         </div>
 
         {mode === 'lead' && <LeadPicker lead={lead} onPick={onPickLead} />}
-        {loadingLead && <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '10px 0' }}>Loading CIBIL and bank statement…</div>}
+        {loadingLead && <div style={{ fontSize: '12px', color: '#7a8194', margin: '10px 0' }}>Loading CIBIL and bank statement…</div>}
         {leadError && <div className="info-box info-box-red">Could not load lead data: {leadError}</div>}
 
-        {(mode === 'new' || lead) && (
+        {mode === 'lead' && !lead && (
+          <p style={{ fontSize: '13px', color: '#7a8194', margin: '12px 0 0' }}>
+            Pick a lead — their saved CIBIL report and bank statement analysis pre-fill everything below. For a referral not in the CRM yet, use New customer.
+          </p>
+        )}
+
+        {canUpload && (
           <UploadPanel
             uploads={{ ...sources.uploads, payslips: payslipsView }}
             employer={employer}
@@ -498,28 +524,21 @@ export default function UnderwritingDesk({ userId, orgId }) {
         )}
 
         {mode === 'new' && sources.uploads.cibil && (
-          <SaveLeadPanel
-            form={newLeadForm}
-            setForm={setNewLeadForm}
-            findExisting={findExistingLeads}
-            onCreate={createLead}
-            onAttach={attachDocsAndOpen}
-          />
+          <div ref={saveLeadRef}>
+            <SaveLeadPanel
+              form={newLeadForm}
+              setForm={setNewLeadForm}
+              findExisting={findExistingLeads}
+              onCreate={createLead}
+              onAttach={attachDocsAndOpen}
+            />
+          </div>
         )}
 
-        {mode === 'lead' && !lead && (
-          <div className="empty-state">
-            <IconSearch size={36} strokeWidth={1.2} color="#CBD5E0" />
-            <h3>Pick a lead to start</h3>
-            <p>Their saved CIBIL report and bank statement analysis will pre-fill the profile. For a referral not in the CRM yet, use New customer.</p>
-          </div>
-        )}
         {mode === 'new' && !draft && (
-          <div className="empty-state">
-            <IconSearch size={36} strokeWidth={1.2} color="#CBD5E0" />
-            <h3>Upload the customer's documents</h3>
-            <p>Start with the CIBIL report — the bank statement and payslips are optional.</p>
-          </div>
+          <p style={{ fontSize: '13px', color: '#7a8194', margin: '12px 0 0' }}>
+            Start with the CIBIL report — the bank statement and payslips are optional.
+          </p>
         )}
 
         {draft && !loadingLead && (
@@ -537,21 +556,49 @@ export default function UnderwritingDesk({ userId, orgId }) {
               fromPayslip={companySource === 'payslip'}
             />
             <IncomePanel draft={draft} patchDraft={patchDraft} payslips={sources.uploads.payslips} />
-
-            <div className="uw-section-title">2. Obligations</div>
-            <ObligationsPanel draft={draft} patchDraft={patchDraft} results={results} bankId={tableBankId} setBankId={setTableBankId} />
-
-            <div className="uw-section-title">3. Credit flags</div>
-            <CreditPanel draft={draft} patchCredit={patchCredit} patchDraft={patchDraft} />
-
-            <div className="uw-section-title">4. Bank results</div>
-            {policies.length === 0 && !policyError && (
-              <div className="info-box info-box-yellow">No active bank policies found.</div>
-            )}
-            {results.map((r) => <ResultCard key={r.bankId} entry={r} loans={draft.loans} />)}
           </>
         )}
       </div>
+
+      {draft && !loadingLead && (
+        <>
+          <ObligationsPanel draft={draft} patchDraft={patchDraft} results={results} bankId={tableBankId} setBankId={setTableBankId} />
+          <CreditPanel draft={draft} patchCredit={patchCredit} patchDraft={patchDraft} />
+          {policies.length === 0 && !policyError && (
+            <div className="info-box info-box-yellow">No active bank policies found.</div>
+          )}
+          {results.map((r) => <ResultCard key={r.bankId} entry={r} loans={draft.loans} cards={draft.cards} />)}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Header upload button (CAM-style) feeding the same handlers as the upload boxes.
+function HeaderUpload({ label, multiple, busy, onFiles }) {
+  const ref = useRef(null);
+  return (
+    <>
+      <button style={btnSec} disabled={busy} onClick={() => ref.current && ref.current.click()}>{busy ? 'Reading…' : label}</button>
+      <input
+        ref={ref}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple={!!multiple}
+        style={{ display: 'none' }}
+        onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ''; if (fs.length) onFiles(fs); }}
+      />
+    </>
+  );
+}
+
+// Sub-section inside the Customer & documents card.
+const subTitle = { fontSize: '12px', fontWeight: 700, color: '#48506b', margin: '18px 0 8px', textTransform: 'none' };
+function Sub({ title, bodyStyle, children }) {
+  return (
+    <div>
+      {title && <div style={subTitle}>{title}</div>}
+      <div style={bodyStyle}>{children}</div>
     </div>
   );
 }
@@ -591,12 +638,10 @@ function LeadPicker({ lead, onPick }) {
   }, [search]);
 
   return (
-    <div className="card" style={{ overflow: 'visible' }}>
-      <div className="card-header"><h3>Customer</h3></div>
-      <div className="card-body" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+    <Sub title="Customer" bodyStyle={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 420 }}>
           <input
-            className="form-input"
+            style={inp}
             placeholder="Search customer name…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setShow(true); }}
@@ -620,8 +665,7 @@ function LeadPicker({ lead, onPick }) {
           )}
         </div>
         {lead && <span className="badge badge-green">✓ {lead.full_name}</span>}
-      </div>
-    </div>
+    </Sub>
   );
 }
 
@@ -663,9 +707,7 @@ function UploadPanel({ uploads, employer, docs, saveTarget, onSaveToLead, onCibi
     />
   );
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <div className="card-header"><h3>Upload documents</h3></div>
-      <div className="card-body">
+    <Sub title="Documents">
         <div style={S.grid3}>
           <UploadBox title="CIBIL report (PDF)" doc={docs.cibil} onFiles={(fs) => onCibil(fs[0])} onRetry={(pw) => onRetry('cibil', pw)}>
             {uploads.cibil && (
@@ -701,8 +743,7 @@ function UploadPanel({ uploads, employer, docs, saveTarget, onSaveToLead, onCibi
           </UploadBox>
         </div>
         <div style={S.hint}>An upload here overrides the saved data for this run only.</div>
-      </div>
-    </div>
+    </Sub>
   );
 }
 
@@ -713,7 +754,7 @@ function UploadBox({ title, multiple, doc, onFiles, onRetry, children }) {
     <div style={S.uploadBox}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <strong style={{ fontSize: 13 }}>{title}</strong>
-        <button className="btn btn-outline btn-sm" onClick={() => inputRef.current && inputRef.current.click()} disabled={doc.busy}>
+        <button style={btnSecSm} onClick={() => inputRef.current && inputRef.current.click()} disabled={doc.busy}>
           {doc.busy ? 'Reading…' : 'Choose'}
         </button>
         <input
@@ -736,15 +777,14 @@ function UploadBox({ title, multiple, doc, onFiles, onRetry, children }) {
           <label style={S.label}>{doc.wrongPassword ? 'Incorrect password — try again' : 'This PDF is password-protected'}</label>
           <div style={{ display: 'flex', gap: 6 }}>
             <input
-              className="form-input"
+              style={cellInp}
               type="password"
-              style={S.cellInput}
               value={pw}
               autoFocus
               onChange={(e) => setPw(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && pw) onRetry(pw); }}
             />
-            <button className="btn btn-primary btn-sm" disabled={!pw || doc.busy} onClick={() => onRetry(pw)}>Unlock</button>
+            <button style={btnPriSm} disabled={!pw || doc.busy} onClick={() => onRetry(pw)}>Unlock</button>
           </div>
           {doc.pending && doc.pending.length > 1 && <div style={S.hint}>{doc.pending.length} files need this password.</div>}
         </div>
@@ -760,7 +800,7 @@ function SaveToLeadButton({ busy, confirmText, onConfirm }) {
   const [confirming, setConfirming] = useState(false);
   if (!confirming) {
     return (
-      <button className="btn btn-outline btn-sm" style={{ marginTop: 8 }} disabled={busy} onClick={() => setConfirming(true)}>
+      <button style={{ ...btnSecSm, marginTop: 8 }} disabled={busy} onClick={() => setConfirming(true)}>
         Save to this lead
       </button>
     );
@@ -769,10 +809,10 @@ function SaveToLeadButton({ busy, confirmText, onConfirm }) {
     <div className="info-box info-box-yellow" style={{ marginTop: 8, fontSize: 12.5 }}>
       <div style={{ marginBottom: 6 }}>{confirmText}</div>
       <div style={{ display: 'flex', gap: 6 }}>
-        <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => { setConfirming(false); onConfirm(); }}>
+        <button style={btnPriSm} disabled={busy} onClick={() => { setConfirming(false); onConfirm(); }}>
           {busy ? 'Saving…' : 'Confirm save'}
         </button>
-        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
+        <button style={btnGhostSm} disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
       </div>
     </div>
   );
@@ -785,7 +825,7 @@ function UploadedLine({ name, onRemove, children }) {
         <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={name}>✓ {name}</div>
         <div style={S.stat}>{children}</div>
       </div>
-      <button className="btn btn-ghost btn-sm" onClick={onRemove} title="Remove">✕</button>
+      <button style={btnGhostSm} onClick={onRemove} title="Remove">✕</button>
     </div>
   );
 }
@@ -815,21 +855,19 @@ function SaveLeadPanel({ form, setForm, findExisting, onCreate, onAttach }) {
   });
 
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <div className="card-header"><h3>Save as lead</h3></div>
-      <div className="card-body">
+    <Sub title="Save as lead">
         <div style={S.grid3}>
           <div>
             <label style={S.label}>Name</label>
-            <input className="form-input" value={form.full_name} onChange={set('full_name')} />
+            <input style={inp} value={form.full_name} onChange={set('full_name')} />
           </div>
           <div>
             <label style={S.label}>Mobile *</label>
-            <input className="form-input" value={form.mobile} onChange={set('mobile')} placeholder="10-digit mobile" />
+            <input style={inp} value={form.mobile} onChange={set('mobile')} placeholder="10-digit mobile" />
           </div>
           <div>
             <label style={S.label}>PAN</label>
-            <input className="form-input" value={form.pan} onChange={set('pan')} />
+            <input style={inp} value={form.pan} onChange={set('pan')} />
           </div>
         </div>
         <div style={S.hint}>
@@ -853,7 +891,7 @@ function SaveLeadPanel({ form, setForm, findExisting, onCreate, onAttach }) {
                       <strong>{m.full_name}</strong> · {m.mobile}
                       <span style={S.stat}> · {m.status || '—'}{m.assigned_to_name ? ` · ${m.assigned_to_name}` : ''}</span>
                     </div>
-                    <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => run(() => onAttach(m))}>Attach here</button>
+                    <button style={btnPriSm} disabled={busy} onClick={() => run(() => onAttach(m))}>Attach here</button>
                   </>
                 ) : (
                   <div style={{ fontSize: 13 }}>
@@ -865,18 +903,17 @@ function SaveLeadPanel({ form, setForm, findExisting, onCreate, onAttach }) {
             {matches.some((m) => m.can_access) && (
               <div style={S.hint}>Attaching replaces any CIBIL / bank statement already saved on that lead.</div>
             )}
-            <button className="btn btn-ghost btn-sm" style={{ marginTop: 6 }} onClick={() => setMatches(null)} disabled={busy}>Back</button>
+            <button style={{ ...btnGhostSm, marginTop: 6 }} onClick={() => setMatches(null)} disabled={busy}>Back</button>
           </div>
         )}
         {error && <div className="info-box info-box-red" style={{ marginTop: 12 }}>{error}</div>}
 
         {!matches && (
-          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={save} disabled={busy}>
+          <button style={{ ...btnPri, marginTop: 12 }} onClick={save} disabled={busy}>
             {busy ? 'Saving…' : 'Save as lead'}
           </button>
         )}
-      </div>
-    </div>
+    </Sub>
   );
 }
 
@@ -953,12 +990,10 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
     : [];
 
   return (
-    <div className="card" style={{ overflow: 'visible', marginTop: 18 }}>
-      <div className="card-header"><h3>Company</h3></div>
-      <div className="card-body">
+    <Sub title="Company">
         <div style={{ position: 'relative', maxWidth: 520, display: 'flex', gap: 8 }}>
           <input
-            className="form-input"
+            style={inp}
             placeholder="Company name, e.g. Infosys Limited"
             value={query}
             onChange={(e) => onChange(e.target.value)}
@@ -966,7 +1001,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
             onBlur={() => setTimeout(() => setShowSug(false), 150)}
             autoComplete="off"
           />
-          <button className="btn btn-outline btn-sm" onClick={searchTyped} disabled={busy}>
+          <button style={btnSecSm} onClick={searchTyped} disabled={busy}>
             {busy ? 'Searching…' : 'Search'}
           </button>
           {showSug && suggestions.length > 0 && (
@@ -988,10 +1023,10 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
         {payslipHint && <PayslipCompanyHint hint={payslipHint} applied={fromPayslip} onPick={pickTerm} />}
 
         {byBank && (
-          <div className="table-container" style={{ marginTop: 14 }}>
-            <table>
+          <div style={{ overflowX: 'auto', marginTop: 14 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '640px' }}>
               <thead>
-                <tr><th>Bank</th><th>Matched company</th><th>Category (editable)</th></tr>
+                <tr><th style={th}>Bank</th><th style={th}>Matched company</th><th style={th}>Category (editable)</th></tr>
               </thead>
               <tbody>
                 {bankIds.map((id) => {
@@ -1000,15 +1035,14 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
                   const variants = b.pick && hasVariants(b.pick) ? b.pick.variants : null;
                   return (
                     <tr key={id}>
-                      <td style={{ whiteSpace: 'nowrap' }}>
+                      <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
                         {id}{isPolicyBank && <span className="badge badge-blue" style={{ marginLeft: 6 }}>policy</span>}
                       </td>
-                      <td>
+                      <td style={td}>
                         {b.candidates.length === 0 && <span style={S.stat}>Not listed</span>}
                         {b.candidates.length > 0 && (
                           <select
-                            className="form-input"
-                            style={S.cellInput}
+                            style={cellInp}
                             value={b.pick ? b.candidates.indexOf(b.pick) : -1}
                             onChange={(e) => {
                               const pick = b.candidates[+e.target.value] || null;
@@ -1023,7 +1057,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
                         )}
                         {b.pick && <CinLine row={b.pick} />}
                       </td>
-                      <td>
+                      <td style={td}>
                         {variants ? (
                           <div>
                             <div style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600, marginBottom: 4 }}>
@@ -1045,8 +1079,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
                           </div>
                         ) : (
                           <input
-                            className="form-input"
-                            style={S.cellInput}
+                            style={cellInp}
                             value={b.category || ''}
                             placeholder={b.pick ? '' : 'Not listed'}
                             onChange={(e) => updateBank(id, { category: e.target.value, pick: b.pick || { company_name: byBank.query, category: e.target.value } })}
@@ -1060,8 +1093,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
             </table>
           </div>
         )}
-      </div>
-    </div>
+    </Sub>
   );
 }
 
@@ -1083,7 +1115,7 @@ function PayslipCompanyHint({ hint, applied, onPick }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 6 }}>
           <span>{hint.status === 'exact' ? 'Use:' : 'Did you mean:'}</span>
           {options.map((name) => (
-            <button key={name} className="btn btn-outline btn-sm" onClick={() => onPick(name)}>{name}</button>
+            <button key={name} style={btnSecSm} onClick={() => onPick(name)}>{name}</button>
           ))}
         </div>
       )}
@@ -1104,13 +1136,11 @@ function CinLine({ row }) {
 function IncomePanel({ draft, patchDraft, payslips }) {
   const counted = (payslips || []).filter((p) => p.netPay > 0);
   return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <div className="card-header"><h3>Income</h3></div>
-      <div className="card-body" style={S.grid2}>
+    <Sub title="Income &amp; score" bodyStyle={S.grid2}>
         <div>
           <label style={S.label}>Net monthly salary (₹)</label>
           <input
-            className="form-input"
+            style={inp}
             type="number"
             value={draft.netSalary ?? ''}
             onChange={(e) => patchDraft({ netSalary: numOrNull(e.target.value), netSalarySource: null })}
@@ -1133,7 +1163,7 @@ function IncomePanel({ draft, patchDraft, payslips }) {
         <div>
           <label style={S.label}>Salary account bank</label>
           <input
-            className="form-input"
+            style={inp}
             value={draft.salaryAccountBank || ''}
             onChange={(e) => patchDraft({ salaryAccountBank: e.target.value })}
             placeholder="e.g. HDFC Bank"
@@ -1143,7 +1173,7 @@ function IncomePanel({ draft, patchDraft, payslips }) {
         <div>
           <label style={S.label}>CIBIL score</label>
           <input
-            className="form-input"
+            style={inp}
             type="number"
             value={draft.cibilScore ?? ''}
             onChange={(e) => patchDraft({ cibilScore: numOrNull(e.target.value) })}
@@ -1151,74 +1181,42 @@ function IncomePanel({ draft, patchDraft, payslips }) {
           />
           <div style={S.hint}>From the CIBIL report. Some banks set the interest rate by score band.</div>
         </div>
-      </div>
-    </div>
+    </Sub>
   );
 }
 
-// ---------------- Shared table / result styles ----------------
-
-// Scoped to .uw-* so the CRM's global table styles (uppercase headers etc.)
-// elsewhere are untouched. Media queries can't be inline, hence a <style> block.
-const UW_CSS = `
-.uw-section-title { font-size: 16px; font-weight: 700; color: #1A202C; margin: 32px 0 8px; }
-.uw-section-title:first-of-type { margin-top: 24px; }
-.uw-label { font-size: 12px; font-weight: 600; color: #4A5568; }
-.uw-value { font-weight: 700; color: #1A202C; font-variant-numeric: tabular-nums; }
-.uw-table-wrap { overflow-x: auto; max-width: 100%; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; }
-.uw-table { width: 100%; border-collapse: collapse; font-size: 14px; color: #1A202C; }
-.uw-table th { font-size: 13px; font-weight: 700; color: #4A5568; text-transform: none; letter-spacing: 0;
-  text-align: left; padding: 8px; background: #F7FAFC; border-bottom: 1px solid #E2E8F0; white-space: nowrap; }
-.uw-table td { padding: 4px 8px; height: 44px; border-bottom: 1px solid #EDF2F7; white-space: nowrap; vertical-align: middle; }
-.uw-table tbody tr.uw-row:nth-of-type(even) td { background: #F7FAFC; }
-.uw-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.uw-table tr.uw-group td, .uw-table tr.uw-total td { font-weight: 700; background: #EDF2F7; }
-.uw-table tr.uw-best td { background: #F0FFF4 !important; }
-.uw-wrap2 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 220px; line-height: 1.3; }
-.uw-input { width: 100%; min-width: 72px; padding: 6px 8px; font-size: 14px; color: #1A202C; border: 1px solid #E2E8F0;
-  border-radius: 6px; background: #fff; font-variant-numeric: tabular-nums; }
-.uw-input.num { text-align: right; }
-.uw-mini { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #4A5568; margin-top: 4px; white-space: nowrap; cursor: pointer; }
-.uw-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.uw-chip { display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 999px; background: #EDF2F7;
-  color: #1A202C; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.uw-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 24px; margin-bottom: 16px; min-width: 0; }
-.uw-strip { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 32px; padding: 16px 0; border-top: 1px solid #EDF2F7; border-bottom: 1px solid #EDF2F7; }
-.uw-figures { display: grid; gap: 16px; margin-top: 16px; }
-.uw-figure { border: 1px solid #EDF2F7; border-radius: 8px; padding: 8px 16px; min-width: 0; }
-.uw-link { background: none; border: none; padding: 0; color: var(--primary, #185FA5); font-weight: 600; font-size: 13px; cursor: pointer; }
-@media (max-width: 900px) {
-  .uw-figures { grid-template-columns: 1fr !important; }
-  .uw-card { padding: 16px; }
-}
-`;
+// ---------------- Obligations ----------------
 
 const TYPE_LABELS = {
   PL: 'PL', BL: 'BL', BL_SECURED: 'BL (secured)', CONSUMER: 'CD', HL: 'HL', GOLD: 'GOLD', OD: 'OD',
   KCC: 'KCC', AUTO: 'Auto', EDU: 'EDU', CARD_LOAN: 'Card loan', OTHER: 'Other',
 };
 const TREATMENTS = [['auto', 'Auto'], ['bt', 'BT'], ['obligate', 'Obligate'], ['closed', 'Closed before login (proof)']];
-const LOAN_PILLS = {
-  bt: { label: 'BT', background: '#C6F6D5', color: '#22543D' },
-  obligated: { label: 'Obligated', background: '#E2E8F0', color: '#2D3748' },
-  not_counted: { label: 'Not counted', background: '#F7FAFC', color: '#718096', border: '1px solid #E2E8F0' },
-  closed: { label: 'Closed', background: '#BEE3F8', color: '#2A4365' },
-};
 const tenureLabel = (m) => (m % 12 === 0 ? `${m / 12} year${m === 12 ? '' : 's'}` : `${m} months`);
 const shortTenure = (m) => (m % 12 === 0 ? `${m / 12}y` : `${m}m`);
+const num = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+const dash = <span style={{ fontSize: '12px', color: '#bcc3d2' }}>—</span>;
+const btnGhostSm = { ...btnLink, color: '#9aa1b2', fontSize: '13px', padding: '4px 6px' };
 
-// Rupee / count input: shows ₹1,25,159 (Indian grouping) when not being edited.
-function NumInput({ value, onChange, money = true, placeholder, nullable = false, style }) {
+// Fits a 1366px screen with the sidebar open (no sideways scroll): the reason
+// sits under Counted EMI and the HL controls under Treatment instead of their own columns.
+const OBL_COLS = [
+  ['Financier', 150], ['Open date', 92], ['Type', 84], ['Loan amt', 92], ['Outstanding', 100], ['EMI', 90],
+  ['Paid', 52], ['Left', 52], ['Treatment', 128], ['Counted EMI', 150], ['', 28],
+];
+const RIGHT_COLS = new Set(['Loan amt', 'Outstanding', 'EMI', 'Paid', 'Left', 'Counted EMI']);
+const OBL_MIN_WIDTH = OBL_COLS.reduce((s, [, w]) => s + w, 0);
+const RED = '#dc2626';
+
+// Rupee / count cell: shows 1,25,159 (Indian grouping) when not being edited.
+function NumInput({ value, onChange, nullable = false, placeholder = '0', invalid = false }) {
   const [focused, setFocused] = useState(false);
   const hasValue = value !== null && value !== undefined && value !== '';
-  const shown = focused
-    ? (hasValue ? String(value) : '')
-    : (hasValue ? `${money ? '₹' : ''}${Math.round(value).toLocaleString('en-IN')}` : '');
+  const shown = focused ? (hasValue ? String(value) : '') : (hasValue ? Math.round(value).toLocaleString('en-IN') : '');
   return (
     <input
-      className="uw-input num"
+      style={{ ...cellInp, ...num, ...(invalid ? { borderColor: RED, background: '#fef2f2' } : null) }}
       inputMode="numeric"
-      style={style}
       value={shown}
       placeholder={placeholder}
       onFocus={() => setFocused(true)}
@@ -1231,32 +1229,11 @@ function NumInput({ value, onChange, money = true, placeholder, nullable = false
   );
 }
 
-// Lender name: up to two lines of text, click to edit.
-function LenderCell({ value, onChange }) {
-  const [editing, setEditing] = useState(false);
-  if (editing) {
-    return <input className="uw-input" style={{ minWidth: 160 }} autoFocus value={value} onChange={(e) => onChange(e.target.value)} onBlur={() => setEditing(false)} />;
-  }
-  return (
-    <div className="uw-wrap2" title="Click to edit" style={{ cursor: 'text', minWidth: 120 }} onClick={() => setEditing(true)}>
-      {value || <span style={{ color: '#A0AEC0' }}>Add lender</span>}
-    </div>
-  );
-}
-
-function Pill({ kind }) {
-  const p = LOAN_PILLS[kind];
-  if (!p) return <span style={{ color: '#A0AEC0' }}>—</span>;
-  return <span className="uw-pill" style={{ background: p.background, color: p.color, border: p.border }}>{p.label}</span>;
-}
-
-// ---------------- Obligations ----------------
-
-// One table in the credit-team sheet format. Counted EMI / Status come from the
-// selected bank's calculation (the engine applies that bank's policy rules).
+// Counted EMI / reason come from the selected bank's calculation (its policy rules).
 function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
-  const setLoan = (i, patch) => patchDraft({ loans: draft.loans.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
-  const setCard = (i, patch) => patchDraft({ cards: draft.cards.map((c, j) => (j === i ? { ...c, ...patch } : c)) });
+  const [showZero, setShowZero] = useState(false);
+  const setLoanById = (id, patch) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
+  const removeLoan = (id) => patchDraft({ loans: draft.loans.filter((l) => l.id !== id) });
   const nextId = (prefix, list) => `${prefix}${Date.now().toString(36)}${list.length}`;
 
   const entry = results.find((r) => r.bankId === bankId) || results[0];
@@ -1266,154 +1243,224 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const best = res && res.best;
   const lineOf = (id) => lines.find((l) => l.id === id);
 
+  const activeLoans = draft.loans.filter((l) => !isZeroBalanceLoan(l));
+  const zeroLoans = draft.loans.filter(isZeroBalanceLoan);
   const loanTotal = (k) => draft.loans.reduce((s, l) => s + (Number(l[k]) || 0), 0);
-  const cardOutstanding = draft.cards.reduce((s, c) => s + (Number(c.outstanding) || 0), 0);
-  const countedLoans = lines.reduce((s, l) => s + l.obligation.amount, 0);
-  const countedTotal = res && res.obligations ? countedLoans + (cardCalc ? cardCalc.amount : 0) : null;
+  const countedLoans = res && res.obligations ? lines.reduce((s, l) => s + l.obligation.amount, 0) : null;
 
   const addLoan = () => patchDraft({ loans: [...draft.loans, {
-    id: nextId('M', draft.loans), lender: '', lenderType: null, productType: 'PL', loanAmount: 0, outstanding: 0, emi: 0,
-    emisPaid: 0, emisRemaining: null, isJoint: false, coApplicantIncomeOk: null, treatment: 'auto', closedBeforeLoginWithProof: false,
+    id: nextId('M', draft.loans), manual: true, lender: '', lenderType: null, productType: 'PL', openDate: '', loanAmount: 0, outstanding: 0, emi: 0,
+    emisPaid: 0, emisRemaining: null, isJoint: false, coApplicantIncomeOk: null, hlEmiPaidBy: null, treatment: 'auto', closedBeforeLoginWithProof: false,
   }] });
-  const addCard = () => patchDraft({ cards: [...draft.cards, { id: nextId('K', draft.cards), issuer: '', outstanding: 0, paidBeforeLoginWithProof: 0 }] });
+
+  const loanRow = (l, muted) => {
+    const line = lineOf(l.id);
+    const isHL = l.productType === 'HL';
+    const needsEmi = loanNeedsEmi(l);
+    return (
+      <tr key={l.id} style={muted ? { background: '#fafbfe', color: '#9aa1b2' } : undefined}>
+        <td style={td}><input style={cellInp} value={l.lender} onChange={(e) => setLoanById(l.id, { lender: e.target.value })} placeholder="Bank" title={l.lender} /></td>
+        <td style={td}><input style={cellInp} value={l.openDate || ''} onChange={(e) => setLoanById(l.id, { openDate: e.target.value })} placeholder="dd/mm/yyyy" /></td>
+        <td style={td} title={l.sourceType || undefined}>
+          <select style={cellSel} value={l.productType} onChange={(e) => setLoanById(l.id, { productType: e.target.value })}>
+            {PRODUCT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t] || t}</option>)}
+          </select>
+        </td>
+        <td style={td}><NumInput value={l.loanAmount} onChange={(v) => setLoanById(l.id, { loanAmount: v })} /></td>
+        <td style={td}><NumInput value={l.outstanding} onChange={(v) => setLoanById(l.id, { outstanding: v })} /></td>
+        <td style={td}>
+          <NumInput value={l.emi} invalid={needsEmi} onChange={(v) => setLoanById(l.id, { emi: v })} />
+          {needsEmi && <div style={{ fontSize: '10px', color: RED, textAlign: 'right', fontWeight: 600 }}>Enter EMI</div>}
+        </td>
+        <td style={td}><NumInput value={l.emisPaid} onChange={(v) => setLoanById(l.id, { emisPaid: v })} /></td>
+        <td style={td}><NumInput nullable placeholder="?" value={l.emisRemaining} onChange={(v) => setLoanById(l.id, { emisRemaining: v })} /></td>
+        <td style={td}>
+          <select style={cellSel} value={treatmentChoice(l)} onChange={(e) => setLoanById(l.id, treatmentPatch(e.target.value))}>
+            {TREATMENTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          </select>
+          {isHL && (
+            <div style={{ fontSize: '10px', color: '#555', marginTop: '4px', lineHeight: 1.4 }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', cursor: 'pointer' }}>
+                <input type="checkbox" style={{ margin: '1px 0 0' }} checked={!!(l.isJoint && l.coApplicantIncomeOk)} onChange={(e) => setLoanById(l.id, hlJointPatch(e.target.checked))} />
+                Joint · co-applicant income OK
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '2px', opacity: l.isJoint ? 1 : 0.5 }}>
+                EMI paid by
+                <select
+                  style={{ ...cellSel, width: 'auto', padding: '1px 2px', fontSize: '10px', cursor: l.isJoint ? 'pointer' : 'not-allowed' }}
+                  disabled={!l.isJoint}
+                  title={l.isJoint ? undefined : 'Tick Joint first'}
+                  value={l.hlEmiPaidBy || ''}
+                  onChange={(e) => setLoanById(l.id, hlPayerPatch(e.target.value))}
+                >
+                  <option value="">—</option>
+                  <option value="applicant">Applicant</option>
+                  <option value="co_applicant">Co-applicant</option>
+                </select>
+              </label>
+            </div>
+          )}
+        </td>
+        <td style={{ ...td, ...num }}>
+          <div style={{ fontWeight: 700, fontSize: '12px' }}>{line ? fmt(line.obligation.amount) : '—'}</div>
+          <div style={{ fontSize: '11px', color: '#7a8194', whiteSpace: 'normal', lineHeight: 1.3 }}>{loanReason(l, line, best)}</div>
+        </td>
+        <td style={td}>
+          <button style={btnGhostSm} title="Remove row" onClick={() => removeLoan(l.id)}>✕</button>
+        </td>
+      </tr>
+    );
+  };
 
   return (
-    <div className="uw-card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div className="uw-label">
-          {results.length > 1 ? (
-            <>
-              Counted EMI and status for{' '}
-              <select className="uw-input" style={{ width: 'auto', display: 'inline-block' }} value={entry ? entry.bankId : ''} onChange={(e) => setBankId(e.target.value)}>
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <h3 style={{ ...cardHeader, margin: 0 }}>Obligations</h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {results.length > 1 && (
+            <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+              Counted for
+              <select style={{ ...cellSel, width: 'auto' }} value={entry ? entry.bankId : ''} onChange={(e) => setBankId(e.target.value)}>
                 {results.map((r) => <option key={r.bankId} value={r.bankId}>{r.label}</option>)}
               </select>
-            </>
-          ) : entry ? `Counted EMI and status for ${entry.label}` : 'No bank policy loaded'}
-          {entry && !(res && res.obligations) && (
-            <span style={{ fontWeight: 400 }}> — appears once {entry.label} can be calculated (see its result below).</span>
+            </label>
           )}
+          <button style={btnSec} onClick={addLoan}>+ Add row</button>
         </div>
-        <button className="btn btn-outline btn-sm" onClick={addLoan}>+ Add loan</button>
       </div>
-
-      <div className="uw-table-wrap">
-        <table className="uw-table">
-          <thead>
-            <tr>
-              <th>Loan type</th><th>Financer</th><th className="num">Loan amount</th><th className="num">Outstanding</th>
-              <th className="num">EMI</th><th className="num">EMIs paid</th><th className="num">EMIs left</th>
-              <th>Treatment</th><th className="num">Counted EMI</th><th>Status</th><th aria-label="Remove" />
-            </tr>
-          </thead>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: `${OBL_MIN_WIDTH}px`, tableLayout: 'fixed' }}>
+          <colgroup>{OBL_COLS.map(([, w], i) => <col key={i} style={{ width: w + 'px' }} />)}</colgroup>
+          <thead><tr>{OBL_COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: RIGHT_COLS.has(h) ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
-            {draft.loans.length === 0 && (
-              <tr className="uw-row"><td colSpan={11} style={{ color: '#718096' }}>No open loans.</td></tr>
+            {activeLoans.length === 0 && (
+              <tr><td colSpan={OBL_COLS.length} style={{ ...td, fontSize: '12px', color: '#7a8194' }}>No open loans.</td></tr>
             )}
-            {draft.loans.map((l, i) => {
-              const line = lineOf(l.id);
-              const choice = treatmentChoice(l);
-              return (
-                <tr key={l.id} className="uw-row">
-                  <td title={l.sourceType || undefined}>
-                    <select className="uw-input" style={{ minWidth: 96 }} value={l.productType} onChange={(e) => setLoan(i, { productType: e.target.value })}>
-                      {PRODUCT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t] || t}</option>)}
-                    </select>
-                  </td>
-                  <td><LenderCell value={l.lender} onChange={(v) => setLoan(i, { lender: v })} /></td>
-                  <td className="num"><NumInput value={l.loanAmount} onChange={(v) => setLoan(i, { loanAmount: v })} /></td>
-                  <td className="num"><NumInput value={l.outstanding} onChange={(v) => setLoan(i, { outstanding: v })} /></td>
-                  <td className="num">
-                    <NumInput value={l.emi} onChange={(v) => setLoan(i, { emi: v })} />
-                    {!l.emi && !['GOLD', 'OD', 'KCC'].includes(l.productType) && (
-                      <div style={{ fontSize: 11, color: 'var(--warning)', textAlign: 'right' }}>EMI missing</div>
-                    )}
-                  </td>
-                  <td className="num"><NumInput money={false} style={{ minWidth: 56 }} value={l.emisPaid} onChange={(v) => setLoan(i, { emisPaid: v })} /></td>
-                  <td className="num"><NumInput money={false} nullable style={{ minWidth: 56 }} placeholder="?" value={l.emisRemaining} onChange={(v) => setLoan(i, { emisRemaining: v })} /></td>
-                  <td>
-                    <select className="uw-input" style={{ minWidth: 120 }} value={choice} onChange={(e) => setLoan(i, treatmentPatch(e.target.value))}>
-                      {TREATMENTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                    </select>
-                    {l.productType === 'HL' && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <label className="uw-mini">
-                          <input
-                            type="checkbox"
-                            checked={!!(l.isJoint && l.coApplicantIncomeOk)}
-                            onChange={(e) => setLoan(i, hlJointPatch(e.target.checked))}
-                          />
-                          Joint · co-applicant income OK
-                        </label>
-                        <label className="uw-mini" style={{ opacity: l.isJoint ? 1 : 0.5, cursor: l.isJoint ? 'pointer' : 'not-allowed' }}>
-                          EMI paid by
-                          <select
-                            className="uw-input"
-                            style={{ width: 'auto', minWidth: 0, padding: '2px 4px', fontSize: 12 }}
-                            disabled={!l.isJoint}
-                            title={l.isJoint ? undefined : 'Tick Joint first'}
-                            value={l.hlEmiPaidBy || ''}
-                            onChange={(e) => setLoan(i, hlPayerPatch(e.target.value))}
-                          >
-                            <option value="">—</option>
-                            <option value="applicant">Applicant</option>
-                            <option value="co_applicant">Co-applicant</option>
-                          </select>
-                        </label>
-                      </div>
-                    )}
-                  </td>
-                  <td className="num" title={line ? line.obligation.rule : undefined} style={{ cursor: line ? 'help' : undefined }}>
-                    {line ? fmtR(line.obligation.amount) : '—'}
-                  </td>
-                  <td><Pill kind={loanStatus(l, line, best)} /></td>
-                  <td>
-                    <button className="btn btn-ghost btn-sm" title="Remove loan" onClick={() => patchDraft({ loans: draft.loans.filter((_, j) => j !== i) })}>✕</button>
-                  </td>
-                </tr>
-              );
-            })}
+            {activeLoans.map((l) => loanRow(l, false))}
 
-            <tr className="uw-group">
-              <td colSpan={3}>Credit cards</td>
-              <td className="num">{fmtR(cardOutstanding)}</td>
-              <td colSpan={4} style={{ fontWeight: 400, color: '#4A5568' }}>{cardCalc ? cardCalc.rule : ''}</td>
-              <td className="num">{cardCalc ? fmtR(cardCalc.amount) : '—'}</td>
-              <td colSpan={2}><button className="btn btn-outline btn-sm" onClick={addCard}>+ Add card</button></td>
-            </tr>
-            {draft.cards.map((c, i) => (
-              <tr key={c.id} className="uw-row">
-                <td style={{ color: '#4A5568' }}>Card</td>
-                <td><LenderCell value={c.issuer} onChange={(v) => setCard(i, { issuer: v })} /></td>
-                <td />
-                <td className="num"><NumInput value={c.outstanding} onChange={(v) => setCard(i, { outstanding: v })} /></td>
-                <td colSpan={3} />
-                <td>
-                  <div className="uw-label" style={{ fontSize: 11 }}>Paid before login (proof)</div>
-                  <NumInput value={c.paidBeforeLoginWithProof} onChange={(v) => setCard(i, { paidBeforeLoginWithProof: v })} />
-                </td>
-                <td colSpan={2} />
-                <td>
-                  <button className="btn btn-ghost btn-sm" title="Remove card" onClick={() => patchDraft({ cards: draft.cards.filter((_, j) => j !== i) })}>✕</button>
+            {zeroLoans.length > 0 && (
+              <tr style={{ background: '#f7f9fc', cursor: 'pointer' }} onClick={() => setShowZero(!showZero)}>
+                <td style={{ ...td, fontSize: '12px', color: '#7a8194' }} colSpan={OBL_COLS.length}>
+                  Zero-balance accounts ({zeroLoans.length}) — not counted {showZero ? '▾' : '▸'}
                 </td>
               </tr>
-            ))}
+            )}
+            {showZero && zeroLoans.map((l) => loanRow(l, true))}
 
-            <tr className="uw-total">
-              <td colSpan={2}>Total</td>
-              <td className="num">{fmtR(loanTotal('loanAmount'))}</td>
-              <td className="num">{fmtR(loanTotal('outstanding') + cardOutstanding)}</td>
-              <td className="num">{fmtR(loanTotal('emi'))}</td>
-              <td colSpan={3} />
-              <td className="num">{countedTotal == null ? '—' : fmtR(countedTotal)}</td>
-              <td colSpan={2} />
+            <tr style={{ background: '#f0f4fa' }}>
+              <td style={{ ...td, fontWeight: 700, fontSize: '12px' }} colSpan={3}>Total loans</td>
+              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(loanTotal('loanAmount'))}</td>
+              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(loanTotal('outstanding'))}</td>
+              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(loanTotal('emi'))}</td>
+              <td style={td} colSpan={3} />
+              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{countedLoans == null ? '—' : fmt(countedLoans)}</td>
+              <td style={td} />
             </tr>
           </tbody>
         </table>
       </div>
-      <div style={{ ...S.hint, marginTop: 8 }}>
-        Treatment: Auto lets the bank policy decide; BT always takes the loan over when the bank allows it; Obligate keeps it as an obligation.
-        Hover a Counted EMI to see the rule applied.
+      <p style={{ fontSize: '11px', color: '#9aa1b2', margin: '12px 0 0' }}>
+        {entry ? (
+          res && res.obligations
+            ? <>Counted EMI follows <b>{entry.label}</b>&apos;s policy. </>
+            : <>Counted EMI appears once <b>{entry.label}</b> can be calculated (see its card below). </>
+        ) : null}
+        Treatment: <b>Auto</b> lets the bank decide; <b>BT</b> always takes the loan over when the bank allows it; <b>Obligate</b> keeps it as an obligation.
+      </p>
+
+      <CardsSection draft={draft} patchDraft={patchDraft} entry={entry} cardCalc={cardCalc} cardPlan={res && res.cardPlan} />
+    </div>
+  );
+}
+
+const CARD_ACTIONS = [['keep', 'Keep open'], ['paid', 'Paid before login (proof)'], ['close', 'Close before login (suggested)']];
+const CARD_COLS = [['Card', 170], ['Outstanding', 110], ['Action', 200], ['Amount paid', 120], ['Counted', 110], ['Note', 220], ['', 28]];
+const tag = (background, color) => ({ display: 'inline-block', padding: '1px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, background, color, whiteSpace: 'nowrap', marginRight: '4px' });
+
+function CardsSection({ draft, patchDraft, entry, cardCalc, cardPlan }) {
+  const setCard = (id, patch) => patchDraft({ cards: draft.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+  const addCard = () => patchDraft({
+    cards: [...draft.cards, { id: `K${Date.now().toString(36)}${draft.cards.length}`, issuer: '', outstanding: 0, paidBeforeLoginWithProof: 0, action: 'keep' }],
+  });
+  const lineOf = (id) => ((cardCalc && cardCalc.lines) || []).find((l) => l.id === id);
+  const suggested = new Set((cardPlan && cardPlan.closeCards) || []);
+  const pendingSuggestion = cardPlan && cardPlan.closeCards.some((id) => {
+    const c = draft.cards.find((x) => x.id === id);
+    return c && c.action !== 'close';
+  });
+  const applySuggestion = () => patchDraft({
+    cards: draft.cards.map((c) => (suggested.has(c.id) ? { ...c, ...cardActionPatch(c, 'close') } : c)),
+  });
+  const totalOutstanding = draft.cards.reduce((s, c) => s + (Number(c.outstanding) || 0), 0);
+
+  return (
+    <div style={{ marginTop: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>Credit cards</div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {pendingSuggestion && (
+            <button style={{ ...btnSecSm, color: '#166534', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={applySuggestion}>
+              Apply suggestion — close {cardPlan.closeCards.length} card{cardPlan.closeCards.length === 1 ? '' : 's'} ({fmtINR(cardPlan.closeAmount)})
+              {cardPlan.newEligible != null ? ` → eligible ${fmtINR(cardPlan.newEligible)} (+${fmtINR(cardPlan.gain)})` : ''}
+            </button>
+          )}
+          <button style={btnSecSm} onClick={addCard}>+ Add card</button>
+        </div>
       </div>
+      {draft.cards.length === 0 ? (
+        <div style={{ fontSize: '12px', color: '#7a8194' }}>No open credit cards.</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: `${CARD_COLS.reduce((s, [, w]) => s + w, 0)}px`, tableLayout: 'fixed' }}>
+            <colgroup>{CARD_COLS.map(([, w], i) => <col key={i} style={{ width: w + 'px' }} />)}</colgroup>
+            <thead>
+              <tr>{CARD_COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: ['Outstanding', 'Amount paid', 'Counted'].includes(h) ? 'right' : 'left' }}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {draft.cards.map((c) => {
+                const action = c.action || (c.paidBeforeLoginWithProof > 0 ? 'paid' : 'keep');
+                const line = lineOf(c.id);
+                const share = cardCountedShare(cardCalc, c.id);
+                return (
+                  <tr key={c.id}>
+                    <td style={td}><input style={cellInp} value={c.issuer} onChange={(e) => setCard(c.id, { issuer: e.target.value })} placeholder="Card issuer" title={c.issuer} /></td>
+                    <td style={td}><NumInput value={c.outstanding} onChange={(v) => setCard(c.id, cardOutstandingPatch(c, v))} /></td>
+                    <td style={td}>
+                      <select style={cellSel} value={action} onChange={(e) => setCard(c.id, cardActionPatch(c, e.target.value))}>
+                        {CARD_ACTIONS.map(([v, labelText]) => <option key={v} value={v}>{labelText}</option>)}
+                      </select>
+                    </td>
+                    <td style={td}>
+                      {action === 'paid' && <NumInput value={c.paidBeforeLoginWithProof} onChange={(v) => setCard(c.id, { paidBeforeLoginWithProof: v })} />}
+                      {action === 'close' && <div style={{ ...num, fontSize: '12px' }}>{fmt(c.outstanding)} <span style={{ fontSize: '10px', color: '#7a8194' }}>planned</span></div>}
+                      {action === 'keep' && dash}
+                    </td>
+                    <td style={{ ...td, ...num, fontSize: '12px', fontWeight: 700 }}>
+                      {!cardCalc ? '—' : share == null ? <span style={{ fontWeight: 400, color: '#7a8194' }}>Not counted</span> : fmt(share)}
+                    </td>
+                    <td style={{ ...td, fontSize: '11px', whiteSpace: 'normal', lineHeight: 1.5 }}>
+                      {suggested.has(c.id) && <span style={tag('#dcfce7', '#166534')}>Suggested: close</span>}
+                      {line && !line.paydownAccepted && <span style={{ color: '#b45309', fontWeight: 600 }}>Must reflect in CIBIL before login</span>}
+                    </td>
+                    <td style={td}>
+                      <button style={btnGhostSm} title="Remove card" onClick={() => patchDraft({ cards: draft.cards.filter((x) => x.id !== c.id) })}>✕</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{ background: '#f0f4fa' }}>
+                <td style={{ ...td, fontWeight: 700, fontSize: '12px' }}>Total</td>
+                <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(totalOutstanding)}</td>
+                <td style={td} colSpan={2} />
+                <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{cardCalc ? fmt(cardCalc.amount) : '—'}</td>
+                <td style={{ ...td, fontSize: '11px', color: '#7a8194', whiteSpace: 'normal' }} colSpan={2}>
+                  {cardCalc ? `${cardCalc.rule}${entry ? ` (${entry.label})` : ''}` : ''}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1421,9 +1468,8 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
 function NumCell({ value, onChange, placeholder }) {
   return (
     <input
-      className="form-input"
+      style={inp}
       type="number"
-      style={S.cellInput}
       value={value ?? ''}
       placeholder={placeholder}
       onChange={(e) => onChange(numOrNull(e.target.value))}
@@ -1433,18 +1479,25 @@ function NumCell({ value, onChange, placeholder }) {
 
 // ---------------- Credit flags + risk ----------------
 
+const typeLabel = (t) => (t === 'CC' ? 'card' : TYPE_LABELS[t] || t);
+
 // One-line summary of the flags; "Edit" opens the full form.
 function creditSummary(draft) {
   const c = draft.credit || {};
   const items = [];
   if (c.bouncesLast12m > 0) items.push(`${c.bouncesLast12m} bounce${c.bouncesLast12m > 1 ? 's' : ''} in 12 months${c.bouncesOnlyCardOrGold ? ' (card / gold only)' : ''}`);
-  if (c.overdueLast12m) items.push('Overdue in 12 months');
+  if (Array.isArray(c.dpdAccounts)) {
+    const recent = c.dpdAccounts.filter((a) => a.inLast12m);
+    if (recent.length) items.push(`Late in 12 months: ${recent.map((a) => `${a.lender} (${typeLabel(a.productType)})`).join(', ')}`);
+  } else {
+    if (c.overdueLast12m) items.push('Overdue in 12 months');
+    if (c.hdfcBadHistory) items.push('HDFC DPD history');
+  }
   if (c.settlementsOrWO > 0) {
     const f = c.freshLoanAfterSettlement || {};
     items.push(`${c.settlementsOrWO} settled / written-off${f.exists ? ` · fresh loan ${f.emisPaid || 0} EMIs paid` : ' · no fresh loan after'}`);
   }
   if (c.hdfcSettlementOrWO) items.push('HDFC settlement / write-off');
-  if (c.hdfcBadHistory) items.push('HDFC DPD history');
   if (c.dpdAcrossAllTrades) items.push('DPD across all accounts');
   const risk = draft.riskOverride ? `Risk band: ${draft.riskOverride === 'better' ? 'Better' : 'Lower'} (override)` : 'Risk band: Auto';
   // Enquiry limits differ per bank (the result cards say if it's over), so the count is shown neutrally.
@@ -1457,42 +1510,69 @@ function CreditPanel({ draft, patchCredit, patchDraft }) {
   const c = draft.credit;
   const fresh = c.freshLoanAfterSettlement || { exists: false, emisPaid: 0 };
   const summary = creditSummary(draft);
+  // With a per-account list the engine reads it instead of the overdue / HDFC DPD flags.
+  const perAccount = Array.isArray(c.dpdAccounts);
+  const setAccount = (i, patch) => patchCredit({ dpdAccounts: c.dpdAccounts.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
   const flag = (k, label) => (
     <label style={S.check}>
       <input type="checkbox" checked={!!c[k]} onChange={(e) => patchCredit({ [k]: e.target.checked })} /> {label}
     </label>
   );
   return (
-    <div className="uw-card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
-        <div style={{ fontSize: 14, minWidth: 0 }}>
-          <span style={{ fontWeight: 700, color: summary.adverse ? '#C53030' : '#1A202C' }}>{summary.text}</span>
-          <span style={{ color: '#4A5568' }}> · {summary.enquiries} · {summary.risk}</span>
-        </div>
-        <button className="uw-link" onClick={() => setOpen(!open)}>{open ? 'Done' : 'Edit'}</button>
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+        <h3 style={{ ...cardHeader, margin: 0 }}>Credit flags</h3>
+        <button style={btnLink} onClick={() => setOpen(!open)}>{open ? 'Done' : 'Edit'}</button>
+      </div>
+      <div style={{ fontSize: '13px', marginTop: '8px' }}>
+        <span style={{ fontWeight: 700, color: summary.adverse ? '#b91c1c' : '#1a1a2e' }}>{summary.text}</span>
+        <span style={{ color: '#7a8194' }}> · {summary.enquiries} · {summary.risk}</span>
       </div>
       {open && (
-        <div style={{ marginTop: 16 }}>
-          <div style={S.grid2}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {flag('hdfcSettlementOrWO', 'Settlement / write-off with HDFC')}
-              {flag('hdfcBadHistory', 'Bad repayment history with HDFC (DPD)')}
-              {flag('dpdAcrossAllTrades', 'DPD across all accounts')}
-              {flag('overdueLast12m', 'Overdue / DPD in last 12 months')}
-              {flag('bouncesOnlyCardOrGold', 'Bounces only on card / gold loan')}
-              <div style={S.hint}>
-                Settled / written-off with: {(c.settledLenders || []).join(', ') || 'none'}<br />
-                DPD reported by: {(c.dpdLenders || []).join(', ') || 'none'}<br />
-                From CIBIL — each bank checks these against its own name.
-              </div>
+        <div style={{ marginTop: '16px' }}>
+          {perAccount && (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={lbl}>Late payments reported in CIBIL</label>
+              {c.dpdAccounts.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#7a8194' }}>None.</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ borderCollapse: 'collapse', minWidth: '420px' }}>
+                    <thead><tr>{['Lender', 'Type', 'In last 12 months', ''].map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {c.dpdAccounts.map((a, i) => (
+                        <tr key={i}>
+                          <td style={{ ...td, fontSize: '12px' }}>{a.lender || '—'}</td>
+                          <td style={{ ...td, fontSize: '12px' }}>{typeLabel(a.productType)}</td>
+                          <td style={td}><input type="checkbox" checked={!!a.inLast12m} onChange={(e) => setAccount(i, { inLast12m: e.target.checked })} /></td>
+                          <td style={td}>
+                            <button style={btnGhostSm} title="Not a real late payment — remove" onClick={() => patchCredit({ dpdAccounts: c.dpdAccounts.filter((_, j) => j !== i) })}>✕</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div style={S.hint}>Each bank checks these against its own rules (e.g. HDFC ignores card late payments but rejects late payment on an HDFC personal loan).</div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          )}
+          <div style={S.grid2}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {flag('hdfcSettlementOrWO', 'Settlement / write-off with HDFC')}
+              {!perAccount && flag('hdfcBadHistory', 'Bad repayment history with HDFC (DPD)')}
+              {flag('dpdAcrossAllTrades', 'DPD across all accounts')}
+              {!perAccount && flag('overdueLast12m', 'Overdue / DPD in last 12 months')}
+              {flag('bouncesOnlyCardOrGold', 'Bounces only on card / gold loan')}
+              <div style={S.hint}>Settled / written-off with: {(c.settledLenders || []).join(', ') || 'none'}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div>
-                <label style={S.label}>CIBIL enquiries in last 90 days</label>
+                <label style={lbl}>CIBIL enquiries in last 90 days</label>
                 <NumCell value={c.enquiries90d} placeholder="Not known" onChange={(v) => patchCredit({ enquiries90d: v })} />
               </div>
               <div>
-                <label style={S.label}>Settled / written-off accounts</label>
+                <label style={lbl}>Settled / written-off accounts</label>
                 <NumCell value={c.settlementsOrWO} onChange={(v) => patchCredit({ settlementsOrWO: v ?? 0 })} />
               </div>
               <div>
@@ -1504,26 +1584,24 @@ function CreditPanel({ draft, patchCredit, patchDraft }) {
                   />
                   Fresh loan sanctioned after settlement — EMIs paid:
                 </label>
-                <div style={{ maxWidth: 120, marginTop: 4 }}>
+                <div style={{ maxWidth: '120px', marginTop: '4px' }}>
                   <NumCell value={fresh.emisPaid} onChange={(v) => patchCredit({ freshLoanAfterSettlement: { ...fresh, emisPaid: v ?? 0 } })} />
                 </div>
               </div>
               <div>
-                <label style={S.label}>Bounces / ECS returns in last 12 months</label>
+                <label style={lbl}>Bounces / ECS returns in last 12 months</label>
                 <NumCell value={c.bouncesLast12m} onChange={(v) => patchCredit({ bouncesLast12m: v ?? 0 })} />
               </div>
             </div>
           </div>
-          <div style={{ marginTop: 16 }}>
-            <label style={S.label}>Risk band</label>
-            <div className="tabs" style={{ maxWidth: 320, marginBottom: 0 }}>
+          <div style={{ marginTop: '16px' }}>
+            <label style={lbl}>Risk band</label>
+            <div style={{ display: 'flex', gap: '6px' }}>
               {[[null, 'Auto'], ['better', 'Better'], ['lower', 'Lower']].map(([v, label]) => (
-                <button key={label} className={`tab ${draft.riskOverride === v ? 'active' : ''}`} onClick={() => patchDraft({ riskOverride: v })}>
-                  {label}
-                </button>
+                <button key={label} style={draft.riskOverride === v ? btnPriSm : btnSecSm} onClick={() => patchDraft({ riskOverride: v })}>{label}</button>
               ))}
             </div>
-            <div style={S.hint}>Auto = indicated from bounces / overdue in the last 12 months.</div>
+            <div style={S.hint}>Auto = indicated from bounces and late payments in the last 12 months.</div>
           </div>
         </div>
       )}
@@ -1534,169 +1612,131 @@ function CreditPanel({ draft, patchCredit, patchDraft }) {
 // ---------------- Results ----------------
 
 const STATUS = {
-  ELIGIBLE: { label: 'Eligible', background: '#C6F6D5', color: '#22543D' },
-  NOT_ELIGIBLE: { label: 'Not eligible', background: '#FED7D7', color: '#822727' },
-  NEEDS_INPUT: { label: 'Needs input', background: '#FEFCBF', color: '#744210' },
-  DEVIATION: { label: 'Eligible with deviation', background: '#FEEBC8', color: '#7B341E' },
+  ELIGIBLE: { label: 'Eligible', background: '#dcfce7', color: '#166534' },
+  NOT_ELIGIBLE: { label: 'Not eligible', background: '#fee2e2', color: '#991b1b' },
+  NEEDS_INPUT: { label: 'Needs input', background: '#fef9c3', color: '#854d0e' },
+  DEVIATION: { label: 'Eligible with deviation', background: '#ffedd5', color: '#9a3412' },
 };
+const pill = { display: 'inline-block', padding: '2px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' };
+const chip = { display: 'inline-block', padding: '3px 10px', margin: '2px 6px 2px 0', borderRadius: '999px', background: '#eef4fb', color: BLUE, fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' };
 
 // Banks without a multiplier grid (e.g. ICICI) return an empty best.multiplier.
 const hasMultiplier = (best) => !!best && Object.values(best.multiplier || {}).some(Boolean);
 
-const riskText = (risk) => {
-  const band = risk.band === 'better' ? 'Better band' : 'Lower band';
-  if (risk.reason === 'Agent override') return `${band} — agent override`;
-  return risk.band === 'better' ? `${band} — no bounces in 12 months` : `${band} — chance`;
-};
-
 // The CC paydown suggestion is the most actionable warning, so it goes first.
 const orderWarnings = (ws) => [...ws].sort((a, b) => (/on cards before login/i.test(b) ? 1 : 0) - (/on cards before login/i.test(a) ? 1 : 0));
 
-function ResultCard({ entry, loans }) {
+function MessageList({ items, color, background }) {
+  if (!items || !items.length) return null;
+  return (
+    <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background, color, fontSize: '12px', lineHeight: 1.6 }}>
+      {items.map((m, i) => <div key={i}>{m}</div>)}
+    </div>
+  );
+}
+
+function ResultCard({ entry, loans, cards }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const lenderOf = (id) => loans.find((l) => l.id === id);
-  const showStrip = !!(result && result.best && ['ELIGIBLE', 'DEVIATION'].includes(result.status));
+  const best = result && result.best;
+  const needsInput = !!(result && result.status === 'NEEDS_INPUT');
+  // The engine also words the card plan as a warning; it has its own green line here.
+  const warnings = ((result && result.warnings) || []).filter((w) => !(result.cardPlan && /^Close .* before login/.test(w)));
 
   return (
-    <div className="uw-card">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#1A202C' }}>{label}</div>
-        {st && <span className="uw-pill" style={{ background: st.background, color: st.color }}>{st.label}</span>}
-        <div style={{ marginLeft: 'auto', fontSize: 12, color: '#718096' }}>
+    <div style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        <h3 style={{ ...cardHeader, margin: 0 }}>{label}</h3>
+        {st && <span style={{ ...pill, background: st.background, color: st.color }}>{st.label}</span>}
+        <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9aa1b2' }}>
           {result && result.policyVersion ? `Policy ${result.policyVersion}` : entry.version ? `Policy ${entry.version}` : ''}
-        </div>
+        </span>
       </div>
 
       {error && (
-        <div className="info-box info-box-red" style={{ marginTop: 8 }}>
-          <strong>Couldn't evaluate — policy error.</strong> {error}
+        <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
+          <b>Couldn&apos;t evaluate — policy error.</b> {error}
         </div>
       )}
 
-      {result && result.reasons.length > 0 && (
-        <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 14, color: result.status === 'NOT_ELIGIBLE' ? '#C53030' : '#744210' }}>
-          {result.reasons.map((r, i) => <li key={i}>{r}</li>)}
-        </ul>
+      {/* Needs input (e.g. EMI missing): the reason goes first and the figures are greyed. */}
+      {needsInput && <MessageList items={result.reasons} color="#854d0e" background="#fef9c3" />}
+
+      {best && (
+        <div style={needsInput ? { opacity: 0.45, marginTop: '10px' } : undefined} title={needsInput ? 'Provisional — fix the input above' : undefined}>
+          <ResultTiles result={result} />
+          {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
+          <BtPlan best={best} lenderOf={lenderOf} />
+        </div>
       )}
 
-      {result && !showStrip && <Deviations items={result.deviations} />}
-
-      {showStrip && (
-        <>
-          <DecisionStrip best={result.best} risk={result.risk} />
-          <Deviations items={result.deviations} />
-          <Figures best={result.best} risk={result.risk} foirPct={result.foirPct} />
-          <BtPlan best={result.best} lenderOf={lenderOf} />
-        </>
-      )}
-
-      {result && result.warnings.length > 0 && (
-        <ul style={{ margin: '16px 0 0', paddingLeft: 20, fontSize: 14, color: '#975A16' }}>
-          {orderWarnings(result.warnings).map((w, i) => <li key={i}>{w}</li>)}
-        </ul>
-      )}
+      {result && <MessageList items={result.notes} color={BLUE} background="#eef4fb" />}
+      {result && <MessageList items={[...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" />}
+      {result && !needsInput && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
 
       {result && result.scenarios && result.scenarios.length > 0 && (
-        <OtherOptions scenarios={result.scenarios} best={result.best} band={result.risk.band} lenderOf={lenderOf} />
+        <OtherOptions scenarios={result.scenarios} best={best} band={result.risk.band} lenderOf={lenderOf} />
       )}
     </div>
   );
 }
 
-// Which method / tenure / ROI produced the eligible amount: the engine takes the
-// lower of FOIR (first tenure) and the indicated multiplier, and reports
-// limitedBy + conservativeRoi (the rate slab for that final amount).
-function bindingTerms(best, risk) {
-  const t0 = Object.keys(best.foir).map(Number)[0];
-  const mult = best.multiplier && best.multiplier[risk.band];
-  const byMultiplier = best.limitedBy === 'multiplier';
-  return {
-    tenure: byMultiplier && mult ? mult.tenure : t0,
-    roi: best.conservativeRoi ?? best.foir[t0].roi,
-    byMultiplier,
-  };
-}
-
-// Policy deviations the bank may approve (e.g. too many enquiries), in amber.
-function Deviations({ items }) {
-  if (!items || !items.length) return null;
-  return (
-    <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 14, color: '#975A16', fontWeight: 600 }}>
-      {items.map((d, i) => <li key={i}>{d}</li>)}
-    </ul>
-  );
-}
-
-function DecisionStrip({ best, risk }) {
-  const { tenure, roi, byMultiplier } = bindingTerms(best, risk);
-  const limitText = !hasMultiplier(best) ? 'FOIR only' : byMultiplier ? 'Limited by multiplier' : 'Limited by FOIR';
-  const item = (labelText, value, extra) => (
-    <div>
-      <div className="uw-label">{labelText}</div>
-      <div className="uw-value" style={{ fontSize: 16, ...extra }}>{value}</div>
-    </div>
-  );
-  return (
-    <div className="uw-strip" style={{ marginTop: 16 }}>
-      <div>
-        <div className="uw-label">Eligible amount</div>
-        <div className="uw-value" style={{ fontSize: 30, lineHeight: 1.1 }}>{fmtL(best.conservativeAmount)}</div>
-        <div style={{ fontSize: 12, color: '#718096' }}>{limitText}</div>
-      </div>
-      {item('Net in hand', fmtL(best.netInHand), { color: best.netInHand > 0 ? '#22543D' : '#1A202C' })}
-      {item('ROI', roi != null ? (
-        <>
-          {roi}%
-          {best.roiAssumed && (
-            <span className="uw-pill" style={{ background: '#FEFCBF', color: '#744210', marginLeft: 4, fontSize: 11 }} title="The bank has no rate for this amount; highest known rate used">
-              assumed
-            </span>
-          )}
-        </>
-      ) : '—')}
-      {item('Tenure', tenureLabel(tenure))}
-      {item('Risk', riskText(risk), { fontSize: 14, fontWeight: 600 })}
-    </div>
-  );
-}
-
-function Figures({ best, risk, foirPct }) {
+// CAM-style tile grid for the best scenario.
+function ResultTiles({ result }) {
+  const best = result.best;
+  const risk = result.risk;
   const tenures = Object.keys(best.foir).map(Number);
-  const indicated = best.multiplier && best.multiplier[risk.band];
+  const showMult = hasMultiplier(best);
+  const indicated = showMult ? best.multiplier[risk.band] : null;
   const otherKey = risk.band === 'better' ? 'lower' : 'better';
-  const other = best.multiplier && best.multiplier[otherKey];
-  const sameBand = indicated && other && indicated.band === other.band && indicated.multiplier === other.multiplier;
-  const showMultiplier = hasMultiplier(best);
+  const other = showMult ? best.multiplier[otherKey] : null;
+  const byMultiplier = best.limitedBy === 'multiplier';
+  const tenure = byMultiplier && indicated ? indicated.tenure : tenures[0];
+  const roi = best.conservativeRoi ?? best.foir[tenures[0]].roi;
+  const btCount = best.bt.length;
+  const inHandNegative = best.btOutstanding > best.conservativeAmount;
+
   return (
-    <div className="uw-figures" style={{ gridTemplateColumns: `repeat(${tenures.length + (showMultiplier ? 1 : 0)}, minmax(0, 1fr))` }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
       {tenures.map((t) => (
-        <div key={t} className="uw-figure">
-          <div className="uw-label">FOIR {tenureLabel(t)}</div>
-          <div className="uw-value" style={{ fontSize: 20 }}>{fmtL(best.foir[t].amount)}</div>
-          <div style={{ fontSize: 12, color: '#4A5568' }}>
-            {best.foir[t].roi != null ? `@ ${best.foir[t].roi}% · ` : ''}FOIR {foirPct}% · EMI room {fmtR(best.emiRoom)}
-          </div>
-        </div>
+        <SItem
+          key={t}
+          label={`FOIR ${tenureLabel(t)}`}
+          value={fmtINR(best.foir[t].amount)}
+          sub={`${fmtL(best.foir[t].amount)}${best.foir[t].roi != null ? ` · @ ${best.foir[t].roi}%` : ''} · FOIR ${result.foirPct}%`}
+        />
       ))}
-      {showMultiplier && (
-      <div className="uw-figure">
-        <div className="uw-label">Multiplier</div>
-        {indicated ? (
-          <>
-            <div className="uw-value" style={{ fontSize: 20 }}>{fmtL(indicated.amount)}</div>
-            <div style={{ fontSize: 12, color: '#4A5568' }}>
-              {indicated.band || risk.band} · ×{indicated.multiplier} · {indicated.tenure}M (indicated)
-            </div>
-            {other && !sameBand && (
-              <div style={{ fontSize: 12, color: '#718096', marginTop: 4 }}>
-                {other.band || otherKey}: {fmtL(other.amount)} · ×{other.multiplier}
-              </div>
-            )}
-          </>
-        ) : <div style={{ fontSize: 13, color: '#718096' }}>No multiplier for this category / salary</div>}
-      </div>
+      {showMult && (
+        <SItem
+          label="Multiplier"
+          value={indicated ? fmtINR(indicated.amount) : '—'}
+          sub={indicated
+            ? `${indicated.band || risk.band} · ×${indicated.multiplier}${other && other !== indicated && other.band !== indicated.band ? ` · ${other.band || otherKey}: ${fmtL(other.amount)}` : ''}`
+            : 'no multiplier for this category / salary'}
+        />
       )}
+      <SItem label="Eligible amount" value={fmtINR(best.conservativeAmount)} sub={showMult ? 'lower of FOIR & multiplier' : 'FOIR only'} strong />
+      <SItem label="ROI" value={roi != null ? `${roi}%` : '—'} sub={best.roiAssumed ? 'assumed — no rate for this amount' : undefined} />
+      <SItem label="Tenure" value={tenureLabel(tenure)} />
+      <SItem label="Counted obligations" value={`${fmtINR(best.obligations)}/month`} />
+      <SItem label="BT POS" value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />
+      {inHandNegative
+        ? <NotEligibleTile label="Amount in hand (after BT)" sub={`BT POS ${fmtINR(best.btOutstanding)} > eligibility ${fmtINR(best.conservativeAmount)}`} />
+        : <SItem label="Amount in hand (after BT)" value={fmtINR(best.netInHand)} strong />}
+      <SItem label="Risk" value={risk.band === 'better' ? 'Better band' : 'Lower band'} sub={risk.reason} />
+    </div>
+  );
+}
+
+// "Close YES BANK, SBI CARD before login (₹3,98,000) → eligible ₹31.2L, +₹4.5L"
+function CardPlanLine({ plan, cards }) {
+  const names = plan.closeCards.map((id) => ((cards || []).find((c) => c.id === id) || {}).issuer || id).join(', ');
+  return (
+    <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background: '#f0fdf4', color: '#166534', fontSize: '12px', fontWeight: 600 }}>
+      Close {names} before login ({fmtINR(plan.closeAmount)})
+      {plan.newEligible != null ? ` → eligible ${fmtL(plan.newEligible)}, +${fmtL(plan.gain)}` : ''}
+      {plan.mustReflectInCibil ? ' — payment must reflect in CIBIL before login' : ''}
     </div>
   );
 }
@@ -1705,13 +1745,11 @@ const chipText = (loan, id) => `${(loan && loan.lender) || id} · ${fmtL(loan ? 
 
 function BtPlan({ best, lenderOf }) {
   return (
-    <div style={{ marginTop: 16 }}>
-      <div className="uw-label" style={{ marginBottom: 4 }}>
-        BT plan{best.bt.length ? ` — ${fmtL(best.btOutstanding)} paid off from the new loan` : ''}
-      </div>
+    <div style={{ marginTop: '14px' }}>
+      <div style={{ ...lbl, marginBottom: '4px' }}>BT plan</div>
       {best.bt.length
-        ? best.bt.map((id) => <span key={id} className="uw-chip">{chipText(lenderOf(id), id)}</span>)
-        : <span style={{ fontSize: 14, color: '#4A5568' }}>No BT — every loan stays as an obligation.</span>}
+        ? best.bt.map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id)}</span>)
+        : <span style={{ fontSize: '12px', color: '#7a8194' }}>No BT — every loan stays as an obligation.</span>}
     </div>
   );
 }
@@ -1725,45 +1763,38 @@ function OtherOptions({ scenarios, best, band, lenderOf }) {
   const tenures = Object.keys(best.foir).map(Number);
   const rows = showAll ? scenarios : scenarios.slice(0, TOP_OPTIONS);
   const withMultiplier = hasMultiplier(best);
+  const cols = ['BT loans', 'BT outstanding', 'Counted obligations', ...tenures.map((t) => `FOIR ${shortTenure(t)}`), ...(withMultiplier ? ['Multiplier'] : []), 'Net in hand'];
   return (
-    <div style={{ marginTop: 16 }}>
-      <button className="uw-link" onClick={() => setOpen(!open)}>
-        {open ? '▾' : '▸'} Other BT options ({scenarios.length})
-      </button>
+    <div style={{ marginTop: '14px' }}>
+      <button style={btnLink} onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} Other BT options ({scenarios.length})</button>
       {open && (
         <>
-          <div className="uw-table-wrap" style={{ marginTop: 8 }}>
-            <table className="uw-table">
-              <thead>
-                <tr>
-                  <th>BT loans</th><th className="num">BT outstanding</th><th className="num">Counted obligations</th>
-                  {tenures.map((t) => <th key={t} className="num">FOIR {shortTenure(t)}</th>)}
-                  {withMultiplier && <th className="num">Multiplier</th>}<th className="num">Net in hand</th>
-                </tr>
-              </thead>
+          <div style={{ overflowX: 'auto', marginTop: '8px' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '760px' }}>
+              <thead><tr>{cols.map((h, i) => <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map((s, i) => (
-                  <tr key={i} className={`uw-row${s === best ? ' uw-best' : ''}`}>
-                    <td>
-                      <div style={{ whiteSpace: 'normal', maxWidth: 320, lineHeight: 1.2 }}>
-                        {s.bt.length === 0 && <span style={{ color: '#4A5568' }}>None</span>}
-                        {s.bt.slice(0, CHIPS_IN_CELL).map((id) => <span key={id} className="uw-chip">{chipText(lenderOf(id), id)}</span>)}
-                        {s.bt.length > CHIPS_IN_CELL && <span style={{ fontSize: 12, color: '#4A5568' }}>+{s.bt.length - CHIPS_IN_CELL} more</span>}
-                        {s === best && <span className="uw-pill" style={{ background: '#C6F6D5', color: '#22543D', marginLeft: 4 }}>Best</span>}
+                  <tr key={i} style={s === best ? { background: '#f0fdf4' } : undefined}>
+                    <td style={td}>
+                      <div style={{ maxWidth: '320px', lineHeight: 1.2 }}>
+                        {s.bt.length === 0 && <span style={{ fontSize: '12px', color: '#7a8194' }}>None</span>}
+                        {s.bt.slice(0, CHIPS_IN_CELL).map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id)}</span>)}
+                        {s.bt.length > CHIPS_IN_CELL && <span style={{ fontSize: '11px', color: '#7a8194' }}>+{s.bt.length - CHIPS_IN_CELL} more</span>}
+                        {s === best && <span style={{ ...pill, background: '#dcfce7', color: '#166534', marginLeft: '4px' }}>Best</span>}
                       </div>
                     </td>
-                    <td className="num">{fmtL(s.btOutstanding)}</td>
-                    <td className="num">{fmtR(s.obligations)}</td>
-                    {tenures.map((t) => <td key={t} className="num">{fmtL(s.foir[t].amount)}</td>)}
-                    {withMultiplier && <td className="num">{fmtL(s.multiplier[band] && s.multiplier[band].amount)}</td>}
-                    <td className="num" style={{ fontWeight: 700 }}>{fmtL(s.netInHand)}</td>
+                    <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.btOutstanding)}</td>
+                    <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.obligations)}</td>
+                    {tenures.map((t) => <td key={t} style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.foir[t].amount)}</td>)}
+                    {withMultiplier && <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.multiplier[band] && s.multiplier[band].amount)}</td>}
+                    <td style={{ ...td, ...num, fontSize: '12px', fontWeight: 700 }}>{fmtINR(s.netInHand)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           {!showAll && scenarios.length > TOP_OPTIONS && (
-            <button className="uw-link" style={{ marginTop: 8 }} onClick={() => setShowAll(true)}>Show all {scenarios.length} options</button>
+            <button style={{ ...btnLink, marginTop: '8px' }} onClick={() => setShowAll(true)}>Show all {scenarios.length} options</button>
           )}
         </>
       )}

@@ -105,7 +105,8 @@ export function cibilToProfile(cibilRow) {
     if (!isOpen(acc)) return;
     const type = mapProductType(acc.loanType);
     if (type === 'CARD') {
-      cards.push({ id: `C${i}`, issuer: acc.bankName || '', outstanding: toNum(acc.outstanding), paidBeforeLoginWithProof: 0 });
+      // Stable id per card: the engine's card plan and per-card lines refer to it.
+      cards.push({ id: `C${i}`, issuer: acc.bankName || '', outstanding: toNum(acc.outstanding), paidBeforeLoginWithProof: 0, action: 'keep' });
       return;
     }
     loans.push({
@@ -114,6 +115,7 @@ export function cibilToProfile(cibilRow) {
       lenderType: null,
       productType: type,
       sourceType: acc.loanType || '',
+      openDate: acc.openDate || '',     // display only (Open date column)
       loanAmount: toNum(acc.loanAmount), // display only (credit-team sheet column); the engine doesn't use it
       outstanding: toNum(acc.outstanding),
       emi: toNum(acc.emi),
@@ -144,9 +146,26 @@ export function cibilToProfile(cibilRow) {
 
   const withHistory = accounts.filter(hasPaymentHistory);
   const yearAgo = monthsAgo(reportDate, 12);
-  const overdueLast12m = accounts.some((a) =>
-    (a.lateMonths || []).some((lm) => { const d = parseLateMonth(lm); return d && d >= yearAgo; })
-    || (isOpen(a) && hasAmount(a.overdue)));
+  // Late in the 12 months before the report date: a dated late month in that
+  // window, or an amount overdue right now on an open account. A late payment
+  // with no month attached counts when the account is open or closed within
+  // the window (the DPD can't be older than the account's last activity).
+  const lateInLast12m = (a) => {
+    if ((a.lateMonths || []).some((lm) => { const d = parseLateMonth(lm); return d && d >= yearAgo; })) return true;
+    if (isOpen(a) && hasAmount(a.overdue)) return true;
+    if (!hasDpd(a) || (a.lateMonths || []).some((lm) => parseLateMonth(lm))) return false;
+    const closed = parseDate(a.closedDate);
+    return !closed || closed >= yearAgo;
+  };
+  const overdueLast12m = accounts.some(lateInLast12m);
+  // One entry per account with any DPD (or a current overdue amount). Product
+  // types match the obligations table; credit cards are 'CC'.
+  const dpdAccounts = accounts
+    .filter((a) => hasDpd(a) || (isOpen(a) && hasAmount(a.overdue)))
+    .map((a) => {
+      const type = mapProductType(a.loanType);
+      return { lender: String(a.bankName || '').trim(), productType: type === 'CARD' ? 'CC' : type, inLast12m: lateInLast12m(a) };
+    });
 
   // Member names, de-duplicated; the engine matches each bank's own name against these.
   const lenderNames = (list) => [...new Set(list.map((a) => String(a.bankName || '').trim()).filter(Boolean))];
@@ -156,6 +175,7 @@ export function cibilToProfile(cibilRow) {
     settlementsOrWO: settled.length,
     settledLenders: lenderNames(settled),
     dpdLenders: lenderNames(accounts.filter(hasDpd)),
+    dpdAccounts,
     enquiries90d: enquiries90 == null || enquiries90 === '' || !Number.isFinite(Number(enquiries90)) ? null : Number(enquiries90),
     // hdfc* kept for back-compat: the engine still reads them for HDFC.
     hdfcSettlementOrWO: settled.some((a) => /HDFC/i.test(a.bankName || '')),
@@ -223,13 +243,43 @@ export function hlPayerPatch(value) {
   return { hlEmiPaidBy: value === 'applicant' || value === 'co_applicant' ? value : null };
 }
 
-// Status pill for one loan in the selected bank's best scenario:
-// 'closed' | 'bt' | 'obligated' | 'not_counted' (null when that bank has no calculation).
-export function loanStatus(loan, line, best) {
-  if (loan.closedBeforeLoginWithProof) return 'closed';
-  if (!line || !best) return null;
-  if (best.bt.includes(loan.id)) return 'bt';
-  return line.obligation.amount > 0 ? 'obligated' : 'not_counted';
+// ---- Credit card actions ----
+
+// Action dropdown -> card patch. 'paid' starts at the full outstanding (the agent
+// can lower it); 'close' is a plan to clear the whole card before login.
+export function cardActionPatch(card, action) {
+  if (action === 'paid') return { action: 'paid', paidBeforeLoginWithProof: card.outstanding || 0 };
+  if (action === 'close') return { action: 'close', paidBeforeLoginWithProof: card.outstanding || 0 };
+  return { action: 'keep', paidBeforeLoginWithProof: 0 };
+}
+
+// Outstanding edit that keeps a 'close' plan covering the whole card.
+export function cardOutstandingPatch(card, outstanding) {
+  return card.action === 'close' ? { outstanding, paidBeforeLoginWithProof: outstanding } : { outstanding };
+}
+
+// This card's share of the bank's counted CC obligation (null when cards aren't counted).
+export function cardCountedShare(cardCalc, cardId) {
+  if (!cardCalc || !(cardCalc.amount > 0) || !(cardCalc.total > 0)) return null;
+  const line = (cardCalc.lines || []).find((l) => l.id === cardId);
+  return line ? cardCalc.amount * (line.remaining / cardCalc.total) : null;
+}
+
+// Loans with no balance and no EMI (closed / zero-balance CIBIL accounts) are
+// tucked into a collapsed group; rows the agent added stay in the main list.
+export const isZeroBalanceLoan = (l) => !l.manual && !(l.outstanding > 0) && !(l.emi > 0);
+
+// Same test the engine uses for out.missingEmi.
+export const loanNeedsEmi = (l) => (l.outstanding || 0) > 0 && !(l.emi > 0) && !l.closedBeforeLoginWithProof
+  && !['GOLD', 'OD', 'KCC'].includes(l.productType);
+
+// Reason column for one loan in the selected bank's best scenario: 'BT' when the
+// best scenario transfers it, otherwise the engine's obligation rule
+// ("Full EMI", "Only 2 EMIs left — not obligated", …). '' when that bank has no calculation.
+export function loanReason(loan, line, best) {
+  if (!line) return loan.closedBeforeLoginWithProof ? 'Closed before login (proof)' : '';
+  if (best && best.bt.includes(loan.id)) return 'BT';
+  return line.obligation.rule;
 }
 
 // ---- Direct uploads (Underwriting Desk "New customer" / override) ----
@@ -469,6 +519,7 @@ export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null } = {
     credit: {
       settledLenders: c.credit.settledLenders,
       dpdLenders: c.credit.dpdLenders,
+      dpdAccounts: c.credit.dpdAccounts,
       enquiries90d: c.credit.enquiries90d,
       hdfcSettlementOrWO: c.credit.hdfcSettlementOrWO,
       hdfcBadHistory: c.credit.hdfcBadHistory,

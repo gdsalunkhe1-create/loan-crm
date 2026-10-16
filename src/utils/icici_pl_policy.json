@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-10-14",
+  "policy_version": "v2-2026-10-15",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -118,10 +118,7 @@
     "min_emis_note": "Gauri: 'more than 6' - set to 6 paid; confirm if 7 needed",
     "nbfc_mode": "all_except",
     "product_types": [
-      "PL",
-      "BL",
-      "CONSUMER",
-      "OTHER"
+      "PL"
     ],
     "non_bt_note": "Overdraft/flexi products (Bajaj Flexi, ABFL OD, Tata Capital OD, Chola OD, Poonawalla OD) are not BT - mark type OD or treatment Obligate if CIBIL shows them as PL",
     "lender_blacklist": [
@@ -198,7 +195,8 @@
       }
     ],
     "blacklist_status": "Gauri named Fibe and KreditBee; rest are proposed defaults - TO CONFIRM",
-    "credit_card_bt": false
+    "credit_card_bt": false,
+    "product_types_note": "Only personal loans are taken in BT (consumer durable, BL etc. stay as obligations)"
   },
   "obligations": {
     "credit_card": {
