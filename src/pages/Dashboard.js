@@ -38,6 +38,7 @@ import {
   IconDownload, IconSearch, IconMail, IconNotes,
   IconBolt, IconDeviceFloppy, IconMenu2, IconEye, IconHeadset
 } from '@tabler/icons-react'
+import { Gauge, FileSearch, Landmark, Calculator, Receipt, ClipboardList, Building2, ShieldCheck } from 'lucide-react'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -5744,7 +5745,8 @@ export default function Dashboard({ session }) {
 
   const getIcon=name=>{
     const p={size:18,strokeWidth:1.6}
-    const m={dashboard:<IconLayoutDashboard {...p}/>,users:<IconUsers {...p}/>,'phone-call':<IconPhoneCall {...p}/>,checkbox:<IconCheckbox {...p}/>,'chart-bar':<IconChartBar {...p}/>,settings:<IconSettings {...p}/>,adjustments:<IconAdjustments {...p}/>,campaigns:<IconBuildingStore {...p}/>,headset:<IconHeadset {...p}/>}
+    const m={dashboard:<IconLayoutDashboard {...p}/>,users:<IconUsers {...p}/>,'phone-call':<IconPhoneCall {...p}/>,checkbox:<IconCheckbox {...p}/>,'chart-bar':<IconChartBar {...p}/>,settings:<IconSettings {...p}/>,adjustments:<IconAdjustments {...p}/>,campaigns:<IconBuildingStore {...p}/>,headset:<IconHeadset {...p}/>,
+      gauge:<Gauge {...p}/>,'file-search':<FileSearch {...p}/>,landmark:<Landmark {...p}/>,calculator:<Calculator {...p}/>,receipt:<Receipt {...p}/>,'clipboard-list':<ClipboardList {...p}/>,building:<Building2 {...p}/>,'shield-check':<ShieldCheck {...p}/>}
     return m[name]||<IconSettings {...p}/>
   }
 
@@ -5761,14 +5763,14 @@ export default function Dashboard({ session }) {
     ]},
     {section:'REPORTS',items:[{id:'reports',label:'Reports',icon:'chart-bar',roles:['team_leader','manager','admin']}]},
     {section:'TOOLS',items:[
-      {id:'cibil',             label:'CIBIL.com Analyzer',     icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'cibil-paisabazaar', label:'PaisaBazaar Analyzer',   icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'bsa',               label:'🔍 Bank Analyzer',        icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'emi',               label:'EMI Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'tax',               label:'Tax Calculator',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'cam',               label:'📋 CAM Builder',          icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'company-category',  label:'Company Category',        icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
-      {id:'underwriting',      label:'Underwriting Desk',       icon:'chart-bar',roles:['agent','team_leader','manager','admin']},
+      {id:'cibil',             label:'CIBIL.com Analyzer',     icon:'gauge',          group:'Credit Analysis',   roles:['agent','team_leader','manager','admin']},
+      {id:'cibil-paisabazaar', label:'PaisaBazaar Analyzer',   icon:'file-search',    group:'Credit Analysis',   roles:['agent','team_leader','manager','admin']},
+      {id:'bsa',               label:'Bank Analyzer',           icon:'landmark',       group:'Credit Analysis',   roles:['agent','team_leader','manager','admin']},
+      {id:'emi',               label:'EMI Calculator',          icon:'calculator',     group:'Calculators',       roles:['agent','team_leader','manager','admin']},
+      {id:'tax',               label:'Tax Calculator',          icon:'receipt',        group:'Calculators',       roles:['agent','team_leader','manager','admin']},
+      {id:'cam',               label:'CAM Builder',             icon:'clipboard-list', group:'Calculators',       roles:['agent','team_leader','manager','admin']},
+      {id:'company-category',  label:'Company Category',        icon:'building',       group:'Lookup & Decision', roles:['agent','team_leader','manager','admin']},
+      {id:'underwriting',      label:'Underwriting Desk',       icon:'shield-check',   group:'Lookup & Decision', roles:['agent','team_leader','manager','admin']},
     ]},
     {section:'MANAGE',items:[
       {id:'admin',    label:'Admin Panel', icon:'settings',    roles:['admin']},
@@ -7889,14 +7891,24 @@ export default function Dashboard({ session }) {
           <div className='sidebar-logo-text'><h2>{crmName}</h2><p>{crmTagline}</p></div>
         </div>
         <nav className='sidebar-nav'>
+          <style>{`
+            .nav-tools .nav-item { gap: 12px; }
+            .nav-tools .nav-item:hover { background: rgba(255,255,255,0.08) !important; }
+            .nav-tools .nav-item.active { background: rgba(255,255,255,0.15) !important; border-radius: 8px; border-left: 3px solid #fff; }
+            .nav-tools .nav-item.active::before { display: none; }
+            .nav-tools .nav-group-label { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.75); opacity: 0.6; padding: 8px 20px 3px; }
+          `}</style>
           {navSections.map((section,si)=>(
-            <div key={si}>
+            <div key={si} className={section.section==='TOOLS'?'nav-tools':undefined}>
               <div className='nav-section-label'>{section.section}</div>
-              {section.items.filter(item=>item.roles.includes(role)).map(item=>(
-                <div key={item.id} className={'nav-item'+(activePage===item.id?' active':'')} onClick={()=>{ setActivePage(item.id); setSidebarOpen(false) }}>
-                  <span className='nav-icon'>{getIcon(item.icon)}</span>
-                  <span>{item.label}</span>
-                </div>
+              {section.items.filter(item=>item.roles.includes(role)).map((item,ii,visible)=>(
+                <React.Fragment key={item.id}>
+                  {item.group&&item.group!==visible[ii-1]?.group&&<div className='nav-group-label'>{item.group}</div>}
+                  <div className={'nav-item'+(activePage===item.id?' active':'')} onClick={()=>{ setActivePage(item.id); setSidebarOpen(false) }}>
+                    <span className='nav-icon'>{getIcon(item.icon)}</span>
+                    <span>{item.label}</span>
+                  </div>
+                </React.Fragment>
               ))}
             </div>
           ))}
