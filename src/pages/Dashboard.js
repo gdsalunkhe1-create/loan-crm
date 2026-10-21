@@ -7143,6 +7143,20 @@ export default function Dashboard({ session }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     },[])
 
+    // Salary cell → positive number or null. Never throws — a bad salary value
+    // must not fail the row. Handles ₹/Rs/INR, commas, spaces, trailing "/-",
+    // "45k" (x1,000) and "0.45L"/"4.5 lakh"/"4.5 lac" (x1,00,000).
+    const parseSalary=v=>{
+      if(v==null)return null
+      const s=String(v).toLowerCase().replace(/[₹,\s]/g,'').replace(/^(rs\.?|inr)/,'').replace(/\/-$/,'')
+      const m=s.match(/^(\d*\.?\d+)(k|l|lakhs?|lacs?)?$/)
+      if(!m)return null
+      const mult=m[2]==='k'?1000:m[2]?100000:1
+      const n=Math.round(parseFloat(m[1])*mult)
+      return Number.isFinite(n)&&n>0?n:null
+    }
+    const SALARY_HEADER_RE=/salary|income|net\s*pay|take\s*home|monthly\s*sal/i
+
     // Derived rows from rawRows + colMap (keeps all existing csvRows references working)
     const csvRows = (()=>{
       const seenInSheet = new Set()
@@ -7150,6 +7164,7 @@ export default function Dashboard({ session }) {
         const nm  = colMap.full_name       ? (row[colMap.full_name]||'').trim()       : ''
         const mb  = colMap.mobile          ? (row[colMap.mobile]||'').trim()          : ''
         const am  = colMap.loan_amount     ? (row[colMap.loan_amount]||'').trim()     : ''
+        const sal = colMap.monthly_salary  ? parseSalary(row[colMap.monthly_salary])  : null
         const ai  = colMap.application_id  ? (row[colMap.application_id]||'').trim()  : ''
         const nt  = colMap.notes           ? (row[colMap.notes]||'').trim()           : ''
         const ct  = colMap.city            ? (row[colMap.city]||'').trim()            : ''
@@ -7169,7 +7184,7 @@ export default function Dashboard({ session }) {
         // legacy leads without org_id) that would still collide on insert.
         const isDupAgentAssigned = !!(mbNorm && agentDupMobiles.has(mbNorm))
         if(mbNorm) seenInSheet.add(mbNorm)
-        return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,
+        return{_row:i+2,full_name:nm,mobile:mb,loan_amount:am,monthly_salary:sal,application_id:ai,notes:nt,city:ct,lead_date:ld,sheet_number:sn,agent_name:an,
           _valid:!!(nm&&mb),_dupSheet:isDupSheet,_dupOrg:isDupOrg,_dupAgentAssigned:isDupAgentAssigned,
           _dupAgent:isDupSheet||isDupOrg||isDupAgentAssigned}
       })
@@ -7243,7 +7258,9 @@ export default function Dashboard({ session }) {
         if(!rows.length){setCsvError('No data rows found');return}
         setFileHeaders(headers)
         setRawRows(rows)
-        setColMap(autoMapHeaders(headers))
+        const map=autoMapHeaders(headers)
+        map.monthly_salary=headers.find(h=>SALARY_HEADER_RE.test(h))||null
+        setColMap(map)
         setCsvError(''); setImportResult(null); setShowAllPreview(false)
       }catch(err){setCsvError('Parse error: '+err.message)}
     }
@@ -7277,6 +7294,7 @@ export default function Dashboard({ session }) {
             full_name:      r.full_name,
             mobile:         r.mobile.replace(/\D/g,'').slice(-10),
             loan_amount:    r.loan_amount?(parseFloat(String(r.loan_amount).replace(/,/g,''))||null):null,
+            monthly_salary: r.monthly_salary??null,
             application_id: r.application_id||null,
             lead_date:      r.lead_date||null,
             sheet_number:   r.sheet_number||null,
@@ -7399,6 +7417,7 @@ export default function Dashboard({ session }) {
                       {field:'full_name',label:'Name *',required:true},
                       {field:'mobile',label:'Mobile *',required:true},
                       {field:'loan_amount',label:'Loan Amount'},
+                      {field:'monthly_salary',label:'Salary'},
                       {field:'application_id',label:'Application ID'},
                       {field:'lead_date',label:'Date'},
                       {field:'sheet_number',label:'Sheet Number'},
@@ -7450,7 +7469,7 @@ export default function Dashboard({ session }) {
                     <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                       <thead>
                         <tr style={{background:'#F9FAFB'}}>
-                          {['#','Name','Mobile','Loan Amount','App ID','Notes','Status'].map(h=><th key={h} style={{padding:'8px 12px',fontWeight:600,color:'#6B7280',textAlign:'left',whiteSpace:'nowrap'}}>{h}</th>)}
+                          {['#','Name','Mobile','Loan Amount','Salary','App ID','Notes','Status'].map(h=><th key={h} style={{padding:'8px 12px',fontWeight:600,color:'#6B7280',textAlign:'left',whiteSpace:'nowrap'}}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -7460,6 +7479,7 @@ export default function Dashboard({ session }) {
                             <td style={{padding:'7px 12px',fontWeight:500,color:'#111827'}}>{r.full_name||'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151'}}>{r.mobile||'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151'}}>{r.loan_amount?'₹'+r.loan_amount:'—'}</td>
+                            <td style={{padding:'7px 12px',color:'#374151'}}>{r.monthly_salary?'₹'+r.monthly_salary.toLocaleString('en-IN'):'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151'}}>{r.application_id||'—'}</td>
                             <td style={{padding:'7px 12px',color:'#374151',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.notes||'—'}</td>
                             <td style={{padding:'7px 12px'}}>{
@@ -7474,7 +7494,7 @@ export default function Dashboard({ session }) {
                             }</td>
                           </tr>
                         ))}
-                        {csvRows.length>8&&<tr style={{borderTop:'1px solid #F3F4F6'}}><td colSpan={7} style={{padding:'8px 12px',textAlign:'center'}}>
+                        {csvRows.length>8&&<tr style={{borderTop:'1px solid #F3F4F6'}}><td colSpan={8} style={{padding:'8px 12px',textAlign:'center'}}>
                           <button type="button" onClick={()=>setShowAllPreview(v=>!v)}
                             style={{background:'none',border:'none',padding:0,color:'#1a56a8',fontWeight:600,fontSize:12,cursor:'pointer'}}>
                             {showAllPreview?'Show less ▲':`See all ${csvRows.length-8} more rows ▼`}
