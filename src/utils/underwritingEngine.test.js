@@ -311,3 +311,66 @@ test('Kotak scorecard FOIR: Yellow 60% / 65% with HL, Green no HL 70% 5y, Amber 
   expect(a.foirPct).toBe(50);
   expect(Math.max(...a.best.methods.map((m) => m.amount))).toBe(750000);
 });
+
+test('Own-bank loan is closed through top-up, not BT (Vijay case: HDFC PL at HDFC)', () => {
+  const loans = [
+    { id: 'hdfc', lender: 'HDFC BANK', productType: 'PL', outstanding: 306093, emi: 12000, emisPaid: 29 },
+    { id: 'axis', lender: 'AXIS BANK', productType: 'PL', outstanding: 1831135, emi: 43004, emisPaid: 30, emisRemaining: 54 },
+  ];
+  const r = evaluateBank(policy, { ...base, netSalary: 104534, loans });
+  const own = r.obligations.loans.find((l) => l.id === 'hdfc');
+  expect(own.bt.topUp).toBe(true);
+  expect(own.bt.why).toMatch(/top-up/);
+  expect(r.best.topUp).toEqual(['hdfc']);
+  expect(r.best.bt).toContain('axis');
+  const i = evaluateBank(icici, { ...iBase, loans });
+  expect(i.obligations.loans.find((l) => l.id === 'hdfc').bt.topUp).toBeUndefined();   // HDFC loan at ICICI is a normal BT
+});
+
+import indusind from './indusind_pl_policy.json';
+
+test('IndusInd: lower of FOIR and multiplier, salary-based multiplier with own house + HL bonus, groups', () => {
+  const p = (extra) => ({ ...base, netSalary: 120000, loans: [], cards: [], cibilScore: 760,
+    company: { categoriesByBank: { indusind: 'Cat B' } }, credit: { enquiryList: [] }, ...extra });
+  const r = evaluateBank(indusind, p());
+  const m = r.best.methods.find((x) => x.key === 'multiplier');
+  expect(m.multiplier).toBe(25);
+  expect(m.amount).toBe(120000 * 25);
+  expect(r.best.eligibleRule).toBe('lower');
+  expect(r.best.eligibleAmount).toBe(Math.min(m.amount, Math.max(...r.best.methods.filter((x) => x.key.startsWith('foir')).map((x) => x.amount))));
+  expect(r.foirPct).toBe(65);
+  const own = evaluateBank(indusind, p({ ownHouse: true, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', outstanding: 3000000, emi: 30000, emisPaid: 40 }] }));
+  expect(own.foirPct).toBe(70);
+  expect(own.best.methods.find((x) => x.key === 'multiplier').multiplier).toBe(28);
+  const c = evaluateBank(indusind, p({ company: { categoriesByBank: { indusind: 'CAT C1000' } } }));
+  expect(c.best.methods.filter((x) => x.key.startsWith('foir')).map((x) => x.tenure)).toEqual([48]);
+  expect(evaluateBank(indusind, p({ cibilScore: 690 })).status).toBe('NOT_ELIGIBLE');
+});
+
+test('IndusInd: unlisted company, first-time borrower cap, DPD window, OD 2%, lock-in, conflict lenders', () => {
+  const p = (extra) => ({ ...base, netSalary: 60000, loans: [], cards: [], cibilScore: 760,
+    company: { categoriesByBank: {} }, credit: { enquiryList: [] }, ...extra });
+  expect(evaluateBank(indusind, p()).reasons[0]).toMatch(/year of incorporation/);
+  expect(evaluateBank(indusind, p({ company: { categoriesByBank: {}, incorporationYear: new Date().getFullYear() - 1 } })).status).toBe('NOT_ELIGIBLE');
+  const u = evaluateBank(indusind, p({ company: { categoriesByBank: {}, incorporationYear: 2015 } }));
+  expect(u.status).not.toBe('NOT_ELIGIBLE');
+  expect(u.best.eligibleAmount).toBeLessThanOrEqual(1000000);
+  expect(u.best.methods.find((x) => x.key.startsWith('foir')).tenure).toBe(36);
+  const ftb = evaluateBank(indusind, p({ company: { categoriesByBank: { indusind: 'CAT A' } }, cibilScore: -1, netSalary: 150000 }));
+  expect(ftb.best.eligibleAmount).toBeLessThanOrEqual(500000);
+  const dpd = (monthsAgo) => evaluateBank(indusind, p({ company: { categoriesByBank: { indusind: 'CAT A' } },
+    credit: { enquiryList: [], dpdAccounts: [{ lender: 'SBI', productType: 'PL', monthsAgo, inLast12m: true }] } }));
+  expect(dpd(2).status).toBe('NOT_ELIGIBLE');
+  expect(dpd(5).status).toBe('DEVIATION');
+  expect(dpd(9).status).toBe('ELIGIBLE');
+  const ob = evaluateBank(indusind, p({ company: { categoriesByBank: { indusind: 'CAT A' } }, loans: [
+    { id: 'od', lender: 'AXIS BANK', productType: 'OD', outstanding: 100000 },
+    { id: 'tcl', lender: 'TCL', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 20 },
+    { id: 'hdb', lender: 'HDB FINANCIAL', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 4 },
+  ] }));
+  expect(ob.obligations.loans.find((l) => l.id === 'od').obligation.amount).toBe(2000);
+  expect(ob.obligations.loans.find((l) => l.id === 'tcl').bt.ok).toBe(false);
+  expect(ob.obligations.loans.find((l) => l.id === 'hdb').bt.ok).toBe(true);
+  const lock = evaluateBank(policy, { ...base, loans: [{ id: 'ib', lender: 'INDUSIND BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 8 }] });
+  expect(lock.obligations.loans[0].bt.why).toMatch(/IndusInd Bank lock-in/);
+});

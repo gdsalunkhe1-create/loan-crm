@@ -229,12 +229,28 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
   const overdueLast12m = accounts.some(lateInLast12m);
   // One entry per account with any DPD (or a current overdue amount). Product
   // types match the obligations table; credit cards are 'CC'.
+  // monthsAgo: whole months from the most recent dated late month to today
+  // (0 when an amount is overdue right now; null when no late month is dated).
+  // count12m: distinct dated late months in the 12 months before today.
+  const todayYearAgo = monthsAgo(today, 12);
   const dpdAccounts = accounts
     .filter((a) => hasDpd(a) || (isOpen(a) && hasAmount(a.overdue)))
     .map((a) => {
       const type = mapProductType(a.loanType);
-      return { lender: String(a.bankName || '').trim(), productType: type === 'CARD' ? 'CC' : type, inLast12m: lateInLast12m(a) };
+      const dates = (a.lateMonths || []).map(parseLateMonth).filter(Boolean);
+      const latest = dates.length ? new Date(Math.max(...dates)) : null;
+      const overdueNow = isOpen(a) && hasAmount(a.overdue);
+      const count12m = new Set(dates.filter((d) => d >= todayYearAgo).map((d) => d.getTime())).size;
+      return {
+        lender: String(a.bankName || '').trim(),
+        productType: type === 'CARD' ? 'CC' : type,
+        inLast12m: lateInLast12m(a),
+        monthsAgo: overdueNow ? 0 : latest ? wholeMonthsBetween(latest, today) : null,
+        count12m,
+      };
     });
+  // Non-card accounts ever reported (open or closed) — 0 marks a first-time borrower.
+  const loanAccountsEver = accounts.filter((a) => mapProductType(a.loanType) !== 'CARD').length;
 
   const enquiryList = buildEnquiryList(cibilRow && cibilRow.enquiries, today);
 
@@ -247,6 +263,7 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
     settledLenders: lenderNames(settled),
     dpdLenders: lenderNames(accounts.filter(hasDpd)),
     dpdAccounts,
+    loanAccountsEver,
     enquiryList,
     enquiries90d: enquiries90 == null || enquiries90 === '' || !Number.isFinite(Number(enquiries90)) ? null : Number(enquiries90),
     // hdfc* kept for back-compat: the engine still reads them for HDFC.
@@ -335,6 +352,21 @@ export function companyForBank(byBank, bankId) {
     categoryConfirmed: true,
     incorporationYear: (v ? v.incorporation_year : c.pick.incorporation_year) ?? null,
   };
+}
+
+// The engine treats a company as 'UNLISTED' for a bank whose policy has
+// company.unlisted_rules when no category was found (or typed) for that bank.
+export const isUnlistedFor = (policy, company) => !!(policy?.company?.unlisted_rules && company && !company.category);
+
+// First incorporation year any bank's company search returned (pick or its variants), else null.
+export function searchedIncorporationYear(byBank) {
+  for (const c of Object.values((byBank && byBank.banks) || {})) {
+    const p = c && c.pick;
+    if (!p) continue;
+    const yr = p.incorporation_year ?? (p.variants || []).map((v) => v.incorporation_year).find((y) => y != null);
+    if (yr != null && Number.isFinite(Number(yr))) return Number(yr);
+  }
+  return null;
 }
 
 // Bank row patch for a typed category. With no match, the searched name stands in
@@ -429,9 +461,14 @@ export const loanNeedsEmi = (l) => (l.outstanding || 0) > 0 && !(l.emi > 0) && !
 // Reason column for one loan in the selected bank's best scenario: 'BT' when the
 // best scenario transfers it, otherwise the engine's obligation rule
 // ("Full EMI", "Only 2 EMIs left — not obligated", …). '' when that bank has no calculation.
+// True when a scenario closes this loan through the bank's own top-up
+// (scenario.topUp is the subset of scenario.bt done that way).
+export const isTopUp = (scenario, loanId) => !!(scenario && Array.isArray(scenario.topUp) && scenario.topUp.includes(loanId));
+
+// Own-bank loans the scenario closes through a top-up read 'Top-up' instead of 'BT'.
 export function loanReason(loan, line, best) {
   if (!line) return loan.closedBeforeLoginWithProof ? 'Closed before login (proof)' : '';
-  if (best && best.bt.includes(loan.id)) return 'BT';
+  if (best && best.bt.includes(loan.id)) return isTopUp(best, loan.id) ? 'Top-up' : 'BT';
   return line.obligation.rule;
 }
 
@@ -673,6 +710,7 @@ export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, toda
       settledLenders: c.credit.settledLenders,
       dpdLenders: c.credit.dpdLenders,
       dpdAccounts: c.credit.dpdAccounts,
+      loanAccountsEver: c.credit.loanAccountsEver,
       enquiryList: c.credit.enquiryList,
       enquiries90d: c.credit.enquiries90d,
       hdfcSettlementOrWO: c.credit.hdfcSettlementOrWO,

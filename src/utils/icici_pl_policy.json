@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v5-2026-10-17",
+  "policy_version": "v7-2026-10-20",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -309,7 +309,18 @@
         ]
       }
     ],
-    "nbfc_note": "Same NBFC list as HDFC plus Poonawalla Fincorp and Kotak (Gauri, 17 Oct 2026)"
+    "nbfc_note": "Same NBFC list as HDFC plus Poonawalla Fincorp and Kotak (Gauri, 17 Oct 2026)",
+    "own_bank_loans": "top_up",
+    "own_bank_note": "Own-bank loans are not BT'd; they are closed through a top-up (Gauri, 20 Oct 2026). Top-up uses the bank BT minimum EMIs until a separate rule is given.",
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ]
   },
   "obligations": {
     "credit_card": {

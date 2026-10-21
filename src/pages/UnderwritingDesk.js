@@ -22,9 +22,10 @@ import {
 } from '../utils/uiStyles';
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, summarizeEmployer,
-  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, hlJointPatch, hlPayerPatch,
+  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
+  isUnlistedFor, searchedIncorporationYear,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -37,7 +38,7 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 // own fields so the agent's edits elsewhere survive.
 const CIBIL_CREDIT_KEYS = [
   'hdfcSettlementOrWO', 'hdfcBadHistory', 'dpdAcrossAllTrades', 'settlementsOrWO', 'freshLoanAfterSettlement', 'overdueLast12m',
-  'settledLenders', 'dpdLenders', 'dpdAccounts', 'enquiries90d', 'enquiryList',
+  'settledLenders', 'dpdLenders', 'dpdAccounts', 'loanAccountsEver', 'enquiries90d', 'enquiryList',
 ];
 const BSA_CREDIT_KEYS = ['bouncesLast12m', 'bouncesOnlyCardOrGold'];
 const EMPTY_UPLOADS = { cibil: null, bsa: null, payslips: [] };
@@ -442,12 +443,22 @@ export default function UnderwritingDesk({ userId, orgId }) {
 
   const manualCategories = useMemo(() => manualCategoryBanks(policies), [policies]);
 
+  // Manual-category banks (Kotak) use the agent's pick and need no company search.
+  const companyFor = useCallback((bankId) => (manualCategories[bankId]
+    ? manualCompany(companyByBank, manualCatByBank[bankId])
+    : companyForBank(companyByBank, bankId)), [companyByBank, manualCategories, manualCatByBank]);
+
+  // Unlisted company (e.g. IndusInd): banks that need the year of incorporation.
+  // The field pre-fills from any bank's company search until the agent edits it.
+  const unlistedBanks = useMemo(
+    () => policies.filter((p) => isUnlistedFor(p.policy, companyFor(p.bank_id))).map((p) => p.policy?.bank || p.bank_id),
+    [policies, companyFor],
+  );
+  const searchedIncYear = useMemo(() => searchedIncorporationYear(companyByBank), [companyByBank]);
+  const incorporationYear = draft && draft.incorporationYear !== undefined ? draft.incorporationYear : searchedIncYear;
+
   const results = useMemo(() => {
     if (!draft) return [];
-    // Manual-category banks (Kotak) use the agent's pick and need no company search.
-    const companyFor = (bankId) => (manualCategories[bankId]
-      ? manualCompany(companyByBank, manualCatByBank[bankId])
-      : companyForBank(companyByBank, bankId));
     // Every bank's own category (ICICI: Open Market / Preferred / …, HDFC: CAT A / …)
     // and which banks still need the banker-confirmed one picked.
     const categoriesByBank = {};
@@ -461,7 +472,8 @@ export default function UnderwritingDesk({ userId, orgId }) {
     return policies.map((p) => {
       const label = p.policy?.bank || p.bank_id;
       const scorecard = p.policy?.scorecard || null;
-      const company = companyFor(p.bank_id);
+      const listed = companyFor(p.bank_id);
+      const company = isUnlistedFor(p.policy, listed) && listed.incorporationYear == null ? { ...listed, incorporationYear } : listed;
       const missing = [];
       if (!(draft.netSalary > 0)) missing.push('Enter the net monthly salary');
       if (!company) missing.push('Search the company to get its category');
@@ -474,7 +486,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
         return { bankId: p.bank_id, version: p.version, label, scorecard, error: e.message || String(e) };
       }
     });
-  }, [draft, policies, companyByBank, manualCategories, manualCatByBank]);
+  }, [draft, policies, companyFor, incorporationYear]);
 
   const customerName = lead?.full_name || newLeadForm.full_name || sources.uploads.cibil?.parsed.customerName || '';
   const canUpload = mode === 'new' || !!lead;
@@ -573,6 +585,13 @@ export default function UnderwritingDesk({ userId, orgId }) {
               fromPayslip={companySource === 'payslip'}
             />
             <IncomePanel draft={draft} patchDraft={patchDraft} payslips={sources.uploads.payslips} />
+            <ApplicantPanel
+              draft={draft}
+              patchDraft={patchDraft}
+              unlistedBanks={unlistedBanks}
+              incorporationYear={incorporationYear}
+              searchedIncYear={searchedIncYear}
+            />
           </>
         )}
       </div>
@@ -1221,6 +1240,38 @@ function IncomePanel({ draft, patchDraft, payslips }) {
   );
 }
 
+// Own house (FOIR / multiplier bonus at some banks) and, for an unlisted company,
+// the year of incorporation the engine checks against the bank's minimum company age.
+function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, searchedIncYear }) {
+  return (
+    <Sub title="Residence &amp; company" bodyStyle={S.grid2}>
+        <div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 20 }}>
+            <input type="checkbox" checked={!!draft.ownHouse} onChange={(e) => patchDraft({ ownHouse: e.target.checked })} />
+            Own house (on customer or spouse name)
+          </label>
+          <div style={S.hint}>Some banks allow a higher FOIR or multiplier for an own house.</div>
+        </div>
+        {unlistedBanks.length > 0 && (
+          <div>
+            <label style={S.label}>Year of incorporation</label>
+            <input
+              style={inp}
+              type="number"
+              value={incorporationYear ?? ''}
+              onChange={(e) => patchDraft({ incorporationYear: numOrNull(e.target.value) })}
+              placeholder="e.g. 2015 (from CIN / MCA)"
+            />
+            <div style={S.hint}>
+              Company not listed for {unlistedBanks.join(', ')} — needed for the unlisted-company rules.
+              {searchedIncYear != null && draft.incorporationYear === undefined ? ' Pre-filled from the company search — confirm.' : ''}
+            </div>
+          </div>
+        )}
+    </Sub>
+  );
+}
+
 // ---------------- Obligations ----------------
 
 const TYPE_LABELS = {
@@ -1364,7 +1415,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
         </td>
         <td style={{ ...td, ...num }}>
           <div style={{ fontWeight: 700, fontSize: '12px' }}>{line ? fmt(line.obligation.amount) : '—'}</div>
-          <div style={{ fontSize: '11px', color: '#7a8194', whiteSpace: 'normal', lineHeight: 1.3 }}>{loanReason(l, line, best)}</div>
+          <ReasonLine text={loanReason(l, line, best)} />
         </td>
         <td style={td}>
           <button style={btnGhostSm} title="Remove row" onClick={() => removeLoan(l.id)}>✕</button>
@@ -1789,6 +1840,7 @@ function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkCl
           {result && result.policyVersion ? `Policy ${result.policyVersion}` : entry.version ? `Policy ${entry.version}` : ''}
         </span>
       </div>
+      {isLowerRule(best) && <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>Lower of FOIR &amp; multiplier</div>}
 
       {error && (
         <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
@@ -1834,9 +1886,26 @@ function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkCl
       {result && !notEligible && result.scenarios && result.scenarios.length > 0 && (
         <OtherOptions scenarios={result.scenarios} best={best} lenderOf={lenderOf} />
       )}
+
+      {result && result.checklist && result.checklist.length > 0 && <Checklist items={result.checklist} />}
     </div>
   );
 }
+
+// Things the bank checks at login that the engine can't (age, job stability, …).
+function Checklist({ items }) {
+  return (
+    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid #eef0f4', fontSize: '11.5px', color: '#7a8194' }}>
+      <div style={{ fontWeight: 700, marginBottom: '2px' }}>Check before login</div>
+      <ul style={{ margin: 0, paddingLeft: '18px', lineHeight: 1.6 }}>
+        {items.map((c, i) => <li key={i}>{c}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+// IndusInd: the bank gives the lower of its best FOIR figure and the multiplier figure.
+const isLowerRule = (scenario) => !!(scenario && scenario.eligibleRule === 'lower');
 
 const GREEN = '#166534';
 const MUTED = '#9aa1b2';
@@ -1873,7 +1942,7 @@ function EligibilityTable({ result }) {
                   <div style={{ fontSize: '13px', fontWeight: ind ? 400 : 600 }}>
                     {m.label}
                     {ind && <span style={{ fontSize: '11px' }}> (if scorecard is {m.band})</span>}
-                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px' }}>Highest</span>}
+                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px' }}>{isLowerRule(best) ? 'Eligible (lower of FOIR & multiplier)' : 'Highest'}</span>}
                   </div>
                   {!isMult && <div style={{ fontSize: '11px', color: '#7a8194' }}>FOIR {result.foirPct}%</div>}
                   {multText && <div style={{ fontSize: '11px', color: ind ? MUTED : '#7a8194' }}>{multText}</div>}
@@ -1906,7 +1975,7 @@ function ResultTiles({ result }) {
       <EligibilityTable result={result} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
         <SItem label="Counted obligations" value={`${fmtINR(best.obligations)}/month`} />
-        <SItem label="BT POS" value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />
+        <SItem label={hasTopUp(best) ? 'BT + top-up POS' : 'BT POS'} value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />
         {hasMultiplier(best) && <SItem label="Risk" value={risk.band === 'better' ? 'Better band' : 'Lower band'} sub={risk.reason} />}
       </div>
     </>
@@ -1925,14 +1994,26 @@ function CardPlanLine({ plan, cards }) {
   );
 }
 
-const chipText = (loan, id) => `${(loan && loan.lender) || id} · ${fmtL(loan ? loan.outstanding : 0)}`;
+const chipText = (loan, id, topUp = false) => `${(loan && loan.lender) || id} · ${fmtL(loan ? loan.outstanding : 0)}${topUp ? ' (top-up)' : ''}`;
+const hasTopUp = (scenario) => !!(scenario && Array.isArray(scenario.topUp) && scenario.topUp.length > 0);
+
+// Pill for loans the selected bank's best scenario takes over: BT (green) or own-bank Top-up (purple).
+const REASON_PILLS = {
+  BT: { background: '#dcfce7', color: '#166534' },
+  'Top-up': { background: '#ede9fe', color: '#5b21b6' },
+};
+function ReasonLine({ text }) {
+  const p = REASON_PILLS[text];
+  if (p) return <div style={{ marginTop: '2px' }}><span style={{ ...pill, ...p, fontSize: '10px', padding: '1px 8px' }}>{text}</span></div>;
+  return <div style={{ fontSize: '11px', color: '#7a8194', whiteSpace: 'normal', lineHeight: 1.3 }}>{text}</div>;
+}
 
 function BtPlan({ best, lenderOf }) {
   return (
     <div style={{ marginTop: '14px' }}>
-      <div style={{ ...lbl, marginBottom: '4px' }}>BT plan</div>
+      <div style={{ ...lbl, marginBottom: '4px' }}>{hasTopUp(best) ? 'BT / top-up plan' : 'BT plan'}</div>
       {best.bt.length
-        ? best.bt.map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id)}</span>)
+        ? best.bt.map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id, isTopUp(best, id))}</span>)
         : <span style={{ fontSize: '12px', color: '#7a8194' }}>No BT — every loan stays as an obligation.</span>}
     </div>
   );
@@ -1962,7 +2043,7 @@ function OtherOptions({ scenarios, best, lenderOf }) {
                     <td style={td}>
                       <div style={{ maxWidth: '320px', lineHeight: 1.2 }}>
                         {s.bt.length === 0 && <span style={{ fontSize: '12px', color: '#7a8194' }}>None</span>}
-                        {s.bt.slice(0, CHIPS_IN_CELL).map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id)}</span>)}
+                        {s.bt.slice(0, CHIPS_IN_CELL).map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id, isTopUp(s, id))}</span>)}
                         {s.bt.length > CHIPS_IN_CELL && <span style={{ fontSize: '11px', color: '#7a8194' }}>+{s.bt.length - CHIPS_IN_CELL} more</span>}
                         {s === best && <span style={{ ...pill, background: '#dcfce7', color: '#166534', marginLeft: '4px' }}>Best</span>}
                       </div>

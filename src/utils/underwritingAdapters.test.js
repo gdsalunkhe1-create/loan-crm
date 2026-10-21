@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -233,6 +233,8 @@ describe('obligations table helpers', () => {
     const best = { bt: ['a'] };
     const line = (rule) => ({ obligation: { amount: 0, rule } });
     expect(loanReason({ id: 'a' }, line('Full EMI'), best)).toBe('BT');
+    // Own-bank loan closed through the bank's top-up reads 'Top-up'.
+    expect(loanReason({ id: 'a' }, line('Full EMI'), { bt: ['a'], topUp: ['a'] })).toBe('Top-up');
     expect(loanReason({ id: 'b' }, line('Only 2 EMI(s) left — not obligated'), best)).toBe('Only 2 EMI(s) left — not obligated');
     expect(loanReason({ id: 'c', closedBeforeLoginWithProof: true }, null, null)).toBe('Closed before login (proof)');
     expect(loanReason({ id: 'd' }, null, null)).toBe('');
@@ -312,14 +314,31 @@ describe('dpdAccounts for per-bank late-payment rules', () => {
     ],
   };
 
+  const today = new Date(2026, 9, 21);
+
   test('one entry per late account; cards are CC; 12-month window from the report date', () => {
-    expect(cibilToProfile(row).credit.dpdAccounts).toEqual([
-      { lender: 'AXIS BANK', productType: 'CC', inLast12m: true },
-      { lender: 'SHRIRAMFIN', productType: 'PL', inLast12m: false },
+    expect(cibilToProfile(row, { today }).credit.dpdAccounts).toEqual([
+      { lender: 'AXIS BANK', productType: 'CC', inLast12m: true, monthsAgo: 7, count12m: 1 },
+      { lender: 'SHRIRAMFIN', productType: 'PL', inLast12m: false, monthsAgo: 41, count12m: 0 },
     ]);
     // An overdue amount on an open account counts as late now even without a DPD reading.
-    const overdue = cibilToProfile({ ...row, accounts: [acc({ bankName: 'KOTAK', overdue: '5000', dpds: '0' })] });
-    expect(overdue.credit.dpdAccounts).toEqual([{ lender: 'KOTAK', productType: 'PL', inLast12m: true }]);
+    const overdue = cibilToProfile({ ...row, accounts: [acc({ bankName: 'KOTAK', overdue: '5000', dpds: '0' })] }, { today });
+    expect(overdue.credit.dpdAccounts).toEqual([{ lender: 'KOTAK', productType: 'PL', inLast12m: true, monthsAgo: 0, count12m: 0 }]);
+  });
+
+  test('monthsAgo counts from the latest late month to today; count12m counts distinct late months in the last 12', () => {
+    const late = acc({ bankName: 'BAJAJ FIN', dpds: '30', lateMonths: ['Jan 2026 (30d)', 'Aug 2026 (30d)', '2026 AUG (30)', 'Mar 2025 (60d)'] });
+    expect(cibilToProfile({ ...row, accounts: [late] }, { today }).credit.dpdAccounts[0]).toMatchObject({ monthsAgo: 2, count12m: 2 });
+    // A DPD with no dated month: no monthsAgo.
+    const undated = acc({ bankName: 'BAJAJ FIN', dpds: '30' });
+    expect(cibilToProfile({ ...row, accounts: [undated] }, { today }).credit.dpdAccounts[0]).toMatchObject({ monthsAgo: null, count12m: 0 });
+  });
+
+  test('loanAccountsEver counts non-card accounts, open or closed', () => {
+    expect(cibilToProfile(row, { today }).credit.loanAccountsEver).toBe(2);
+    expect(buildProfileDraft(row, null, { today }).credit.loanAccountsEver).toBe(2);
+    const cardsOnly = { ...row, accounts: [row.accounts[0]] };
+    expect(buildProfileDraft(cardsOnly, null, { today }).credit.loanAccountsEver).toBe(0);
   });
 
   test('HDFC v8: card late payment is an info note, an HDFC PL late payment rejects', () => {
@@ -700,5 +719,48 @@ describe('Manual category (Kotak) needs no company search and survives a new one
     });
     expect(r.reasons.join()).not.toMatch(/company category/);
     expect(r.best.eligibleAmount).toBeGreaterThan(0);
+  });
+});
+
+describe('own-bank top-up', () => {
+  test('isTopUp reads scenario.topUp', () => {
+    expect(isTopUp({ bt: ['a', 'b'], topUp: ['b'] }, 'b')).toBe(true);
+    expect(isTopUp({ bt: ['a', 'b'], topUp: ['b'] }, 'a')).toBe(false);
+    expect(isTopUp({ bt: ['a'] }, 'a')).toBe(false); // older engine output without topUp
+    expect(isTopUp(null, 'a')).toBe(false);
+  });
+
+  test('HDFC: an HDFC personal loan is closed through top-up, another bank PL through BT', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const row = { report_date: '2026-10-21', cibil_score: 780, enquiries: { last90: 1 }, accounts: [
+      acc({ bankName: 'HDFC BANK', openDate: '01/01/2024', emi: '9000', outstanding: '200000', tenure: '48' }),
+      acc({ bankName: 'ICICI BANK', openDate: '01/01/2024', emi: '7000', outstanding: '150000', tenure: '48' }),
+    ] };
+    const d = buildProfileDraft(row, null, { today: new Date(2026, 9, 21) });
+    const company = { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A' }, confirmedByBank: {} };
+    const r = evaluateBank(hdfc, { ...d, netSalary: 150000, salaryAccountBank: 'ICICI Bank', company });
+    const [hdfcLoan, iciciLoan] = d.loans;
+    const lineOf = (id) => r.obligations.loans.find((l) => l.id === id);
+    expect(lineOf(hdfcLoan.id).bt.topUp).toBe(true);
+    expect(lineOf(hdfcLoan.id).bt.why).toMatch(/Own-bank loan — closed through top-up/);
+    expect(r.best.bt).toEqual(expect.arrayContaining([hdfcLoan.id, iciciLoan.id]));
+    expect(loanReason(hdfcLoan, lineOf(hdfcLoan.id), r.best)).toBe('Top-up');
+    expect(loanReason(iciciLoan, lineOf(iciciLoan.id), r.best)).toBe('BT');
+  });
+});
+
+describe('unlisted company (year of incorporation)', () => {
+  const pol = { company: { unlisted_rules: { min_company_age_years: 3 } } };
+  test('isUnlistedFor: only when the policy allows unlisted and no category was found', () => {
+    expect(isUnlistedFor(pol, { name: 'X', category: null })).toBe(true);
+    expect(isUnlistedFor(pol, { name: 'X', category: 'CAT A' })).toBe(false);
+    expect(isUnlistedFor({ company: {} }, { name: 'X', category: null })).toBe(false);
+    expect(isUnlistedFor(pol, null)).toBe(false);
+  });
+  test('searchedIncorporationYear: first year from any bank pick or variant', () => {
+    expect(searchedIncorporationYear(null)).toBe(null);
+    expect(searchedIncorporationYear({ banks: { a: { pick: null }, b: { pick: { incorporation_year: 2011 } } } })).toBe(2011);
+    expect(searchedIncorporationYear({ banks: { a: { pick: { variants: [{ incorporation_year: null }, { incorporation_year: '2015' }] } } } })).toBe(2015);
+    expect(searchedIncorporationYear({ banks: { a: { pick: { company_name: 'X' } } } })).toBe(null);
   });
 });

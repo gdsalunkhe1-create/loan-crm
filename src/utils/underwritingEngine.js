@@ -159,6 +159,30 @@ function hardChecks(policy, profile) {
     const late = c.dpdAccounts.filter((a) => a.inLast12m && !CARD_TYPES.includes(a.productType)).map((a) => a.lender);
     if (late.length) reasons.push(`Late payment in last 12 months on ${[...new Set(late)].join(', ')}`);
   }
+  const minScore = policy.eligibility?.min_cibil;
+  const score = profile.cibilScore;
+  if (minScore != null && score != null && score !== -1 && score < minScore) reasons.push(`CIBIL score ${score} below ${policy.bank} minimum ${minScore}`);
+  const cr = policy.credit_rules || {};
+  if (cr.loan_dpd && Array.isArray(c.dpdAccounts)) {
+    const loans = c.dpdAccounts.filter((a) => !CARD_TYPES.includes(a.productType) && a.monthsAgo != null);
+    const recent = loans.filter((a) => a.monthsAgo <= cr.loan_dpd.reject_within_months);
+    const mid = loans.filter((a) => a.monthsAgo > cr.loan_dpd.reject_within_months && a.monthsAgo <= cr.loan_dpd.deviation_within_months);
+    const count12 = loans.reduce((n, a) => n + (a.count12m || (a.monthsAgo <= 12 ? 1 : 0)), 0);
+    if (recent.length) reasons.push(`Late payment in last ${cr.loan_dpd.reject_within_months} months on ${[...new Set(recent.map((a) => a.lender))].join(', ')}`);
+    else if (mid.length) deviations.push(`Late payment ${cr.loan_dpd.reject_within_months}–${cr.loan_dpd.deviation_within_months} months ago on ${[...new Set(mid.map((a) => a.lender))].join(', ')} — check with banker`);
+    if (!recent.length && count12 > cr.loan_dpd.max_count_12m) deviations.push(`${count12} late payments on loans in last 12 months (allowed ${cr.loan_dpd.max_count_12m}, older than 6 months)`);
+  }
+  if (cr.card_dpd_12m === 'deviation' && Array.isArray(c.dpdAccounts)) {
+    const cards = c.dpdAccounts.filter((a) => CARD_TYPES.includes(a.productType) && a.inLast12m);
+    if (cards.length) deviations.push(`Late payment on credit card (${[...new Set(cards.map((a) => a.lender))].join(', ')}) in last 12 months — call to be taken by ${policy.bank}`);
+  }
+  // Unlisted companies (allowed by some banks with extra conditions).
+  const unl = policy.company?.unlisted_rules;
+  if (cat === 'UNLISTED' && unl) {
+    const yr = profile.company?.incorporationYear;
+    if (!yr) reasons.push('Unlisted company: enter the year of incorporation (from CIN / MCA)');
+    else if (new Date().getFullYear() - yr < unl.min_company_age_years) reasons.push(`Unlisted company is ${new Date().getFullYear() - yr} year(s) old — ${policy.bank} needs ${unl.min_company_age_years}+`);
+  }
   const sc = policy.scorecard;
   if (sc) {
     const val = profile.scorecardByBank?.[policy.bank_id];
@@ -217,7 +241,12 @@ function obligationOf(policy, loan) {
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
     return { amount: 0, rule: `Only ${loan.emisRemaining} EMI(s) left — not obligated` };
   }
-  if ((policy.obligations?.one_pct_types || ONE_PCT_TYPES).includes(loan.productType)) {
+  const byType = policy.obligations?.pct_by_type;   // e.g. { GOLD: 1, OD: 2, KCC: 1 }
+  if (byType && byType[loan.productType] != null) {
+    const pct = byType[loan.productType];
+    return { amount: pct / 100 * (loan.outstanding || 0), rule: `${pct}% of outstanding` };
+  }
+  if (!byType && (policy.obligations?.one_pct_types || ONE_PCT_TYPES).includes(loan.productType)) {
     return { amount: 0.01 * (loan.outstanding || 0), rule: '1% of outstanding' };
   }
   if (loan.productType === 'HL' && loan.isJoint) {
@@ -274,6 +303,14 @@ function btCandidate(policy, loan) {
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
     return { ok: false, why: 'Already not obligated (≤2 EMIs left)' };
   }
+  // Own-bank loan: the bank closes it through a top-up instead of a BT (same effect on eligibility, own label).
+  if (bt.own_bank_loans === 'top_up' && isOwnBank(policy, loan.lender)) {
+    const needOwn = bt.top_up_min_emis ?? bt.min_emis_paid?.bank ?? 6;
+    if ((loan.emisPaid || 0) < needOwn) return { ok: false, why: `Own-bank loan — top-up needs ${needOwn} EMIs paid (${loan.emisPaid || 0} so far)` };
+    return { ok: true, topUp: true, why: `Own-bank loan — closed through top-up, ${loan.emisPaid} EMIs paid` };
+  }
+  const lock = (bt.lender_lock_in || []).find((x) => wordStartMatch(loan.lender, x.match));
+  if (lock && (loan.emisPaid || 0) < lock.months) return { ok: false, why: `${lock.name} lock-in: BT only after ${lock.months} months (${loan.emisPaid || 0} paid)` };
   const letterLender = (bt.foreclosure_letter_lenders || []).find((f) => wordStartMatch(loan.lender, f.match));
   if (letterLender && !loan.foreclosureLetter) return { ok: false, why: `Needs foreclosure letter from ${letterLender.name}`, needsLetter: true };
   if (!letterLender && wordStartMatch(loan.lender, (bt.lender_blacklist || []).flatMap((b) => b.match))) return { ok: false, why: 'Lender not taken in BT (microfinance / small fintech)' };
@@ -294,8 +331,12 @@ export function evaluateBank(policy, profile) {
   const out = { bank: policy.bank, policyVersion: policy.policy_version, status: 'ELIGIBLE', reasons: [], warnings: [] };
   const rawCat = profile.company?.categoriesByBank?.[policy.bank_id] ?? profile.company?.category;
   const category = rawCat ? norm(rawCat) : null;
-  const cat = (category && Object.keys(policy.multiplier_grids || {}).find((k) => norm(k) === category))
+  let cat = (category && Object.keys(policy.multiplier_grids || {}).find((k) => norm(k) === category))
     || rawCat;
+  if (!cat && policy.company?.unlisted_rules) cat = 'UNLISTED';
+  const groups = policy.eligibility?.groups || {};
+  const groupKey = cat && Object.keys(groups).find((g) => (groups[g].categories || []).some((x) => norm(x) === norm(cat)));
+  const group = groupKey ? groups[groupKey] : null;
   const confirmed = profile.company?.confirmedByBank?.[policy.bank_id] ?? profile.company?.categoryConfirmed;
 
   if (profile.company && confirmed === false) {
@@ -336,9 +377,20 @@ export function evaluateBank(policy, profile) {
     out.warnings.push(`${policy.bank} has no rate for ${cat || 'this category'} at this salary — ${hi}% used`);
   }
   let cap = policy.eligibility.max_loan ?? null;
+  if (group?.max_loan != null) cap = cap != null ? Math.min(cap, group.max_loan) : group.max_loan;
+  if (cat === 'UNLISTED' && policy.company?.unlisted_rules?.note) out.notes.push(policy.company.unlisted_rules.note);
+  const ftb = policy.first_time_borrower;
+  const isFtb = ftb && (profile.cibilScore === -1 || (profile.credit || {}).loanAccountsEver === 0);
+  if (isFtb) {
+    cap = cap != null ? Math.min(cap, ftb.cap) : ftb.cap;
+    out.notes.push(`First-time borrower${profile.cibilScore === -1 ? ' (CIBIL -1)' : ''} — ${policy.bank} gives ${ftb.range || fmtINR(ftb.cap)} only`);
+  }
+  if (policy.checklist?.length) out.checklist = policy.checklist;
 
   // Policy parameters
-  let foirPct = pickSlab(policy.eligibility.foir_slabs, salary)?.foir_pct;
+  const foirSlab = pickSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary);
+  let foirPct = profile.ownHouse && foirSlab?.foir_pct_own_house != null ? foirSlab.foir_pct_own_house : foirSlab?.foir_pct;
+  if (profile.ownHouse && foirSlab?.foir_pct_own_house != null) out.notes.push(`Own house — FOIR ${foirPct}%`);
   const hlBonus = policy.eligibility.foir_hl_bonus;   // e.g. { salary_min_incl: 75000, foir_pct: 75 }
   if (hlBonus && salary >= hlBonus.salary_min_incl
       && loanLines.some((l) => l.productType === 'HL' && l.obligation.amount > 0)) {
@@ -349,8 +401,9 @@ export function evaluateBank(policy, profile) {
   if (policy.scorecard && !profile.scorecardByBank?.[policy.bank_id]) {
     out.notes.push(`${policy.scorecard.name} (${policy.scorecard.values.join(' / ')}) is decided by the bank — ${policy.scorecard.reject.join('/')} is declined`);
   }
-  let tenures = policy.eligibility.tenure_slabs
-    ? (pickSlab(policy.eligibility.tenure_slabs, salary)?.months || [60])
+  const tSlabs = group?.tenure_slabs || policy.eligibility.tenure_slabs;
+  let tenures = tSlabs
+    ? (pickSlab(tSlabs, salary)?.months || [60])
     : (salary >= 75000 ? policy.eligibility.tenures_months.salary_75000_and_above : policy.eligibility.tenures_months.salary_below_75000);
   const usesGrid = !!policy.multiplier_grids;
   const bands = usesGrid ? gridBands(policy, cat, salary) : null;
@@ -431,15 +484,36 @@ export function evaluateBank(policy, profile) {
           amount: amt, roi: rateFor(amt), netInHand: amt - btOutstanding, multiplier: mx, band: key, indicative: !chosen });
       }
     }
+    const mbs = policy.multiplier_by_salary;   // { slabs: [{salary_min_incl, salary_max_excl, multiplier}], bonus: [{salary_min_incl, own_house, live_hl, multiplier}] }
+    if (mbs) {
+      let mx = pickSlab(mbs.slabs, salary)?.multiplier ?? null;
+      const liveHl = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
+      const bonus = (mbs.bonus || []).find((b) => salary >= b.salary_min_incl && (!b.own_house || profile.ownHouse) && (!b.live_hl || liveHl));
+      if (bonus) mx = Math.max(mx ?? 0, bonus.multiplier);
+      if (mx != null && (!group?.no_multiplier)) {
+        const raw = Math.max(0, (mbs.apply_on === 'salary' ? salary : salary - obl) * mx);
+        const amt = cap != null ? Math.min(raw, cap) : raw;
+        methods.push({ key: 'multiplier', label: 'Multiplier', tenure: foirTenures[foirTenures.length - 1], amount: amt, roi: rateFor(amt),
+          netInHand: amt - btOutstanding, multiplier: mx, band: bonus ? 'own house + home loan' : null });
+      }
+    }
     const firm = methods.filter((x) => !x.indicative);
-    const top = firm.reduce((a, b) => (b.amount > a.amount ? b : a), firm[0]);
+    let top = firm.reduce((a, b) => (b.amount > a.amount ? b : a), firm[0]);
+    if (policy.eligibility.combine === 'lower') {
+      // Bank gives the LOWER of its best FOIR figure and the multiplier figure.
+      const bestFoir = firm.filter((x) => x.key.startsWith('foir')).reduce((a, b) => (!a || b.amount > a.amount ? b : a), null);
+      const mlt = firm.find((x) => x.key.startsWith('multiplier'));
+      if (bestFoir && mlt) top = mlt.amount < bestFoir.amount ? mlt : bestFoir;
+    }
     scenarios.push({
       limitedBy: m && m < f60 ? 'multiplier' : 'foir',
       conservativeRoi: roiSlab ? roiSlab.roi_pct : Math.max(...roiSlabs.map((x) => x.roi_pct)),
       roiAssumed: !roiSlab,   // rate for the lower (conservative) amount
       bt: picked.map((l) => l.id), btOutstanding, obligations: obl, emiRoom, foir, multiplier: mult,
+      topUp: picked.filter((l) => l.bt.topUp).map((l) => l.id),   // subset of bt closed via own-bank top-up
       methods,                                  // [{ key, label, tenure, amount, roi, netInHand }]
-      eligibleAmount: top.amount,               // highest of the methods
+      eligibleAmount: top.amount,               // highest of the methods (or the lower of FOIR / multiplier when combine = 'lower')
+      eligibleRule: policy.eligibility.combine === 'lower' ? 'lower' : 'highest',
       eligibleBy: top.key,
       conservativeAmount: conservative,         // lower of FOIR 5y and multiplier (for reference)
       netInHand: top.amount - btOutstanding,    // in hand on the highest method
@@ -471,7 +545,7 @@ export function evaluateBank(policy, profile) {
   if (letters.length) out.notes.push(`${letters.map((l) => l.lender).join(', ')}: can be taken in BT once the foreclosure letter is received`);
 
   // Loans with a balance but no EMI would silently count as 0 — make the agent fill them.
-  const oneTypes = policy.obligations?.one_pct_types || ONE_PCT_TYPES;
+  const oneTypes = policy.obligations?.pct_by_type ? Object.keys(policy.obligations.pct_by_type) : (policy.obligations?.one_pct_types || ONE_PCT_TYPES);
   const missing = loanLines.filter((l) => (l.outstanding || 0) > 0 && !(l.emi > 0) && !l.closedBeforeLoginWithProof && !oneTypes.includes(l.productType));
   out.missingEmi = missing.map((l) => l.id);
   if (missing.length && out.status !== 'NOT_ELIGIBLE') {

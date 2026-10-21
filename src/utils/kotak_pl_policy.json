@@ -5,7 +5,7 @@
     "KOTAK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v5-2026-10-19",
+  "policy_version": "v7-2026-10-20",
   "sources": {
     "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
   },
@@ -271,7 +271,18 @@
         ]
       }
     ],
-    "credit_card_bt": false
+    "credit_card_bt": false,
+    "own_bank_loans": "top_up",
+    "own_bank_note": "Own-bank loans are not BT'd; they are closed through a top-up (Gauri, 20 Oct 2026). Top-up uses the bank BT minimum EMIs until a separate rule is given.",
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ]
   },
   "obligations": {
     "credit_card": {
