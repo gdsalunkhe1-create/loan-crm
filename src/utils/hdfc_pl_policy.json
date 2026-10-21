@@ -1,7 +1,7 @@
 {
   "bank": "HDFC Bank",
   "product": "Personal Loan (salaried)",
-  "policy_version": "v9-2026-10-15",
+  "policy_version": "v11-2026-10-17",
   "sources": {
     "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
     "rules": "Gauri's policy notes, 12 Oct 2026"
@@ -872,7 +872,32 @@
     "product_types": [
       "PL"
     ],
-    "product_types_note": "Only personal loans are taken in BT (consumer durable, BL etc. stay as obligations)"
+    "product_types_note": "Only personal loans are taken in BT (consumer durable, BL etc. stay as obligations)",
+    "od_check": {
+      "all_nbfc": true,
+      "extra_match": [
+        "KOTAK"
+      ],
+      "note": "NBFCs and Kotak give OD/flexi lines: confirm term loan vs OD; OD taken in BT only once EMIs have started"
+    },
+    "foreclosure_letter_lenders": [
+      {
+        "name": "Hero FinCorp",
+        "match": [
+          "HERO FIN",
+          "HEROFIN"
+        ]
+      }
+    ],
+    "lender_blacklist": [
+      {
+        "name": "Vivifi (FlexSalary)",
+        "match": [
+          "VIVIFIN",
+          "VIVIFI"
+        ]
+      }
+    ]
   },
   "obligations": {
     "credit_card": {
@@ -1002,5 +1027,12 @@
   ],
   "risk": {
     "ignore_card_dpd": true
+  },
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> bank can't do the case (Gauri, 16 Oct 2026)"
   }
 }

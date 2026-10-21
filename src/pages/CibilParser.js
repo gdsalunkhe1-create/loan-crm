@@ -351,10 +351,13 @@ export function parseCibil(raw) {
       amount: amtM ? amtM[1].replace(/,/g, '') : ''
     })
   }
-  const inWin = n => enqDetails.filter(e => { const x = (anchor - e.date) / 86400000; return x >= 0 && x <= n })
+  // total and the 30/60/90-day windows count Personal Loan enquiries only, like
+  // parsePaisaBazaar (auto loan / credit card enquiries don't count); `details` keeps every type.
+  const enqPersonal = enqDetails.filter(e => /\bpersonal\s+loan\b/i.test(e.product))
+  const inWin = n => enqPersonal.filter(e => { const x = (anchor - e.date) / 86400000; return x >= 0 && x <= n })
   const byType = {}; enqDetails.forEach(e => { byType[e.product] = (byType[e.product] || 0) + 1 })
   const enquiries = {
-    total: enqDetails.length,
+    total: enqPersonal.length,
     last30: inWin(30).length, last60: inWin(60).length, last90: inWin(90).length,
     items30: inWin(30).map(e => ({ institution: e.institution, product: e.product, date: fmtD(e.date) })),
     items60: inWin(60).map(e => ({ institution: e.institution, product: e.product, date: fmtD(e.date) })),

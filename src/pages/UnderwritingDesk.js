@@ -18,12 +18,13 @@ import { supabase } from '../supabase';
 import { evaluateBank, fmtINR } from '../utils/underwritingEngine';
 import {
   BLUE, page, pageTitle, pageSubtitle, card, cardHeader, lbl, inp, cellInp, cellSel, th, td,
-  btnPri, btnSec, btnPriSm, btnSecSm, btnLink, SItem, NotEligibleTile,
+  btnPri, btnSec, btnPriSm, btnSecSm, btnLink, SItem,
 } from '../utils/uiStyles';
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, summarizeEmployer,
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, hlJointPatch, hlPayerPatch,
-  cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi,
+  cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, ownBankEnquiries, plEnquiries90d,
+  scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -36,7 +37,7 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 // own fields so the agent's edits elsewhere survive.
 const CIBIL_CREDIT_KEYS = [
   'hdfcSettlementOrWO', 'hdfcBadHistory', 'dpdAcrossAllTrades', 'settlementsOrWO', 'freshLoanAfterSettlement', 'overdueLast12m',
-  'settledLenders', 'dpdLenders', 'dpdAccounts', 'enquiries90d',
+  'settledLenders', 'dpdLenders', 'dpdAccounts', 'enquiries90d', 'enquiryList',
 ];
 const BSA_CREDIT_KEYS = ['bouncesLast12m', 'bouncesOnlyCardOrGold'];
 const EMPTY_UPLOADS = { cibil: null, bsa: null, payslips: [] };
@@ -122,6 +123,9 @@ export default function UnderwritingDesk({ userId, orgId }) {
 
   const [companyQuery, setCompanyQuery] = useState('');
   const [companyByBank, setCompanyByBank] = useState(null); // { query, banks: { bankId: { candidates, pick, category, variantIdx } } }
+  // Banker-confirmed category for manual-category banks (Kotak): { bankId: 'CAT A' }.
+  // Kept across company searches; cleared only when the lead or mode changes.
+  const [manualCatByBank, setManualCatByBank] = useState({});
   // Bumped only when a lead is picked, so CompanyPanel auto-searches that lead's
   // company — but not after "Save as lead", which would wipe the agent's picks.
   const [companyAutoKey, setCompanyAutoKey] = useState(0);
@@ -165,6 +169,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
     setNewLeadForm({ full_name: '', mobile: '', pan: '' });
     setCompanyQuery('');
     setCompanyByBank(null);
+    setManualCatByBank({});
     setCompanySource(null);
     setPayslipCompany(null);
   };
@@ -193,6 +198,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
     }
     setCompanyQuery(l.company_name || '');
     setCompanyByBank(null);
+    setManualCatByBank({});
     setCompanyAutoKey((k) => k + 1);
     setCompanySource(l.company_name ? 'lead' : null);
   };
@@ -434,34 +440,41 @@ export default function UnderwritingDesk({ userId, orgId }) {
   const patchDraft = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const patchCredit = (patch) => setDraft((d) => ({ ...d, credit: { ...d.credit, ...patch } }));
 
+  const manualCategories = useMemo(() => manualCategoryBanks(policies), [policies]);
+
   const results = useMemo(() => {
     if (!draft) return [];
+    // Manual-category banks (Kotak) use the agent's pick and need no company search.
+    const companyFor = (bankId) => (manualCategories[bankId]
+      ? manualCompany(companyByBank, manualCatByBank[bankId])
+      : companyForBank(companyByBank, bankId));
     // Every bank's own category (ICICI: Open Market / Preferred / …, HDFC: CAT A / …)
     // and which banks still need the banker-confirmed one picked.
     const categoriesByBank = {};
     const confirmedByBank = {};
     policies.forEach((p) => {
-      const c = companyForBank(companyByBank, p.bank_id);
+      const c = companyFor(p.bank_id);
       if (!c) return;
       categoriesByBank[p.bank_id] = c.category;
       if (c.categoryConfirmed === false) confirmedByBank[p.bank_id] = false;
     });
     return policies.map((p) => {
       const label = p.policy?.bank || p.bank_id;
-      const company = companyForBank(companyByBank, p.bank_id);
+      const scorecard = p.policy?.scorecard || null;
+      const company = companyFor(p.bank_id);
       const missing = [];
       if (!(draft.netSalary > 0)) missing.push('Enter the net monthly salary');
       if (!company) missing.push('Search the company to get its category');
-      if (missing.length) return { bankId: p.bank_id, version: p.version, label, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
+      if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
       try {
         // One bad policy must never blank the page: errors stay on that bank's card.
         const result = evaluateBank(p.policy, { ...draft, company: { ...company, categoriesByBank, confirmedByBank } });
-        return { bankId: p.bank_id, version: p.version, label, result };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, result };
       } catch (e) {
-        return { bankId: p.bank_id, version: p.version, label, error: e.message || String(e) };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, error: e.message || String(e) };
       }
     });
-  }, [draft, policies, companyByBank]);
+  }, [draft, policies, companyByBank, manualCategories, manualCatByBank]);
 
   const customerName = lead?.full_name || newLeadForm.full_name || sources.uploads.cibil?.parsed.customerName || '';
   const canUpload = mode === 'new' || !!lead;
@@ -550,6 +563,10 @@ export default function UnderwritingDesk({ userId, orgId }) {
               byBank={companyByBank}
               setByBank={setCompanyByBank}
               policyBankIds={policies.map((p) => p.bank_id)}
+              bankLabels={Object.fromEntries(policies.map((p) => [p.bank_id, p.policy?.bank || p.bank_id]))}
+              manualCategories={manualCategories}
+              manualValues={manualCatByBank}
+              setManualValue={(bankId, v) => setManualCatByBank((m) => ({ ...m, [bankId]: v || null }))}
               autoSearchKey={companyAutoKey}
               onManual={() => { if (companySourceRef.current !== 'manual') setCompanySource('manual'); }}
               payslipHint={payslipCompany}
@@ -563,11 +580,21 @@ export default function UnderwritingDesk({ userId, orgId }) {
       {draft && !loadingLead && (
         <>
           <ObligationsPanel draft={draft} patchDraft={patchDraft} results={results} bankId={tableBankId} setBankId={setTableBankId} />
-          <CreditPanel draft={draft} patchCredit={patchCredit} patchDraft={patchDraft} />
+          <CreditPanel draft={draft} patchCredit={patchCredit} patchDraft={patchDraft} policies={policies} />
           {policies.length === 0 && !policyError && (
             <div className="info-box info-box-yellow">No active bank policies found.</div>
           )}
-          {results.map((r) => <ResultCard key={r.bankId} entry={r} loans={draft.loans} cards={draft.cards} />)}
+          {results.map((r) => (
+            <ResultCard
+              key={r.bankId}
+              entry={r}
+              loans={draft.loans}
+              cards={draft.cards}
+              scorecardValue={(draft.scorecardByBank || {})[r.bankId] || null}
+              onScorecard={(v) => patchDraft(scorecardPatch(draft.scorecardByBank, r.bankId, v))}
+              onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
+            />
+          ))}
         </>
       )}
     </div>
@@ -601,24 +628,6 @@ function Sub({ title, bodyStyle, children }) {
       <div style={bodyStyle}>{children}</div>
     </div>
   );
-}
-
-// Engine company object for one bank, or null when no company search has run yet.
-function companyForBank(byBank, bankId) {
-  if (!byBank) return null;
-  const c = byBank.banks[bankId];
-  if (!c || !c.pick) return { name: byBank.query, category: null, categoryConfirmed: true, incorporationYear: null };
-  const variants = Array.isArray(c.pick.variants) && c.pick.variants.length ? c.pick.variants : null;
-  if (variants && c.variantIdx == null) {
-    return { name: c.pick.company_name, category: c.category, categoryConfirmed: false, incorporationYear: c.pick.incorporation_year };
-  }
-  const v = variants ? variants[c.variantIdx] : null;
-  return {
-    name: c.pick.company_name,
-    category: c.category || null,
-    categoryConfirmed: true,
-    incorporationYear: (v ? v.incorporation_year : c.pick.incorporation_year) ?? null,
-  };
 }
 
 // ---------------- Lead picker (same pattern as CibilParser "Link to Customer Profile") ----------------
@@ -922,7 +931,7 @@ function SaveLeadPanel({ form, setForm, findExisting, onCreate, onAttach }) {
 // onManual: called on every agent action here (typing, searching, picking), so a
 // later payslip match never replaces a company the agent chose. payslipHint:
 // employer read from the payslip and how it matched the company list.
-function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoSearchKey, onManual, payslipHint, fromPayslip }) {
+function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankLabels, manualCategories, manualValues, setManualValue, autoSearchKey, onManual, payslipHint, fromPayslip }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSug, setShowSug] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -954,8 +963,10 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
       b.category = exact && !hasVariants(exact) ? exact.category : '';
       b.variantIdx = null;
     });
+    // Banks without a list (manual_category, e.g. Kotak) take the agent's banker-confirmed pick only.
+    Object.keys(manualCategories).forEach((id) => { delete banks[id]; });
     setByBank({ query: term, banks });
-  }, [setByBank]);
+  }, [setByBank, manualCategories]);
 
   // Auto-search the current query when the key bumps (lead picked / payslip employer matched).
   useEffect(() => {
@@ -985,9 +996,11 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
     ...s, banks: { ...s.banks, [bankId]: { ...(s.banks[bankId] || { candidates: [] }), ...patch } },
   })); };
 
+  // Manual-category banks (Kotak) are listed before any search; the rest once a search has run.
+  const manualIds = policyBankIds.filter((id) => manualCategories[id]);
   const bankIds = byBank
     ? [...new Set([...policyBankIds, ...Object.keys(byBank.banks)])].sort((a, b) => policyBankIds.includes(b) - policyBankIds.includes(a))
-    : [];
+    : manualIds;
 
   return (
     <Sub title="Company">
@@ -1022,7 +1035,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
         {error && <div className="info-box info-box-red" style={{ marginTop: 10 }}>Company search failed: {error}</div>}
         {payslipHint && <PayslipCompanyHint hint={payslipHint} applied={fromPayslip} onPick={pickTerm} />}
 
-        {byBank && (
+        {bankIds.length > 0 && (
           <div style={{ overflowX: 'auto', marginTop: 14 }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '640px' }}>
               <thead>
@@ -1030,9 +1043,32 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
               </thead>
               <tbody>
                 {bankIds.map((id) => {
-                  const b = byBank.banks[id] || { candidates: [], pick: null, category: '' };
+                  const b = (byBank && byBank.banks[id]) || { candidates: [], pick: null, category: '' };
                   const isPolicyBank = policyBankIds.includes(id);
                   const variants = b.pick && hasVariants(b.pick) ? b.pick.variants : null;
+                  const manual = manualCategories[id];
+                  if (manual) {
+                    return (
+                      <tr key={id}>
+                        <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
+                          {id}<span className="badge badge-blue" style={{ marginLeft: 6 }}>policy</span>
+                        </td>
+                        <td style={td} colSpan={2}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-primary)', flexWrap: 'wrap' }}>
+                            {bankLabels[id] || id} category (confirm with banker)
+                            <select
+                              style={{ ...cellInp, width: 'auto', minWidth: 110 }}
+                              value={manualValues[id] || ''}
+                              onChange={(e) => setManualValue(id, e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {manual.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </label>
+                        </td>
+                      </tr>
+                    );
+                  }
                   return (
                     <tr key={id}>
                       <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
@@ -1081,8 +1117,8 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, autoS
                           <input
                             style={cellInp}
                             value={b.category || ''}
-                            placeholder={b.pick ? '' : 'Not listed'}
-                            onChange={(e) => updateBank(id, { category: e.target.value, pick: b.pick || { company_name: byBank.query, category: e.target.value } })}
+                            placeholder={`Enter ${bankLabels[id] || id} category`}
+                            onChange={(e) => updateBank(id, typedCategoryPatch(b, byBank.query, e.target.value))}
                           />
                         )}
                       </td>
@@ -1193,7 +1229,6 @@ const TYPE_LABELS = {
 };
 const TREATMENTS = [['auto', 'Auto'], ['bt', 'BT'], ['obligate', 'Obligate'], ['closed', 'Closed before login (proof)']];
 const tenureLabel = (m) => (m % 12 === 0 ? `${m / 12} year${m === 12 ? '' : 's'}` : `${m} months`);
-const shortTenure = (m) => (m % 12 === 0 ? `${m / 12}y` : `${m}m`);
 const num = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 const dash = <span style={{ fontSize: '12px', color: '#bcc3d2' }}>—</span>;
 const btnGhostSm = { ...btnLink, color: '#9aa1b2', fontSize: '13px', padding: '4px 6px' };
@@ -1207,6 +1242,9 @@ const OBL_COLS = [
 const RIGHT_COLS = new Set(['Loan amt', 'Outstanding', 'EMI', 'Paid', 'Left', 'Counted EMI']);
 const OBL_MIN_WIDTH = OBL_COLS.reduce((s, [, w]) => s + w, 0);
 const RED = '#dc2626';
+const AMBER = '#d97706';
+// Loan kind for NBFC / Kotak PLs (engine loan.odStatus); '' = not confirmed.
+const OD_KINDS = [['', 'Not confirmed'], ['term', 'Term loan'], ['od_emi', 'OD – EMI started'], ['od_no_emi', 'OD – no EMI yet']];
 
 // Rupee / count cell: shows 1,25,159 (Indian grouping) when not being edited.
 function NumInput({ value, onChange, nullable = false, placeholder = '0', invalid = false }) {
@@ -1251,12 +1289,16 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const addLoan = () => patchDraft({ loans: [...draft.loans, {
     id: nextId('M', draft.loans), manual: true, lender: '', lenderType: null, productType: 'PL', openDate: '', loanAmount: 0, outstanding: 0, emi: 0,
     emisPaid: 0, emisRemaining: null, isJoint: false, coApplicantIncomeOk: null, hlEmiPaidBy: null, treatment: 'auto', closedBeforeLoginWithProof: false,
+    odStatus: null, foreclosureLetter: false,
   }] });
 
   const loanRow = (l, muted) => {
     const line = lineOf(l.id);
     const isHL = l.productType === 'HL';
     const needsEmi = loanNeedsEmi(l);
+    const showOd = !!((line && line.bt.odUnconfirmed) || l.odStatus);
+    const odAsk = !l.odStatus && !!(res && res.odConfirm && res.odConfirm.includes(l.id));
+    const showLetter = !!((line && line.bt.needsLetter) || l.foreclosureLetter);
     return (
       <tr key={l.id} style={muted ? { background: '#fafbfe', color: '#9aa1b2' } : undefined}>
         <td style={td}><input style={cellInp} value={l.lender} onChange={(e) => setLoanById(l.id, { lender: e.target.value })} placeholder="Bank" title={l.lender} /></td>
@@ -1299,6 +1341,25 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
                 </select>
               </label>
             </div>
+          )}
+          {showOd && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '4px', fontSize: '10px', color: '#555' }}>
+              Loan kind
+              <select
+                style={{ ...cellSel, width: 'auto', padding: '1px 2px', fontSize: '10px', ...(odAsk ? { borderColor: AMBER, background: '#fef9c3' } : null) }}
+                title={odAsk ? 'In the best BT plan — confirm this is a term loan' : undefined}
+                value={l.odStatus || ''}
+                onChange={(e) => setLoanById(l.id, { odStatus: e.target.value || null })}
+              >
+                {OD_KINDS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </select>
+            </label>
+          )}
+          {showLetter && (
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', marginTop: '4px', fontSize: '10px', color: '#555', cursor: 'pointer' }}>
+              <input type="checkbox" style={{ margin: '1px 0 0' }} checked={!!l.foreclosureLetter} onChange={(e) => setLoanById(l.id, { foreclosureLetter: e.target.checked })} />
+              Foreclosure letter received
+            </label>
           )}
         </td>
         <td style={{ ...td, ...num }}>
@@ -1501,15 +1562,20 @@ function creditSummary(draft) {
   if (c.dpdAcrossAllTrades) items.push('DPD across all accounts');
   const risk = draft.riskOverride ? `Risk band: ${draft.riskOverride === 'better' ? 'Better' : 'Lower'} (override)` : 'Risk band: Auto';
   // Enquiry limits differ per bank (the result cards say if it's over), so the count is shown neutrally.
-  const enquiries = c.enquiries90d == null ? 'Enquiries (90 days): not known' : `${c.enquiries90d} enquiries in 90 days`;
+  const plCount = plEnquiries90d(c.enquiryList);
+  const enquiries = plCount != null
+    ? `PL enquiries (90 days): ${plCount}`
+    : c.enquiries90d == null ? 'Enquiries (90 days): not known' : `Enquiries (90 days): ${c.enquiries90d}`;
   return { text: items.length ? items.join(' · ') : 'No adverse flags', adverse: items.length > 0, risk, enquiries };
 }
 
-function CreditPanel({ draft, patchCredit, patchDraft }) {
+function CreditPanel({ draft, patchCredit, patchDraft, policies }) {
   const [open, setOpen] = useState(false);
   const c = draft.credit;
   const fresh = c.freshLoanAfterSettlement || { exists: false, emisPaid: 0 };
   const summary = creditSummary(draft);
+  const ownEnquiries = ownBankEnquiries(c.enquiryList, policies);
+  const enquiryList = c.enquiryList || [];
   // With a per-account list the engine reads it instead of the overdue / HDFC DPD flags.
   const perAccount = Array.isArray(c.dpdAccounts);
   const setAccount = (i, patch) => patchCredit({ dpdAccounts: c.dpdAccounts.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
@@ -1527,6 +1593,12 @@ function CreditPanel({ draft, patchCredit, patchDraft }) {
       <div style={{ fontSize: '13px', marginTop: '8px' }}>
         <span style={{ fontWeight: 700, color: summary.adverse ? '#b91c1c' : '#1a1a2e' }}>{summary.text}</span>
         <span style={{ color: '#7a8194' }}> · {summary.enquiries} · {summary.risk}</span>
+        {ownEnquiries.length > 0 && (
+          <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#b91c1c' }}>Own-bank enquiries (30 days):</span>
+            {ownEnquiries.map((e) => <span key={e.bankId} style={tag('#fee2e2', '#991b1b')}>{e.short} {e.daysAgo}d</span>)}
+          </div>
+        )}
       </div>
       {open && (
         <div style={{ marginTop: '16px' }}>
@@ -1557,6 +1629,29 @@ function CreditPanel({ draft, patchCredit, patchDraft }) {
               <div style={S.hint}>Each bank checks these against its own rules (e.g. HDFC ignores card late payments but rejects late payment on an HDFC personal loan).</div>
             </div>
           )}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={lbl}>CIBIL enquiries ({enquiryList.length})</label>
+            {enquiryList.length === 0 ? (
+              <div style={{ fontSize: '12px', color: '#7a8194' }}>None in the report.</div>
+            ) : (
+              <div style={{ overflowX: 'auto', maxHeight: '240px', overflowY: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', minWidth: '520px' }}>
+                  <thead><tr>{['Lender', 'Product', 'Date', 'Days ago'].map((h) => <th key={h} style={{ ...th, textAlign: h === 'Days ago' ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {enquiryList.map((e, i) => (
+                      <tr key={i}>
+                        <td style={{ ...td, fontSize: '12px' }}>{e.lender || '—'}</td>
+                        <td style={{ ...td, fontSize: '12px' }}>{e.product || '—'}</td>
+                        <td style={{ ...td, fontSize: '12px' }}>{e.date.split('-').reverse().join('/')}</td>
+                        <td style={{ ...td, ...num, fontSize: '12px' }}>{e.daysAgo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={S.hint}>From CIBIL, read-only. A bank won&apos;t do the case within 30 days of its own personal loan enquiry.</div>
+          </div>
           <div style={S.grid2}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {flag('hdfcSettlementOrWO', 'Settlement / write-off with HDFC')}
@@ -1568,7 +1663,7 @@ function CreditPanel({ draft, patchCredit, patchDraft }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div>
-                <label style={lbl}>CIBIL enquiries in last 90 days</label>
+                <label style={lbl}>PL enquiries (90 days) — used only when the enquiry list is missing</label>
                 <NumCell value={c.enquiries90d} placeholder="Not known" onChange={(v) => patchCredit({ enquiries90d: v })} />
               </div>
               <div>
@@ -1615,7 +1710,7 @@ const STATUS = {
   ELIGIBLE: { label: 'Eligible', background: '#dcfce7', color: '#166534' },
   NOT_ELIGIBLE: { label: 'Not eligible', background: '#fee2e2', color: '#991b1b' },
   NEEDS_INPUT: { label: 'Needs input', background: '#fef9c3', color: '#854d0e' },
-  DEVIATION: { label: 'Eligible with deviation', background: '#ffedd5', color: '#9a3412' },
+  DEVIATION: { label: 'Deviation', background: '#ffedd5', color: '#9a3412' },
 };
 const pill = { display: 'inline-block', padding: '2px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' };
 const chip = { display: 'inline-block', padding: '3px 10px', margin: '2px 6px 2px 0', borderRadius: '999px', background: '#eef4fb', color: BLUE, fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' };
@@ -1635,20 +1730,61 @@ function MessageList({ items, color, background }) {
   );
 }
 
-function ResultCard({ entry, loans, cards }) {
+const TONES = {
+  green: { color: '#166534', background: '#dcfce7', borderColor: '#86efac' },
+  amber: { color: '#854d0e', background: '#fef9c3', borderColor: '#fcd34d' },
+  red: { color: '#991b1b', background: '#fee2e2', borderColor: '#fca5a5' },
+};
+
+// "<scorecard name>: — / Super green / Green / Yellow / Red" — the bank decides it, the agent records it.
+function ScorecardSelect({ scorecard, value, onChange }) {
+  const tone = TONES[scorecardTone(scorecard, value)];
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#555' }}>
+      {scorecard.name}:
+      <select
+        style={{ ...cellSel, width: 'auto', padding: '1px 4px', fontSize: '11px', fontWeight: value ? 700 : 400, ...tone }}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">—</option>
+        {scorecard.values.map((v) => <option key={v} value={v}>{v}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function ClosurePlan({ plan, onMarkClosed }) {
+  return plan.map((c) => (
+    <div key={c.id} style={{ marginTop: '6px', padding: '8px 12px', borderRadius: '8px', background: '#f0fdf4', color: '#166534', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+      <span style={{ flex: 1, minWidth: '220px' }}>{closureLineText(c, { fmtAmount: fmtR, fmtLakh: fmtL })}</span>
+      <button style={{ ...btnSecSm, padding: '2px 8px', fontSize: '11px' }} title="Set Treatment to Closed before login (proof)" onClick={() => onMarkClosed(c.id)}>Mark closed</button>
+    </div>
+  ));
+}
+
+function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkClosed }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const lenderOf = (id) => loans.find((l) => l.id === id);
   const best = result && result.best;
   const needsInput = !!(result && result.status === 'NEEDS_INPUT');
+  const notEligible = !!(result && result.status === 'NOT_ELIGIBLE');
+  const afterWait = !!(notEligible && result.eligibleAfterWait && best);
   // The engine also words the card plan as a warning; it has its own green line here.
-  const warnings = ((result && result.warnings) || []).filter((w) => !(result.cardPlan && /^Close .* before login/.test(w)));
+  const allWarnings = ((result && result.warnings) || []).filter((w) => !(result.cardPlan && /^Close .* before login/.test(w)));
+  // The OD / flexi confirmation blocks the BT plan, so it gets its own amber line first.
+  const isOdWarning = (w) => /not OD \/ flexi/.test(w);
+  const odWarnings = allWarnings.filter(isOdWarning);
+  const warnings = allWarnings.filter((w) => !isOdWarning(w));
+  const closurePlan = visibleClosurePlan(result);
 
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
         <h3 style={{ ...cardHeader, margin: 0 }}>{label}</h3>
         {st && <span style={{ ...pill, background: st.background, color: st.color }}>{st.label}</span>}
+        {entry.scorecard && <ScorecardSelect scorecard={entry.scorecard} value={scorecardValue} onChange={onScorecard} />}
         <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9aa1b2' }}>
           {result && result.policyVersion ? `Policy ${result.policyVersion}` : entry.version ? `Policy ${entry.version}` : ''}
         </span>
@@ -1663,69 +1799,117 @@ function ResultCard({ entry, loans, cards }) {
       {/* Needs input (e.g. EMI missing): the reason goes first and the figures are greyed. */}
       {needsInput && <MessageList items={result.reasons} color="#854d0e" background="#fef9c3" />}
 
-      {best && (
+      {/* Not eligible: only the red reasons, plus the card plan when closing cards could change that. */}
+      {notEligible && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
+      {notEligible && !afterWait && result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
+
+      {/* Temporary block (own-bank enquiry wait): the figures still apply once the wait is over. */}
+      {afterWait && (
+        <>
+          <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background: '#eef4fb', color: BLUE, fontSize: '12px', fontWeight: 600 }}>
+            Eligible after {result.waitDays} day{result.waitDays === 1 ? '' : 's'}: {fmtINR(best.eligibleAmount)} (amount in hand {fmtINR(best.netInHand)})
+          </div>
+          <div style={{ opacity: 0.55, marginTop: '10px' }} title="Applies once the wait is over">
+            <ResultTiles result={result} />
+            {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
+            <BtPlan best={best} lenderOf={lenderOf} />
+          </div>
+        </>
+      )}
+
+      {best && !notEligible && (
         <div style={needsInput ? { opacity: 0.45, marginTop: '10px' } : undefined} title={needsInput ? 'Provisional — fix the input above' : undefined}>
           <ResultTiles result={result} />
           {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
+          {closurePlan.length > 0 && <ClosurePlan plan={closurePlan} onMarkClosed={onMarkClosed} />}
           <BtPlan best={best} lenderOf={lenderOf} />
         </div>
       )}
 
-      {result && <MessageList items={result.notes} color={BLUE} background="#eef4fb" />}
-      {result && <MessageList items={[...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" />}
-      {result && !needsInput && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
+      {result && !notEligible && <MessageList items={odWarnings} color="#854d0e" background="#fef9c3" />}
+      {result && !notEligible && <MessageList items={(result.notes || []).filter((n) => !isClosureNote(n))} color={BLUE} background="#eef4fb" />}
+      {result && !notEligible && <MessageList items={[...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" />}
+      {result && !notEligible && !needsInput && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
 
-      {result && result.scenarios && result.scenarios.length > 0 && (
-        <OtherOptions scenarios={result.scenarios} best={best} band={result.risk.band} lenderOf={lenderOf} />
+      {result && !notEligible && result.scenarios && result.scenarios.length > 0 && (
+        <OtherOptions scenarios={result.scenarios} best={best} lenderOf={lenderOf} />
       )}
     </div>
   );
 }
 
-// CAM-style tile grid for the best scenario.
+const GREEN = '#166534';
+const MUTED = '#9aa1b2';
+
+// Multiplier methods: 'multiplier' (category grid) and 'multiplier_<scorecard>' (e.g. Kotak Green).
+const isMultiplierMethod = (m) => m.key === 'multiplier' || m.key.startsWith('multiplier_');
+// "A1-B9 · ×27" for the category grid; "×17" for a scorecard row (the label already names it).
+const multiplierText = (m) => (m.multiplier == null ? null : `${m.key === 'multiplier' && m.band ? `${m.band} · ` : ''}×${m.multiplier}`);
+
+// Every method side by side (FOIR per tenure + multipliers); the bank may sanction on any of them.
+// Indicative rows (scorecard not picked yet) are greyed and never the Highest.
+function EligibilityTable({ result }) {
+  const best = result.best;
+  const band = result.risk.band;
+  const indicated = best.multiplier && best.multiplier[band];
+  const otherKey = band === 'better' ? 'lower' : 'better';
+  const other = best.multiplier && best.multiplier[otherKey];
+  const showOther = !!(other && indicated && other.band !== indicated.band);
+  const cols = ['Method', 'Eligible amount', 'ROI', 'Tenure', 'Amount in hand after BT'];
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '560px' }}>
+        <thead><tr>{cols.map((h, i) => <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {best.methods.map((m) => {
+            const isMult = isMultiplierMethod(m);
+            const ind = !!m.indicative;
+            const highest = !ind && m.key === best.eligibleBy && m.amount > 0;
+            const rowStyle = ind ? { color: MUTED, fontStyle: 'italic' } : highest ? { background: '#f0fdf4' } : undefined;
+            const multText = isMult && multiplierText(m);
+            return (
+              <tr key={m.key} style={rowStyle}>
+                <td style={td}>
+                  <div style={{ fontSize: '13px', fontWeight: ind ? 400 : 600 }}>
+                    {m.label}
+                    {ind && <span style={{ fontSize: '11px' }}> (if scorecard is {m.band})</span>}
+                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px' }}>Highest</span>}
+                  </div>
+                  {!isMult && <div style={{ fontSize: '11px', color: '#7a8194' }}>FOIR {result.foirPct}%</div>}
+                  {multText && <div style={{ fontSize: '11px', color: ind ? MUTED : '#7a8194' }}>{multText}</div>}
+                  {m.key === 'multiplier' && showOther && <div style={{ fontSize: '11px', color: MUTED }}>{other.band || otherKey}: {fmtINR(other.amount)}</div>}
+                </td>
+                <td style={{ ...td, ...num, fontSize: '13px', fontWeight: ind ? 400 : 700 }}>{fmtINR(m.amount)}</td>
+                <td style={{ ...td, ...num, fontSize: '12px' }}>{m.roi != null ? `${m.roi}%` : '—'}</td>
+                <td style={{ ...td, ...num, fontSize: '12px' }}>{m.tenure ? tenureLabel(m.tenure) : '—'}</td>
+                <td style={{ ...td, ...num, fontSize: '12px', whiteSpace: 'normal' }}>
+                  {m.netInHand > 0
+                    ? <b style={{ color: ind ? MUTED : GREEN, fontSize: '13px', fontWeight: ind ? 400 : 700 }}>{fmtINR(m.netInHand)}</b>
+                    : <span style={{ color: ind ? MUTED : RED, fontWeight: ind ? 400 : 600 }}>Not eligible on this method (BT POS {fmtINR(best.btOutstanding)} &gt; {fmtINR(m.amount)})</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Eligibility table for the best scenario, then the supporting tiles.
 function ResultTiles({ result }) {
   const best = result.best;
   const risk = result.risk;
-  const tenures = Object.keys(best.foir).map(Number);
-  const showMult = hasMultiplier(best);
-  const indicated = showMult ? best.multiplier[risk.band] : null;
-  const otherKey = risk.band === 'better' ? 'lower' : 'better';
-  const other = showMult ? best.multiplier[otherKey] : null;
-  const byMultiplier = best.limitedBy === 'multiplier';
-  const tenure = byMultiplier && indicated ? indicated.tenure : tenures[0];
-  const roi = best.conservativeRoi ?? best.foir[tenures[0]].roi;
   const btCount = best.bt.length;
-  const inHandNegative = best.btOutstanding > best.conservativeAmount;
-
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-      {tenures.map((t) => (
-        <SItem
-          key={t}
-          label={`FOIR ${tenureLabel(t)}`}
-          value={fmtINR(best.foir[t].amount)}
-          sub={`${fmtL(best.foir[t].amount)}${best.foir[t].roi != null ? ` · @ ${best.foir[t].roi}%` : ''} · FOIR ${result.foirPct}%`}
-        />
-      ))}
-      {showMult && (
-        <SItem
-          label="Multiplier"
-          value={indicated ? fmtINR(indicated.amount) : '—'}
-          sub={indicated
-            ? `${indicated.band || risk.band} · ×${indicated.multiplier}${other && other !== indicated && other.band !== indicated.band ? ` · ${other.band || otherKey}: ${fmtL(other.amount)}` : ''}`
-            : 'no multiplier for this category / salary'}
-        />
-      )}
-      <SItem label="Eligible amount" value={fmtINR(best.conservativeAmount)} sub={showMult ? 'lower of FOIR & multiplier' : 'FOIR only'} strong />
-      <SItem label="ROI" value={roi != null ? `${roi}%` : '—'} sub={best.roiAssumed ? 'assumed — no rate for this amount' : undefined} />
-      <SItem label="Tenure" value={tenureLabel(tenure)} />
-      <SItem label="Counted obligations" value={`${fmtINR(best.obligations)}/month`} />
-      <SItem label="BT POS" value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />
-      {inHandNegative
-        ? <NotEligibleTile label="Amount in hand (after BT)" sub={`BT POS ${fmtINR(best.btOutstanding)} > eligibility ${fmtINR(best.conservativeAmount)}`} />
-        : <SItem label="Amount in hand (after BT)" value={fmtINR(best.netInHand)} strong />}
-      <SItem label="Risk" value={risk.band === 'better' ? 'Better band' : 'Lower band'} sub={risk.reason} />
-    </div>
+    <>
+      <EligibilityTable result={result} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
+        <SItem label="Counted obligations" value={`${fmtINR(best.obligations)}/month`} />
+        <SItem label="BT POS" value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />
+        {hasMultiplier(best) && <SItem label="Risk" value={risk.band === 'better' ? 'Better band' : 'Lower band'} sub={risk.reason} />}
+      </div>
+    </>
   );
 }
 
@@ -1757,13 +1941,13 @@ function BtPlan({ best, lenderOf }) {
 const CHIPS_IN_CELL = 3;
 const TOP_OPTIONS = 5;
 
-function OtherOptions({ scenarios, best, band, lenderOf }) {
+function OtherOptions({ scenarios, best, lenderOf }) {
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const tenures = Object.keys(best.foir).map(Number);
   const rows = showAll ? scenarios : scenarios.slice(0, TOP_OPTIONS);
-  const withMultiplier = hasMultiplier(best);
-  const cols = ['BT loans', 'BT outstanding', 'Counted obligations', ...tenures.map((t) => `FOIR ${shortTenure(t)}`), ...(withMultiplier ? ['Multiplier'] : []), 'Net in hand'];
+  // Same methods, same order as the eligibility table; each cell is "eligible / in hand".
+  const methodCols = best.methods.map((m) => ({ key: m.key, label: m.label }));
+  const cols = ['BT loans', 'BT outstanding', 'Counted obligations', ...methodCols.map((m) => m.label)];
   return (
     <div style={{ marginTop: '14px' }}>
       <button style={btnLink} onClick={() => setOpen(!open)}>{open ? '▾' : '▸'} Other BT options ({scenarios.length})</button>
@@ -1785,9 +1969,16 @@ function OtherOptions({ scenarios, best, band, lenderOf }) {
                     </td>
                     <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.btOutstanding)}</td>
                     <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.obligations)}</td>
-                    {tenures.map((t) => <td key={t} style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.foir[t].amount)}</td>)}
-                    {withMultiplier && <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(s.multiplier[band] && s.multiplier[band].amount)}</td>}
-                    <td style={{ ...td, ...num, fontSize: '12px', fontWeight: 700 }}>{fmtINR(s.netInHand)}</td>
+                    {methodCols.map(({ key }) => {
+                      const m = s.methods.find((x) => x.key === key);
+                      if (!m) return <td key={key} style={{ ...td, ...num }}>{dash}</td>;
+                      const top = !m.indicative && key === s.eligibleBy && m.amount > 0;
+                      return (
+                        <td key={key} style={{ ...td, ...num, fontSize: '12px', fontWeight: top ? 700 : 400, ...(m.indicative ? { color: MUTED, fontStyle: 'italic' } : null) }}>
+                          {fmtL(m.amount)} / <span style={{ color: m.indicative ? MUTED : m.netInHand > 0 ? GREEN : RED }}>{fmtL(m.netInHand)}</span>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

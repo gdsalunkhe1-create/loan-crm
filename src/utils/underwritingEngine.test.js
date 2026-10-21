@@ -168,3 +168,146 @@ test('Card plan: closes fewest cards to get under salary and shows the gain; mis
   const ab = evaluateBank(policy, { ...base, loans: [{ id: 'ab', lender: 'ADBIRLACAP', productType: 'PL', outstanding: 144000, emi: 7757, emisPaid: 7, emisRemaining: 20 }] });
   expect(ab.obligations.loans[0].bt.ok).toBe(true);
 });
+
+test('Own-bank PL enquiry within 30 days blocks only that bank', () => {
+  const credit = { enquiries90d: 3, enquiryList: [
+    { lender: 'HDFC BANK', product: 'Personal Loan', daysAgo: 12 },
+    { lender: 'ICICI BANK', product: 'Credit Card', daysAgo: 5 },
+    { lender: 'ICICI BANK', product: 'Personal Loan', daysAgo: 45 },
+  ] };
+  const h = evaluateBank(policy, { ...base, credit });
+  expect(h.status).toBe('NOT_ELIGIBLE');
+  expect(h.reasons[0]).toMatch(/HDFC Bank enquiry 12 day\(s\) ago.*18 more/);
+  expect(h.eligibleAfterWait).toBe(true);
+  expect(h.waitDays).toBe(18);
+  expect(h.best.conservativeAmount).toBeGreaterThan(0);   // figures still shown for after the wait
+  const i = evaluateBank(icici, { ...iBase, credit });
+  expect(i.reasons.join()).not.toMatch(/enquiry .* day/);
+});
+
+test('ICICI enquiry limit counts personal loan enquiries only (auto loan / card ignored)', () => {
+  const list = [
+    ...Array.from({ length: 4 }, (_, i) => ({ lender: 'BAJAJ FIN', product: 'Personal Loan', daysAgo: 10 + i })),
+    { lender: 'TATA MOTORS FIN', product: 'Auto Loan (Personal)', daysAgo: 20 },
+    { lender: 'SBI CARD', product: 'Credit Card', daysAgo: 25 },
+    { lender: 'AXIS BANK', product: 'Credit Card', daysAgo: 40 },
+  ];
+  const r = evaluateBank(icici, { ...iBase, credit: { enquiries90d: 7, enquiryList: list } });
+  expect(r.status).toBe('ELIGIBLE');   // 4 PL enquiries, not 7
+  const many = [...list, ...Array.from({ length: 3 }, () => ({ lender: 'NAVI', product: 'Personal Loan', daysAgo: 50 }))];
+  const d = evaluateBank(icici, { ...iBase, credit: { enquiries90d: 10, enquiryList: many } });
+  expect(d.status).toBe('DEVIATION');
+  expect(d.deviations[0]).toMatch(/^7 Personal Loan enquiries in 90 days/);
+});
+
+test('BT lists: Vivifin never, Hero FinCorp only with foreclosure letter, ICICI takes Poonawalla, OD confirmation', () => {
+  const loans = [
+    { id: 'vivi', lender: 'VIVIFIN', productType: 'PL', outstanding: 48000, emi: 4000, emisPaid: 9, emisRemaining: 10 },
+    { id: 'hero', lender: 'HERO FINCORP', productType: 'PL', outstanding: 288000, emi: 15149, emisPaid: 26, emisRemaining: 22 },
+    { id: 'pfl', lender: 'POONAWALLA FINCORP', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 10, emisRemaining: 20 },
+    { id: 'tcl', lender: 'TCL', productType: 'PL', outstanding: 384000, emi: 10561, emisPaid: 28, emisRemaining: 22 },
+  ];
+  const ok = (r) => Object.fromEntries(r.obligations.loans.map((l) => [l.id, l.bt.ok]));
+  const i = evaluateBank(icici, { ...iBase, loans });
+  expect(ok(i)).toEqual({ vivi: false, hero: false, pfl: true, tcl: true });
+  expect(i.notes.join()).toMatch(/HERO FINCORP: can be taken in BT once the foreclosure letter/);
+  expect(i.warnings[0]).toMatch(/^Confirm .*TCL.* not OD/);
+  const h = evaluateBank(policy, { ...base, loans });
+  expect(ok(h)).toEqual({ vivi: false, hero: false, pfl: false, tcl: true });
+  const withLetter = evaluateBank(policy, { ...base, loans: loans.map((l) => (l.id === 'hero' ? { ...l, foreclosureLetter: true } : l)) });
+  expect(ok(withLetter).hero).toBe(true);
+  const odNoEmi = evaluateBank(icici, { ...iBase, loans: loans.map((l) => (l.id === 'tcl' ? { ...l, odStatus: 'od_no_emi' } : l)) });
+  expect(ok(odNoEmi).tcl).toBe(false);
+  const confirmed = evaluateBank(icici, { ...iBase, loans: loans.map((l) => (l.id === 'tcl' ? { ...l, odStatus: 'term' } : l)) });
+  expect(confirmed.odConfirm).not.toContain('tcl');
+});
+
+import kotak from './kotak_pl_policy.json';
+
+test('Kotak: HL obligated gives FOIR 75%, scorecard Red declines, 30-day enquiry cap, recent loan DPD rejects', () => {
+  const kBase = { ...base, company: { categoriesByBank: { kotak: 'CAT A' } }, credit: { enquiryList: [] } };
+  const r = evaluateBank(kotak, kBase);           // HL 25,000 counted in full, salary 1L
+  expect(r.foirPct).toBe(75);
+  const coPays = evaluateBank(kotak, { ...kBase, loans: kBase.loans.map((l) => (l.id === 'hl' ? { ...l, isJoint: true, hlEmiPaidBy: 'co_applicant' } : l)) });
+  expect(coPays.foirPct).toBe(70);
+  expect(evaluateBank(kotak, { ...kBase, scorecardByBank: { kotak: 'Red' } }).status).toBe('NOT_ELIGIBLE');
+  const enq = Array.from({ length: 7 }, (_, i) => ({ lender: 'X', product: 'Personal Loan', daysAgo: 3 + i }));
+  expect(evaluateBank(kotak, { ...kBase, credit: { enquiryList: enq } }).reasons[0]).toMatch(/7 Personal Loan enquiries in 30 days/);
+  expect(evaluateBank(kotak, { ...kBase, credit: { enquiryList: [], dpdAccounts: [{ lender: 'SBI', productType: 'PL', inLast12m: true }] } }).status).toBe('NOT_ELIGIBLE');
+});
+
+test('Subject-to-closure plan suggests closing a small high-EMI loan', () => {
+  const kBase = { ...base, company: { categoriesByBank: { kotak: 'CAT A' } }, credit: { enquiryList: [] },
+    loans: [...base.loans, { id: 'kb', lender: 'KRAZYBEE', productType: 'PL', outstanding: 40000, emi: 9582, emisPaid: 4, emisRemaining: 8 }] };
+  const r = evaluateBank(kotak, kBase);
+  expect(r.closurePlan.map((c) => c.id)).toContain('kb');
+  expect(r.notes.join()).toMatch(/Subject to closure of KRAZYBEE/);
+});
+
+test('Both methods shown: FOIR can carry the case when the multiplier is below BT POS', () => {
+  // salary 1L, CAT A; BT loans large enough that multiplier < BT POS but FOIR > BT POS
+  const loans = [
+    { id: 'tcl', lender: 'TCL', productType: 'PL', outstanding: 1400000, emi: 15000, emisPaid: 28, emisRemaining: 40, odStatus: 'term' },
+    { id: 'icici', lender: 'ICICI BANK', productType: 'PL', outstanding: 1477160, emi: 20000, emisPaid: 20, emisRemaining: 40 },
+  ];
+  const r = evaluateBank(policy, { ...base, loans });
+  const s = r.scenarios.find((x) => x.bt.length === 2);
+  const by = Object.fromEntries(s.methods.map((m) => [m.key, m]));
+  expect(Object.keys(by)).toEqual(['foir_60', 'foir_72', 'multiplier']);
+  expect(by.multiplier.netInHand).toBeLessThan(0);
+  expect(by.foir_60.netInHand).toBeGreaterThan(0);
+  expect(s.eligibleBy).toBe('foir_72');
+  expect(s.netInHand).toBeGreaterThan(0);
+  expect(r.status).toBe('ELIGIBLE');
+});
+
+test('Kotak: category/salary ROI, scorecard multiplier for all cards until one is chosen, manual category', () => {
+  const kBase = { ...base, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 25000, emisPaid: 50, emisRemaining: 150 }],
+    company: { categoriesByBank: { kotak: 'CAT A' } }, credit: { enquiryList: [] } };
+  const r = evaluateBank(kotak, kBase);   // salary 1L, obligations 25k
+  const ms = r.best.methods.filter((m) => m.key.startsWith('multiplier_'));
+  expect(ms.map((m) => m.multiplier)).toEqual([19, 17, 15, 12]);    // 50K-1L column, all scorecards
+  expect(ms.every((m) => m.indicative)).toBe(true);
+  expect(r.best.eligibleBy.startsWith('foir')).toBe(true);           // indicative rows don't set "highest"
+  expect(r.best.methods.find((m) => m.key === 'foir_60').roi).toBe(9.95);
+  const g = evaluateBank(kotak, { ...kBase, scorecardByBank: { kotak: 'Green' } });
+  const gm = g.best.methods.filter((m) => m.key.startsWith('multiplier_'));
+  expect(gm.length).toBe(1);
+  expect(gm[0].amount).toBe(100000 * 17);   // Kotak: salary x M, obligations not deducted
+  const c = evaluateBank(kotak, { ...kBase, company: { categoriesByBank: { kotak: 'CAT C' } } });
+  expect(c.best.methods.find((m) => m.key === 'foir_60').roi).toBe(11);
+  const none = evaluateBank(kotak, { ...kBase, company: { categoriesByBank: {} } });
+  expect(none.reasons[0]).toMatch(/Enter the Kotak Mahindra Bank company category/);
+});
+
+test('Kotak: 2L salary, Super green -> 2,00,000 x 21 = 42,00,000; CAT D rate 13%', () => {
+  const r = evaluateBank(kotak, { ...base, netSalary: 200000, loans: [], company: { categoriesByBank: { kotak: 'CAT D' } },
+    scorecardByBank: { kotak: 'Super green' }, credit: { enquiryList: [] } });
+  const m = r.best.methods.find((x) => x.key.startsWith('multiplier_'));
+  expect(m.amount).toBe(4200000);
+  expect(r.best.methods.find((x) => x.key === 'foir_60').roi).toBe(13);
+});
+
+test('Kotak below 10L rates by category', () => {
+  const run = (cat, salary) => evaluateBank(kotak, { ...base, netSalary: salary, loans: [], cards: [],
+    company: { categoriesByBank: { kotak: cat } }, credit: { enquiryList: [] } })
+    .best.methods.find((x) => x.key === 'foir_60');
+  expect(run('CAT A', 36000).roi).toBe(11);      // 36K salary -> loan under 10L
+  expect(run('CAT C', 36000).roi).toBe(12.5);
+  expect(run('CAT D', 36000).roi).toBe(14);
+  expect(run('CAT A', 60000).roi).toBe(9.95);    // 60K salary -> 10L+ at 9.95
+});
+
+test('Kotak scorecard FOIR: Yellow 60% / 65% with HL, Green no HL 70% 5y, Amber 50% capped 7.5L', () => {
+  const run = (sc, loans, salary = 100000) => evaluateBank(kotak, { ...base, netSalary: salary, loans, cards: [],
+    company: { categoriesByBank: { kotak: 'CAT A' } }, scorecardByBank: { kotak: sc }, credit: { enquiryList: [] } });
+  const hl = [{ id: 'hl', lender: 'SBI', productType: 'HL', outstanding: 2000000, emi: 25000, emisPaid: 50, emisRemaining: 150 }];
+  expect(run('Yellow', []).foirPct).toBe(60);
+  expect(run('Yellow', hl).foirPct).toBe(65);
+  const g = run('Green', []);
+  expect(g.foirPct).toBe(70);
+  expect(g.best.methods.filter((m) => m.key.startsWith('foir')).map((m) => m.key)).toEqual(['foir_60']);
+  const a = run('Amber', [], 300000);
+  expect(a.foirPct).toBe(50);
+  expect(Math.max(...a.best.methods.map((m) => m.amount))).toBe(750000);
+});

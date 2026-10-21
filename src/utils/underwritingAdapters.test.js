@@ -1,7 +1,8 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
+import kotak from './kotak_pl_policy.json';
 
 // Shapes mirror real customer_cibil_data.accounts rows (all strings, two date formats).
 const acc = (o) => ({ bankName: '', loanType: 'Personal Loan', status: 'Active', openDate: '', closedDate: '', tenure: '', emi: '', outstanding: '', overdue: '', dpds: '0', lateMonths: [], settlement: '', writtenOff: '', ...o });
@@ -376,5 +377,328 @@ describe('credit card actions and table grouping', () => {
     expect(r.obligations.cards.lines.map((l) => l.id)).toEqual(['C0', 'C1']);
     expect(r.cardPlan.closeCards.every((id) => ['C0', 'C1'].includes(id))).toBe(true);
     expect(r.cardPlan.gain).toBeGreaterThan(0);
+  });
+});
+
+describe('enquiryList from the CIBIL enquiry table', () => {
+  const { parseCibil, parsePaisaBazaar } = require('../pages/CibilParser');
+  const TODAY = new Date(2026, 9, 16); // fixed 'today' so days-ago are deterministic
+  const toRow = (parsed) => ({ report_date: '2026-10-16', cibil_score: parsed.score, enquiries: parsed.enquiries, accounts: [] });
+
+  test('CIBIL.com format: every product type, days counted to today', () => {
+    const raw = [
+      'Report Date : 16/10/2026',
+      'ENQUIRY DETAILS',
+      'Member Name HDFC BANK Date Of Enquiry 04/10/2026 Enquiry Purpose Personal Loan – Enquiry Amount ₹5,00,000',
+      'Member Name BAJAJ FINANCE LTD Date Of Enquiry 20/07/2026 Enquiry Purpose Consumer Loan – Enquiry Amount ₹40,000',
+      'End of report',
+    ].join('\n');
+    const list = cibilToProfile(toRow(parseCibil(raw)), { today: TODAY }).credit.enquiryList;
+    expect(list).toEqual([
+      { lender: 'HDFC BANK', product: 'Personal Loan', date: '2026-10-04', daysAgo: 12 },
+      { lender: 'BAJAJ FINANCE LTD', product: 'Consumer Loan', date: '2026-07-20', daysAgo: 88 },
+    ]);
+  });
+
+  test('PaisaBazaar format: non-PL enquiries are kept too', () => {
+    const text = [
+      'Report Date: 16 Oct 2026',
+      'Financial Institution Product Type Reported Date Amount',
+      'ICICI BANK Personal Loan 01 Oct 2026 ₹3,00,000',
+      'KREDITBEE Credit Card 20 Jul 2026 ₹10,000',
+      'Tip',
+    ].join(' ');
+    const list = cibilToProfile(toRow(parsePaisaBazaar(text)), { today: TODAY }).credit.enquiryList;
+    expect(list).toEqual([
+      { lender: 'ICICI BANK', product: 'Personal Loan', date: '2026-10-01', daysAgo: 15 },
+      { lender: 'KREDITBEE', product: 'Credit Card', date: '2026-07-20', daysAgo: 88 },
+    ]);
+  });
+
+  test('saved rows (JSON dates), undated entries skipped, old rows fall back to items90', () => {
+    const report = new Date(2026, 9, 16);
+    const savedDate = JSON.parse(JSON.stringify({ d: new Date(2026, 9, 4) })).d; // ISO timestamp after a save
+    expect(buildEnquiryList({ details: [
+      { institution: 'HDFC BANK', product: 'Personal Loan', date: savedDate },
+      { institution: 'AXIS BANK', product: 'Personal Loan', date: null },
+      { institution: 'SBI', product: 'Personal Loan', date: 'n/a' },
+    ] }, report)).toEqual([{ lender: 'HDFC BANK', product: 'Personal Loan', date: '2026-10-04', daysAgo: 12 }]);
+    expect(buildEnquiryList({ items90: [{ institution: 'ICICI BANK', product: 'Personal Loan', date: '01 Oct 2026' }] }, report))
+      .toEqual([{ lender: 'ICICI BANK', product: 'Personal Loan', date: '2026-10-01', daysAgo: 15 }]);
+    expect(buildEnquiryList(null, report)).toEqual([]);
+  });
+
+  test('own-bank enquiry within 30 days: summary chip, and the engine rejects only that bank', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const icici = require('./icici_pl_policy.json');
+    const enquiryList = [
+      { lender: 'HDFC BANK', product: 'Personal Loan', date: '2026-10-04', daysAgo: 12 },
+      { lender: 'ICICI BANK', product: 'Credit Card', date: '2026-10-10', daysAgo: 6 },   // not PL: ignored
+    ];
+    const policies = [{ bank_id: 'hdfc_bank', policy: hdfc }, { bank_id: 'icici', policy: icici }];
+    expect(ownBankEnquiries(enquiryList, policies)).toEqual([{ bankId: 'hdfc_bank', short: 'HDFC', daysAgo: 12 }]);
+
+    const row = { report_date: '2026-10-16', cibil_score: 780, enquiries: { last90: 2 }, accounts: [
+      acc({ bankName: 'ICICI BANK', openDate: '01/01/2024', emi: '9000', outstanding: '200000', tenure: '48' }),
+    ] };
+    const d = buildProfileDraft(row, null);
+    const company = { name: 'ACME', category: null, categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A', icici: 'Preferred' }, confirmedByBank: {} };
+    const profile = { ...d, netSalary: 150000, salaryAccountBank: 'ICICI Bank', company, credit: { ...d.credit, enquiryList } };
+    const h = evaluateBank(hdfc, profile);
+    expect(h.status).toBe('NOT_ELIGIBLE');
+    expect(h.reasons.join(' ')).toMatch(/HDFC Bank enquiry 12 day\(s\) ago .* \(18 more\)/);
+    expect(evaluateBank(icici, profile).status).not.toBe('NOT_ELIGIBLE');
+  });
+});
+
+describe('enquiry wait and PL count', () => {
+  test('daysAgo counts to today, not the CIBIL upload date', () => {
+    const row = { report_date: '2026-09-20', enquiries: { details: [{ institution: 'HDFC BANK', product: 'Personal Loan', date: '04/09/2026' }] }, accounts: [] };
+    // Uploaded 16 days after the enquiry, but the case is logged in on 17 Oct: 43 days.
+    expect(cibilToProfile(row, { today: new Date(2026, 9, 17) }).credit.enquiryList[0].daysAgo).toBe(43);
+    expect(buildProfileDraft(row, null, { today: new Date(2026, 8, 20) }).credit.enquiryList[0].daysAgo).toBe(16);
+  });
+
+  test('PL enquiries in 90 days from the list (auto loan / credit card not counted)', () => {
+    const list = [
+      { lender: 'HDFC BANK', product: 'Personal Loan', daysAgo: 12 },
+      { lender: 'TATA MOTORS FIN', product: 'Auto Loan (Personal)', daysAgo: 20 },
+      { lender: 'SBI CARD', product: 'Credit Card', daysAgo: 30 },
+      { lender: 'BAJAJ FIN', product: 'Personal Loan', daysAgo: 95 },
+      { lender: 'AXIS BANK', product: 'PERSONAL LOAN', daysAgo: 90 },
+    ];
+    expect(plEnquiries90d(list)).toBe(2);
+    expect(plEnquiries90d([])).toBeNull();
+    expect(plEnquiries90d(undefined)).toBeNull();
+  });
+
+  test('own-bank enquiry is a wait: not eligible now, figures kept, eligible after N days', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const row = { report_date: '2026-10-16', cibil_score: 780, enquiries: { last90: 1 }, accounts: [
+      acc({ bankName: 'ICICI BANK', openDate: '01/01/2024', emi: '9000', outstanding: '200000', tenure: '48' }),
+    ] };
+    const d = buildProfileDraft(row, null);
+    const company = { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A' }, confirmedByBank: {} };
+    const credit = { ...d.credit, enquiryList: [{ lender: 'HDFC BANK', product: 'Personal Loan', date: '2026-10-05', daysAgo: 12 }] };
+    const r = evaluateBank(hdfc, { ...d, netSalary: 150000, salaryAccountBank: 'ICICI Bank', company, credit });
+    expect(r.status).toBe('NOT_ELIGIBLE');
+    expect(r.eligibleAfterWait).toBe(true);
+    expect(r.waitDays).toBe(18);
+    expect(r.best.conservativeAmount).toBeGreaterThan(0);
+    // A permanent reason still returns early with no figures.
+    const settled = evaluateBank(hdfc, { ...d, netSalary: 150000, salaryAccountBank: 'ICICI Bank', company, credit: { ...credit, settledLenders: ['HDFC BANK'], settlementsOrWO: 1 } });
+    expect(settled.status).toBe('NOT_ELIGIBLE');
+    expect(settled.eligibleAfterWait).toBeUndefined();
+    expect(settled.best).toBeUndefined();
+  });
+});
+
+describe('Bank scorecard select', () => {
+  const sc = kotak.scorecard;
+  const kBase = {
+    netSalary: 100000, salaryAccountBank: 'ICICI Bank',
+    company: { category: 'CAT A', categoryConfirmed: true, categoriesByBank: { kotak: 'CAT A' } },
+    loans: [{ id: 'icici', lender: 'ICICI BANK', productType: 'PL', outstanding: 150000, emi: 32000, emisPaid: 5, emisRemaining: 40 }],
+    cards: [], credit: { enquiryList: [] },
+  };
+
+  test('patch sets one bank, keeps others, and — clears to null', () => {
+    expect(scorecardPatch(undefined, 'kotak', 'Green')).toEqual({ scorecardByBank: { kotak: 'Green' } });
+    expect(scorecardPatch({ other: 'Yellow' }, 'kotak', 'Red')).toEqual({ scorecardByBank: { other: 'Yellow', kotak: 'Red' } });
+    expect(scorecardPatch({ kotak: 'Red' }, 'kotak', '')).toEqual({ scorecardByBank: { kotak: null } });
+  });
+
+  test('colour follows the value; rejected values are red', () => {
+    expect(scorecardTone(sc, 'Super green')).toBe('green');
+    expect(scorecardTone(sc, 'Green')).toBe('green');
+    expect(scorecardTone(sc, 'Yellow')).toBe('amber');
+    expect(scorecardTone(sc, 'Red')).toBe('red');
+    expect(scorecardTone(sc, null)).toBeNull();
+    expect(scorecardTone({ reject: ['Yellow'] }, 'Yellow')).toBe('red');
+  });
+
+  test('the selected value reaches the engine: a reject value is Not eligible', () => {
+    const run = (v) => evaluateBank(kotak, { ...kBase, ...scorecardPatch(undefined, 'kotak', v) });
+    expect(sc.reject).toContain('Red');
+    expect(run('Red').status).toBe('NOT_ELIGIBLE');
+    expect(run('Red').reasons.join()).toMatch(/Kotak scorecard: Red/);
+    expect(run('Green').status).not.toBe('NOT_ELIGIBLE');
+    expect(run('').status).not.toBe('NOT_ELIGIBLE');
+  });
+});
+
+describe('Subject-to-closure plan', () => {
+  const kBase = {
+    netSalary: 100000, salaryAccountBank: 'ICICI Bank',
+    company: { category: 'CAT A', categoryConfirmed: true, categoriesByBank: { kotak: 'CAT A' } },
+    loans: [
+      { id: 'icici', lender: 'ICICI BANK', productType: 'PL', outstanding: 150000, emi: 32000, emisPaid: 5, emisRemaining: 40 },
+      { id: 'hl', lender: 'SBI', productType: 'HL', emi: 25000, emisPaid: 50, emisRemaining: 150 },
+      { id: 'kb', lender: 'KRAZYBEE', productType: 'PL', outstanding: 40000, emi: 9582, emisPaid: 4, emisRemaining: 8 },
+    ],
+    cards: [], credit: { enquiryList: [] },
+  };
+  const fmts = { fmtAmount: (n) => `₹${n}`, fmtLakh: (n) => `${Math.round(n)}` };
+
+  test('line text and closure notes are filtered from the blue notes', () => {
+    const r = evaluateBank(kotak, kBase);
+    const kb = r.closurePlan.find((c) => c.id === 'kb');
+    expect(kb).toBeDefined();
+    expect(closureLineText(kb, fmts)).toBe(
+      `Subject to closure of KRAZYBEE (₹40000) → eligible ${Math.round(kb.newEligible)} (+${Math.round(kb.gain)}), in hand ${Math.round(kb.netInHandAfterClosing)} after paying it`,
+    );
+    expect(r.notes.some(isClosureNote)).toBe(true);
+    expect(r.notes.filter((n) => !isClosureNote(n)).some((n) => /Subject to closure/.test(n))).toBe(false);
+    expect(isClosureNote('Home loan counted as obligation — FOIR 75% applied')).toBe(false);
+  });
+
+  test('Mark closed sets Treatment to Closed before login, which drops the loan from the plan', () => {
+    const r = evaluateBank(kotak, kBase);
+    const kb = r.closurePlan.find((c) => c.id === 'kb');
+    const loans = kBase.loans.map((l) => (l.id === kb.id ? { ...l, ...treatmentPatch('closed') } : l));
+    expect(treatmentChoice(loans.find((l) => l.id === 'kb'))).toBe('closed');
+    const after = evaluateBank(kotak, { ...kBase, loans });
+    expect((after.closurePlan || []).map((c) => c.id)).not.toContain('kb');
+    expect(after.best.eligibleAmount).toBeCloseTo(kb.newEligible, 0);
+  });
+
+  test('no plan when the bank declines for a permanent reason', () => {
+    const r = evaluateBank(kotak, { ...kBase, scorecardByBank: { kotak: 'Red' } });
+    expect(r.status).toBe('NOT_ELIGIBLE');
+    expect(r.closurePlan || []).toEqual([]);
+  });
+});
+
+test('closure plan is hidden on a permanent decline, kept during a wait', () => {
+  const plan = [{ id: 'kb', lender: 'KRAZYBEE', outstanding: 40000, newEligible: 2000000, gain: 150000, netInHandAfterClosing: 1700000 }];
+  expect(visibleClosurePlan({ status: 'ELIGIBLE', closurePlan: plan })).toBe(plan);
+  expect(visibleClosurePlan({ status: 'DEVIATION', closurePlan: plan })).toBe(plan);
+  expect(visibleClosurePlan({ status: 'NOT_ELIGIBLE', closurePlan: plan })).toEqual([]);
+  expect(visibleClosurePlan({ status: 'NOT_ELIGIBLE', eligibleAfterWait: true, closurePlan: plan })).toBe(plan);
+  expect(visibleClosurePlan({ status: 'ELIGIBLE' })).toEqual([]);
+  expect(visibleClosurePlan(null)).toEqual([]);
+});
+
+describe('Company category per bank', () => {
+  test('no search yet -> null; bank with no match and nothing typed -> missing category', () => {
+    expect(companyForBank(null, 'kotak')).toBeNull();
+    const byBank = { query: 'Acme Pvt Ltd', banks: {} };
+    expect(companyForBank(byBank, 'kotak')).toEqual({ name: 'Acme Pvt Ltd', category: null, categoryConfirmed: true, incorporationYear: null });
+  });
+
+  test('a typed category for an unmatched bank is used and counts as confirmed', () => {
+    const byBank = { query: 'Acme Pvt Ltd', banks: {} };
+    const typed = { ...byBank, banks: { kotak: { candidates: [], ...typedCategoryPatch(undefined, byBank.query, 'CAT A') } } };
+    expect(companyForBank(typed, 'kotak')).toEqual({ name: 'Acme Pvt Ltd', category: 'CAT A', categoryConfirmed: true, incorporationYear: null });
+  });
+
+  test('typing over a matched category keeps the match and uses the typed value; blank is missing', () => {
+    const pick = { company_name: 'ACME PRIVATE LIMITED', category: 'CAT B', match_type: 'exact', incorporation_year: 2010 };
+    const bank = { candidates: [pick], pick, category: 'CAT B', variantIdx: null };
+    const patched = { ...bank, ...typedCategoryPatch(bank, 'Acme', 'CAT A') };
+    expect(patched.pick).toBe(pick);
+    expect(companyForBank({ query: 'Acme', banks: { hdfc_bank: patched } }, 'hdfc_bank'))
+      .toEqual({ name: 'ACME PRIVATE LIMITED', category: 'CAT A', categoryConfirmed: true, incorporationYear: 2010 });
+    const blank = { ...bank, ...typedCategoryPatch(bank, 'Acme', '   ') };
+    expect(companyForBank({ query: 'Acme', banks: { hdfc_bank: blank } }, 'hdfc_bank').category).toBeNull();
+  });
+
+  test('a listed-twice company stays unconfirmed until a variant is picked', () => {
+    const pick = { company_name: 'TWIN LTD', match_type: 'exact', variants: [{ cin: 'U1', category: 'CAT A' }, { cin: 'U2', category: 'CAT C' }] };
+    const bank = { candidates: [pick], pick, category: '', variantIdx: null };
+    expect(companyForBank({ query: 'Twin', banks: { hdfc_bank: bank } }, 'hdfc_bank').categoryConfirmed).toBe(false);
+    expect(companyForBank({ query: 'Twin', banks: { hdfc_bank: { ...bank, variantIdx: 1, category: 'CAT C' } } }, 'hdfc_bank'))
+      .toMatchObject({ category: 'CAT C', categoryConfirmed: true });
+  });
+
+  test('Kotak manual category reaches the engine through categoriesByBank (cat a = CAT A)', () => {
+    const c = manualCompany({ query: 'Acme Pvt Ltd', banks: {} }, 'cat a');
+    const profile = {
+      netSalary: 100000, salaryAccountBank: 'ICICI Bank',
+      company: { ...c, categoriesByBank: { kotak: c.category }, confirmedByBank: {} },
+      loans: [], cards: [], credit: { enquiryList: [] },
+    };
+    const missing = evaluateBank(kotak, { ...profile, company: { ...profile.company, category: null, categoriesByBank: {} } });
+    const r = evaluateBank(kotak, profile);
+    expect(r.status).not.toBe('NOT_ELIGIBLE');
+    expect(r.best.eligibleAmount).toBeGreaterThan(0);
+    expect(missing.status).toBe('NOT_ELIGIBLE');
+    expect(missing.reasons.join()).toMatch(/Enter the Kotak Mahindra Bank company category/);
+  });
+});
+
+describe('Kotak v4: manual category, Amber, scorecard multiplier rows', () => {
+  const policies = [{ bank_id: 'kotak', policy: kotak }, { bank_id: 'hdfc_bank', policy }];
+  const profileWith = (category, scorecard) => {
+    // No company search needed: Kotak's category is the agent's banker-confirmed pick.
+    const c = manualCompany(null, category);
+    return {
+      netSalary: 200000, salaryAccountBank: 'ICICI Bank',
+      company: { ...c, categoriesByBank: c.category ? { kotak: c.category } : {}, confirmedByBank: {} },
+      loans: [], cards: [], credit: { enquiryList: [] },
+      ...(scorecard ? scorecardPatch(undefined, 'kotak', scorecard) : {}),
+    };
+  };
+
+  test('only manual-category banks get the dropdown, with the policy categories', () => {
+    expect(manualCategoryBanks(policies)).toEqual({ kotak: ['CAT A', 'CAT B', 'CAT C', 'CAT D'] });
+    expect(manualCategoryBanks(null)).toEqual({});
+  });
+
+  test('a picked category counts as confirmed; none picked asks for it', () => {
+    expect(evaluateBank(kotak, profileWith(null)).reasons.join()).toMatch(/Enter the Kotak Mahindra Bank company category/);
+    const r = evaluateBank(kotak, profileWith('CAT A'));
+    expect(r.status).not.toBe('NEEDS_INPUT');
+    expect(r.reasons.join()).not.toMatch(/company category/);
+  });
+
+  test('Amber is offered and coloured like Yellow', () => {
+    expect(kotak.scorecard.values).toContain('Amber');
+    expect(scorecardTone(kotak.scorecard, 'Amber')).toBe('amber');
+    expect(scorecardTone(kotak.scorecard, 'Amber')).toBe(scorecardTone(kotak.scorecard, 'Yellow'));
+  });
+
+  test('no scorecard picked: one indicative row per scorecard, never the highest', () => {
+    const best = evaluateBank(kotak, profileWith('CAT A')).best;
+    const sc = best.methods.filter((m) => m.key.startsWith('multiplier_'));
+    expect(sc.map((m) => m.band)).toEqual(Object.keys(kotak.multiplier_by_scorecard.values));
+    sc.forEach((m) => { expect(m.indicative).toBe(true); expect(m.multiplier).toBeGreaterThan(0); });
+    expect(best.eligibleBy.startsWith('multiplier_')).toBe(false);
+  });
+
+  test('scorecard picked: that row is firm and can be the highest', () => {
+    // A big HL EMI shrinks FOIR; Kotak's scorecard multiplier is on gross salary, so it wins.
+    const hl = { id: 'hl', lender: 'SBI', productType: 'HL', emi: 100000, emisPaid: 50, emisRemaining: 150 };
+    const best = evaluateBank(kotak, { ...profileWith('CAT A', 'Super green'), loans: [hl] }).best;
+    const sc = best.methods.filter((m) => m.key.startsWith('multiplier_'));
+    expect(sc).toHaveLength(1);
+    expect(sc[0]).toMatchObject({ band: 'Super green', multiplier: 21, indicative: false, amount: 4200000 });
+    expect(best.eligibleBy).toBe(sc[0].key);
+  });
+});
+
+describe('Manual category (Kotak) needs no company search and survives a new one', () => {
+  test('before any search: the pick is used and counts as confirmed', () => {
+    expect(manualCompany(null, 'CAT B')).toEqual({ name: null, category: 'CAT B', categoryConfirmed: true, incorporationYear: null });
+    expect(manualCompany(null, '').category).toBeNull();
+    expect(manualCompany(null, undefined).category).toBeNull();
+  });
+
+  test('a new company search does not change the pick', () => {
+    const first = { query: 'Acme Pvt Ltd', banks: {} };
+    const second = { query: 'Beta Technologies Ltd', banks: { hdfc_bank: { candidates: [], pick: null, category: '' } } };
+    expect(manualCompany(first, 'CAT A').category).toBe('CAT A');
+    expect(manualCompany(second, 'CAT A')).toEqual({ name: 'Beta Technologies Ltd', category: 'CAT A', categoryConfirmed: true, incorporationYear: null });
+  });
+
+  test('engine evaluates Kotak from the pick alone, before any search', () => {
+    const c = manualCompany(null, 'CAT A');
+    const r = evaluateBank(kotak, {
+      netSalary: 100000, salaryAccountBank: 'ICICI Bank',
+      company: { ...c, categoriesByBank: { kotak: c.category }, confirmedByBank: {} },
+      loans: [], cards: [], credit: { enquiryList: [] },
+    });
+    expect(r.reasons.join()).not.toMatch(/company category/);
+    expect(r.best.eligibleAmount).toBeGreaterThan(0);
   });
 });

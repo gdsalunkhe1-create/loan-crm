@@ -38,9 +38,12 @@ function pickSlab(slabs, x, minKey = 'salary_min_incl', maxKey = 'salary_max_exc
 }
 
 // ROI slabs may also depend on CIBIL score (cibil_min_incl / cibil_max_excl). Missing score = lowest score band.
-function roiSlabsFor(policy, score) {
+// Slabs may also be limited by CIBIL score, company category (categories) and salary (salary_min_incl).
+function roiSlabsFor(policy, score, category, salary) {
   const all = policy.eligibility.roi_slabs_by_loan_amount || [];
-  return all.filter((s) => (s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(score ?? 0, s.cibil_min_incl, s.cibil_max_excl));
+  return all.filter((s) => ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(score ?? 0, s.cibil_min_incl, s.cibil_max_excl))
+    && (!s.categories || (category && s.categories.map(norm).includes(norm(category))))
+    && (s.salary_min_incl == null || (salary ?? 0) >= s.salary_min_incl));
 }
 
 // ROI depends on the loan amount, which depends on ROI: start at the best rate, step down.
@@ -133,6 +136,7 @@ function bestTenure(band, capMonths) {
 function hardChecks(policy, profile) {
   const reasons = [];
   const deviations = [];
+  const waits = [];   // temporary blocks: figures are still worked out so the agent sees what's possible later
   const c = profile.credit || {};
   const cat = profile.company?.category;
   const rules = new Set((policy.hard_rejects || []).map((r) => r.rule));
@@ -144,11 +148,22 @@ function hardChecks(policy, profile) {
     ? c.dpdAccounts.some((a) => isOwnBank(policy, a.lender) && (!badTypes || badTypes.includes(a.productType)))
     : ((c.dpdLenders || []).some((l) => isOwnBank(policy, l)) || (policy.bank_id === 'hdfc_bank' && c.hdfcBadHistory));
 
-  if (!cat) reasons.push(`Company not in ${policy.bank} category list (unlisted not allowed)`);
+  if (!cat) reasons.push(policy.company?.manual_category
+    ? `Enter the ${policy.bank} company category (checked with the banker)`
+    : `Company not in ${policy.bank} category list (unlisted not allowed)`);
   else if (excluded.includes(norm(cat))) reasons.push(`${cat} not considered by ${policy.bank}`);
   if (has('own_bank_settlement_or_writeoff', 'hdfc_own_settlement_or_writeoff') && ownSettled) reasons.push(`Settlement / write-off with ${policy.bank}`);
   if (has('own_bank_bad_history', 'bad_hdfc_internal_repayment_history') && ownBad) reasons.push(`Late payment on earlier ${policy.bank} ${badTypes ? badTypes.join('/') : 'loan/card'}`);
   if (has('heavy_dpd_late_payments_across_all_trades') && c.dpdAcrossAllTrades) reasons.push('DPD / late payments reported across all accounts');
+  if (has('recent_dpd_loans_12m') && Array.isArray(c.dpdAccounts)) {
+    const late = c.dpdAccounts.filter((a) => a.inLast12m && !CARD_TYPES.includes(a.productType)).map((a) => a.lender);
+    if (late.length) reasons.push(`Late payment in last 12 months on ${[...new Set(late)].join(', ')}`);
+  }
+  const sc = policy.scorecard;
+  if (sc) {
+    const val = profile.scorecardByBank?.[policy.bank_id];
+    if (val && (sc.reject || []).map(norm).includes(norm(val))) reasons.push(`${sc.name}: ${val} — ${policy.bank} doesn't do the case`);
+  }
   if ((c.settlementsOrWO || 0) > 0) {
     const f = c.freshLoanAfterSettlement || {};
     if (has('settlement_or_writeoff_without_fresh_loan_after') && !f.exists) reasons.push('Settlement / write-off with no fresh loan sanctioned after it');
@@ -158,15 +173,43 @@ function hardChecks(policy, profile) {
     const min = minSalaryFor(policy, cat, profile.salaryAccountBank);
     if (min != null && profile.netSalary < min) reasons.push(`Net salary ${fmtINR(profile.netSalary)} below ${cat} minimum ${fmtINR(min)}`);
   }
+  // Own-bank enquiry in the last N days: this bank won't take the case yet.
+  // credit.enquiryList: [{ lender, product, date, daysAgo }] from the CIBIL enquiry table.
+  const blk = policy.own_bank_enquiry_block;
+  if (blk && Array.isArray(c.enquiryList)) {
+    const hit = c.enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= blk.days && isOwnBank(policy, e.lender)
+      && (!blk.products || blk.products.some((pr) => norm(e.product).includes(norm(pr)))));
+    if (hit.length) {
+      const d = Math.min(...hit.map((e) => e.daysAgo));
+      waits.push({ days: blk.days - d, text: `${policy.bank} enquiry ${d} day(s) ago — can't be done with ${policy.bank} until ${blk.days} days have passed (${blk.days - d} more)` });
+    }
+  }
   const enq = policy.enquiries || {};
-  if (enq.max_90d != null) {
-    if (c.enquiries90d == null) deviations.push('Enquiry count (90 days) not available — check manually');
-    else if (c.enquiries90d > enq.max_90d) {
-      const msg = `${c.enquiries90d} enquiries in 90 days (max ${enq.max_90d})`;
+  if (enq.max_30d != null && Array.isArray(c.enquiryList) && c.enquiryList.length) {
+    const types = enq.count_types;
+    const n30 = c.enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= 30 && (!types || types.some((t) => norm(e.product).includes(norm(t))))).length;
+    if (n30 > enq.max_30d) {
+      const msg = `${n30} ${types ? types.join('/') + ' ' : ''}enquiries in 30 days (max ${enq.max_30d})`;
       if (enq.deviation_possible) deviations.push(`${msg} — deviation needed`); else reasons.push(msg);
     }
   }
-  return { reasons, deviations };
+  if (enq.max_90d != null) {
+    // Count from the full enquiry list when we have it, so only this bank's counted types are included.
+    let count = c.enquiries90d;
+    let label = 'enquiries';
+    if (Array.isArray(c.enquiryList) && c.enquiryList.length) {
+      const types = enq.count_types;
+      count = c.enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= 90
+        && (!types || types.some((t) => norm(e.product).includes(norm(t))))).length;
+      if (types) label = `${types.join('/')} enquiries`;
+    }
+    if (count == null) deviations.push('Enquiry count (90 days) not available — check manually');
+    else if (count > enq.max_90d) {
+      const msg = `${count} ${label} in 90 days (max ${enq.max_90d})`;
+      if (enq.deviation_possible) deviations.push(`${msg} — deviation needed`); else reasons.push(msg);
+    }
+  }
+  return { reasons, deviations, waits };
 }
 
 function obligationOf(policy, loan) {
@@ -214,20 +257,37 @@ function cardObligation(policy, profile) {
   };
 }
 
+// Lenders whose PL may really be an OD / flexi line (all NBFCs + any bank in od_check.extra_match, e.g. Kotak).
+function needsOdCheck(policy, loan) {
+  const od = policy.balance_transfer?.od_check;
+  if (!od || loan.productType !== 'PL') return false;
+  return (od.all_nbfc && lenderKind(policy, loan) === 'nbfc') || wordStartMatch(loan.lender, od.extra_match);
+}
+
+// loan.odStatus: null (not confirmed) | 'term' | 'od_emi' (OD, EMI started) | 'od_no_emi'
+// loan.foreclosureLetter: true when the lender has issued a foreclosure letter
 function btCandidate(policy, loan) {
   const bt = policy.balance_transfer || {};
   if (!(bt.product_types || UNSECURED_BT_TYPES).includes(loan.productType)) return { ok: false, why: `${loan.productType} not taken in BT` };
-  if (wordStartMatch(loan.lender, (bt.lender_blacklist || []).flatMap((b) => b.match))) return { ok: false, why: 'Lender not taken in BT (small fintech / microfinance)' };
   if (loan.closedBeforeLoginWithProof) return { ok: false, why: 'Already closed' };
   if (!(loan.outstanding > 0)) return { ok: false, why: 'No outstanding to transfer' };
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
     return { ok: false, why: 'Already not obligated (≤2 EMIs left)' };
   }
+  const letterLender = (bt.foreclosure_letter_lenders || []).find((f) => wordStartMatch(loan.lender, f.match));
+  if (letterLender && !loan.foreclosureLetter) return { ok: false, why: `Needs foreclosure letter from ${letterLender.name}`, needsLetter: true };
+  if (!letterLender && wordStartMatch(loan.lender, (bt.lender_blacklist || []).flatMap((b) => b.match))) return { ok: false, why: 'Lender not taken in BT (microfinance / small fintech)' };
+  if (loan.odStatus === 'od_no_emi') return { ok: false, why: 'OD / flexi with no EMI started — not taken in BT' };
   const kind = lenderKind(policy, loan);
-  if (kind === 'nbfc' && (bt.nbfc_mode || 'whitelist') === 'whitelist' && !matchWhitelist(policy, loan.lender)) return { ok: false, why: 'NBFC not in BT list' };
+  if (!letterLender && kind === 'nbfc' && (bt.nbfc_mode || 'whitelist') === 'whitelist' && !matchWhitelist(policy, loan.lender)) return { ok: false, why: 'NBFC not in BT list' };
   const need = bt.min_emis_paid?.[kind] ?? 6;
   if ((loan.emisPaid || 0) < need) return { ok: false, why: `${loan.emisPaid || 0}/${need} EMIs paid` };
-  return { ok: true, why: `${kind === 'bank' ? 'Bank' : 'NBFC'}, ${loan.emisPaid} EMIs paid` };
+  const odUnconfirmed = needsOdCheck(policy, loan) && !loan.odStatus;
+  return {
+    ok: true,
+    why: `${kind === 'bank' ? 'Bank' : 'NBFC'}, ${loan.emisPaid} EMIs paid${letterLender ? ', foreclosure letter received' : ''}`,
+    odUnconfirmed,
+  };
 }
 
 export function evaluateBank(policy, profile) {
@@ -246,7 +306,10 @@ export function evaluateBank(policy, profile) {
   const hc = hardChecks(policy, { ...profile, company: { ...profile.company, category: cat } });
   out.reasons = hc.reasons;
   out.deviations = hc.deviations;
-  if (out.reasons.length) { out.status = 'NOT_ELIGIBLE'; return out; }
+  if (out.reasons.length) {
+    out.reasons.push(...hc.waits.map((w) => w.text));
+    out.status = 'NOT_ELIGIBLE'; return out;
+  }
 
   const salary = profile.netSalary;
   const risk = riskIndication(policy, profile);
@@ -265,18 +328,49 @@ export function evaluateBank(policy, profile) {
   const score = profile.cibilScore ?? null;
   const usesScore = (policy.eligibility.roi_slabs_by_loan_amount || []).some((x) => x.cibil_min_incl != null || x.cibil_max_excl != null);
   if (usesScore && score == null) out.warnings.push('CIBIL score missing — lowest score band rates used');
-  const roiSlabs = roiSlabsFor(policy, score);
-  const cap = policy.eligibility.max_loan ?? null;
+  let roiSlabs = roiSlabsFor(policy, score, cat, salary);
+  if (!roiSlabs.length) {
+    // No rate defined for this category / salary: use the bank's highest known rate and flag it.
+    const hi = Math.max(...(policy.eligibility.roi_slabs_by_loan_amount || []).map((x) => x.roi_pct));
+    roiSlabs = [{ loan_min_incl: 1e15, loan_max_excl: null, roi_pct: hi }];
+    out.warnings.push(`${policy.bank} has no rate for ${cat || 'this category'} at this salary — ${hi}% used`);
+  }
+  let cap = policy.eligibility.max_loan ?? null;
 
   // Policy parameters
-  const foirPct = pickSlab(policy.eligibility.foir_slabs, salary)?.foir_pct;
-  const tenures = policy.eligibility.tenure_slabs
+  let foirPct = pickSlab(policy.eligibility.foir_slabs, salary)?.foir_pct;
+  const hlBonus = policy.eligibility.foir_hl_bonus;   // e.g. { salary_min_incl: 75000, foir_pct: 75 }
+  if (hlBonus && salary >= hlBonus.salary_min_incl
+      && loanLines.some((l) => l.productType === 'HL' && l.obligation.amount > 0)) {
+    foirPct = Math.max(foirPct, hlBonus.foir_pct);
+    out.notes.push(`Home loan counted as obligation — FOIR ${hlBonus.foir_pct}% applied`);
+  }
+  if (policy.eligibility.roi_unconfirmed) out.warnings.push(`${policy.bank} ROI not confirmed yet — rates used are placeholders`);
+  if (policy.scorecard && !profile.scorecardByBank?.[policy.bank_id]) {
+    out.notes.push(`${policy.scorecard.name} (${policy.scorecard.values.join(' / ')}) is decided by the bank — ${policy.scorecard.reject.join('/')} is declined`);
+  }
+  let tenures = policy.eligibility.tenure_slabs
     ? (pickSlab(policy.eligibility.tenure_slabs, salary)?.months || [60])
     : (salary >= 75000 ? policy.eligibility.tenures_months.salary_75000_and_above : policy.eligibility.tenures_months.salary_below_75000);
   const usesGrid = !!policy.multiplier_grids;
   const bands = usesGrid ? gridBands(policy, cat, salary) : null;
   if (usesGrid && !bands) out.warnings.push(`No multiplier grid for ${cat} at ${fmtINR(salary)}`);
   const gridMax = bands ? bestTenure(bands[risk.band], 60) : null;
+  // Scorecard-specific FOIR / tenure / max loan (e.g. Kotak Yellow 60%, 65% with a live home loan, 5 years).
+  const scChosen = profile.scorecardByBank?.[policy.bank_id];
+  const scRules = policy.scorecard_rules || {};
+  const scKey = scChosen && Object.keys(scRules).find((k) => norm(k) === norm(scChosen));
+  if (scKey) {
+    const rule = scRules[scKey];
+    const liveHl = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
+    const v = liveHl ? (rule.with_hl || rule.any) : (rule.no_hl || rule.any);
+    if (v) {
+      if (v.foir_pct != null) foirPct = v.foir_pct;
+      if (v.tenures) tenures = v.tenures;
+      if (v.max_loan != null) cap = cap != null ? Math.min(cap, v.max_loan) : v.max_loan;
+      out.notes.push(`${policy.scorecard?.name || 'Scorecard'} ${scKey}${liveHl ? ' with live home loan' : ''}: FOIR ${foirPct}%, ${tenures.map((t) => t / 12).join('/')} years${v.max_loan != null ? `, max ${fmtINR(v.max_loan)}` : ''}`);
+    }
+  }
   const foirTenures = gridMax && gridMax < 60 ? [gridMax] : tenures;
   if (gridMax && gridMax < 60) out.warnings.push(`${cat} grid stops at ${gridMax} months — FOIR also calculated at ${gridMax} months`);
 
@@ -309,23 +403,72 @@ export function evaluateBank(policy, profile) {
     const f60 = foir[foirTenures[0]].amount;
     const conservative = Math.min(f60, m || f60);
     const roiSlab = roiSlabs.find((x) => inBand(conservative, x.loan_min_incl, x.loan_max_excl));
+    // Every method is shown side by side — the bank may sanction on FOIR or on multiplier.
+    const rateFor = (amt) => (roiSlabs.find((x) => inBand(amt, x.loan_min_incl, x.loan_max_excl)) || {}).roi_pct ?? Math.max(...roiSlabs.map((x) => x.roi_pct));
+    const methods = foirTenures.map((t) => ({
+      key: `foir_${t}`, label: `FOIR ${t / 12} years`, tenure: t, amount: foir[t].amount, roi: foir[t].roi,
+      netInHand: foir[t].amount - btOutstanding,
+    }));
+    if (mult[risk.band]) {
+      const mm = mult[risk.band];
+      methods.push({ key: 'multiplier', label: 'Multiplier', tenure: mm.tenure, amount: mm.amount, roi: rateFor(mm.amount),
+        netInHand: mm.amount - btOutstanding, multiplier: mm.multiplier, band: mm.band });
+    }
+    // Scorecard-based multiplier (e.g. Kotak: Super green / Green / Yellow / Amber × salary band).
+    const msc = policy.multiplier_by_scorecard;
+    if (msc) {
+      const chosen = profile.scorecardByBank?.[policy.bank_id];
+      const col = (msc.salary_bands || []).findIndex((b) => inBand(salary, b.salary_min_incl, b.salary_max_excl));
+      const names = chosen ? [chosen] : Object.keys(msc.values);
+      for (const name of names) {
+        const key = Object.keys(msc.values).find((k) => norm(k) === norm(name));
+        const mx = key && col >= 0 ? msc.values[key][col] : null;
+        if (mx == null) continue;
+        // apply_on: 'salary' = gross multiple of net salary (Kotak); default = (salary - obligations) x M
+        const raw = Math.max(0, (msc.apply_on === 'salary' ? salary : salary - obl) * mx);
+        const amt = cap != null ? Math.min(raw, cap) : raw;
+        methods.push({ key: `multiplier_${norm(key).replace(/ /g, '_').toLowerCase()}`, label: `Multiplier — ${key}`, tenure: msc.tenure_months || 60,
+          amount: amt, roi: rateFor(amt), netInHand: amt - btOutstanding, multiplier: mx, band: key, indicative: !chosen });
+      }
+    }
+    const firm = methods.filter((x) => !x.indicative);
+    const top = firm.reduce((a, b) => (b.amount > a.amount ? b : a), firm[0]);
     scenarios.push({
       limitedBy: m && m < f60 ? 'multiplier' : 'foir',
       conservativeRoi: roiSlab ? roiSlab.roi_pct : Math.max(...roiSlabs.map((x) => x.roi_pct)),
-      roiAssumed: !roiSlab,   // rate for the final (conservative) amount, whichever method set it
+      roiAssumed: !roiSlab,   // rate for the lower (conservative) amount
       bt: picked.map((l) => l.id), btOutstanding, obligations: obl, emiRoom, foir, multiplier: mult,
-      conservativeAmount: conservative,
-      netInHand: conservative - btOutstanding,
+      methods,                                  // [{ key, label, tenure, amount, roi, netInHand }]
+      eligibleAmount: top.amount,               // highest of the methods
+      eligibleBy: top.key,
+      conservativeAmount: conservative,         // lower of FOIR 5y and multiplier (for reference)
+      netInHand: top.amount - btOutstanding,    // in hand on the highest method
+      netInHandConservative: conservative - btOutstanding,
     });
   }
   scenarios.sort((a, b) => b.netInHand - a.netInHand);
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
-  if (out.best.conservativeAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.reasons.push('No EMI room after obligations'); }
+  if (out.best.eligibleAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.reasons.push('No EMI room after obligations'); }
+  else if (out.best.netInHand < 0) { out.status = 'NOT_ELIGIBLE'; out.reasons.push(`BT outstanding ${fmtINR(out.best.btOutstanding)} is more than the highest eligibility ${fmtINR(out.best.eligibleAmount)}`); }
   else if (out.deviations.length) out.status = 'DEVIATION';
-  if (out.best.roiAssumed) out.warnings.push(`${policy.bank} has no rate for this loan amount — highest known rate used`);
-  if (cap != null && out.best.conservativeAmount >= cap) out.warnings.push(`Capped at ${policy.bank} maximum loan ${fmtINR(cap)}`);
+  if (hc.waits.length && out.status !== 'NOT_ELIGIBLE') {
+    // Only a temporary block: keep the figures, mark the bank as not yet possible.
+    out.waitDays = Math.max(...hc.waits.map((w) => w.days));
+    out.reasons.unshift(...hc.waits.map((w) => w.text));
+    out.status = 'NOT_ELIGIBLE';
+    out.eligibleAfterWait = true;
+  }
+  if (out.best.roiAssumed && out.best.eligibleAmount > 0) out.warnings.push(`${policy.bank} has no rate for this loan amount — highest known rate used`);
+  if (cap != null && out.best.eligibleAmount >= cap) out.warnings.push(`Capped at ${policy.bank} maximum loan ${fmtINR(cap)}`);
+
+  // BT loans from OD-giving lenders: confirm it's a term loan, not an OD / flexi line.
+  const odAsk = loanLines.filter((l) => out.best.bt.includes(l.id) && l.bt.odUnconfirmed);
+  out.odConfirm = odAsk.map((l) => l.id);
+  if (odAsk.length) out.warnings.unshift(`Confirm ${odAsk.map((l) => l.lender).join(', ')} ${odAsk.length > 1 ? 'are term loans' : 'is a term loan'}, not OD / flexi — an OD is taken in BT only after its EMIs have started`);
+  const letters = loanLines.filter((l) => l.bt.needsLetter);
+  if (letters.length) out.notes.push(`${letters.map((l) => l.lender).join(', ')}: can be taken in BT once the foreclosure letter is received`);
 
   // Loans with a balance but no EMI would silently count as 0 — make the agent fill them.
   const oneTypes = policy.obligations?.one_pct_types || ONE_PCT_TYPES;
@@ -356,14 +499,35 @@ export function evaluateBank(policy, profile) {
       const closeAmount = pick.reduce((sm, c) => sm + c.remaining, 0);
       out.cardPlan = {
         minPaydown: need, closeCards: pick.map((c) => c.id), closeAmount,
-        newEligible: sim.best?.conservativeAmount ?? null, newNetInHand: sim.best?.netInHand ?? null,
-        gain: (sim.best?.conservativeAmount ?? 0) - out.best.conservativeAmount,
+        newEligible: sim.best?.eligibleAmount ?? null, newNetInHand: sim.best?.netInHand ?? null,
+        gain: (sim.best?.eligibleAmount ?? 0) - out.best.eligibleAmount,
         mustReflectInCibil: (policy.obligations?.credit_card?.prelogin_paydown || 'all') !== 'all',
       };
       out.warnings.unshift(`Close ${pick.map((c) => c.issuer).join(', ')} before login (${fmtINR(closeAmount)}) → eligible ${fmtINR(out.cardPlan.newEligible)} (+${fmtINR(out.cardPlan.gain)})`);
     }
     out.warnings = out.warnings.filter((w) => !w.startsWith('Paying '));   // replaced by the card plan
     if (need && !pick.length) out.warnings.unshift(`Card outstanding must come down by ${fmtINR(need)} to remove the CC obligation`);
+  }
+  // Subject-to-closure: which non-BT loans are worth closing (before login, or from the disbursal where allowed).
+  if (policy.subject_to_closure_allowed && !profile._noCardPlan && out.status !== 'NOT_ELIGIBLE' && out.best) {
+    const base = out.best.eligibleAmount;
+    const cands = loanLines.filter((l) => l.obligation.amount > 0 && (l.outstanding || 0) > 0
+      && !out.best.bt.includes(l.id) && !CARD_TYPES.includes(l.productType)).slice(0, 8);
+    const plan = [];
+    for (const l of cands) {
+      const sim = evaluateBank(policy, { ...profile, _noCardPlan: true,
+        loans: (profile.loans || []).map((x) => (x.id === l.id ? { ...x, closedBeforeLoginWithProof: true } : x)) });
+      const gain = (sim.best?.eligibleAmount ?? 0) - base;
+      if (gain > (l.outstanding || 0)) {
+        plan.push({ id: l.id, lender: l.lender, outstanding: l.outstanding, emi: l.emi, newEligible: sim.best.eligibleAmount, gain,
+          netInHandAfterClosing: sim.best.netInHand - l.outstanding });
+      }
+    }
+    plan.sort((a, b) => (b.gain - b.outstanding) - (a.gain - a.outstanding));
+    out.closurePlan = plan.slice(0, 3);
+    for (const c of out.closurePlan) {
+      out.notes.push(`Subject to closure of ${c.lender} (${fmtINR(c.outstanding)}): eligible ${fmtINR(c.newEligible)} (+${fmtINR(c.gain)})`);
+    }
   }
   return out;
 }

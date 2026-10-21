@@ -1,0 +1,428 @@
+{
+  "bank": "Kotak Mahindra Bank",
+  "bank_id": "kotak",
+  "own_bank_match": [
+    "KOTAK"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v5-2026-10-19",
+  "sources": {
+    "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
+  },
+  "eligibility": {
+    "method": "show_both_foir_and_multiplier",
+    "salary_basis": "net monthly salary",
+    "foir_slabs": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 50000,
+        "foir_pct": 60
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "foir_pct": 65
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "foir_pct": 70
+      }
+    ],
+    "foir_hl_bonus": {
+      "salary_min_incl": 75000,
+      "foir_pct": 75,
+      "note": "HL obligated 100% or 50% on customer and salary 75K+ -> FOIR 75%; HL obligated 0 (co-applicant pays) -> normal 70%"
+    },
+    "tenures_months": {
+      "salary_below_75000": [
+        60
+      ],
+      "salary_75000_and_above": [
+        60,
+        72
+      ]
+    },
+    "roi_slabs_by_loan_amount": [
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "salary_min_incl": 50000,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": null,
+        "roi_pct": 9.95
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 11.0,
+        "range": "10.75-11"
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.0,
+        "range": "11.5-12"
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "loan_min_incl": 1000000,
+        "loan_max_excl": null,
+        "roi_pct": 13.0,
+        "range": "12-13"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 11.0
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.5,
+        "range": "12-12.5"
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 14.0,
+        "range": "13-14"
+      }
+    ],
+    "roi_unconfirmed": false,
+    "roi_note": "CAT A/B with salary 50K+: 9.95% from 10L. CAT C: 10.75-11% above 15L, 11.5-12% for 10-15L (upper end used). No rate given below 10L, for CAT D, or CAT A/B below 50K salary - highest rate used and flagged. CAT D: 12-13% from 10L (13% used). Below 10L: CAT A/B 11%, CAT C 12-12.5% (12.5 used), CAT D 13-14% (14 used)."
+  },
+  "min_net_salary": {
+    "_all": 35000
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "manual_category": true,
+    "categories": [
+      "CAT A",
+      "CAT B",
+      "CAT C",
+      "CAT D"
+    ],
+    "category_source": "No list - agent checks the category online with the Kotak banker and enters it"
+  },
+  "scorecard": {
+    "name": "Kotak scorecard",
+    "values": [
+      "Super green",
+      "Green",
+      "Yellow",
+      "Amber",
+      "Red"
+    ],
+    "reject": [
+      "Red"
+    ],
+    "note": "Decided by bank; HL + 3L+ salary usually Green/Super green. Yellow follows the multiplier grid (to come)."
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 6,
+      "nbfc": 6
+    },
+    "nbfc_mode": "whitelist",
+    "product_types": [
+      "PL"
+    ],
+    "nbfc_whitelist": [
+      {
+        "name": "Aditya Birla Finance",
+        "match": [
+          "ADITYA BIRLA",
+          "ADBIRLA",
+          "ABFL",
+          "ABCL"
+        ]
+      },
+      {
+        "name": "Bajaj Finance",
+        "match": [
+          "BAJAJ FIN",
+          "BAJAJFIN"
+        ]
+      },
+      {
+        "name": "L&T Finance",
+        "match": [
+          "L&T FIN",
+          "L AND T FIN",
+          "LT FINANCE",
+          "LTFIN",
+          "LTFS",
+          "L&TFIN"
+        ]
+      },
+      {
+        "name": "Navi Finserv",
+        "match": [
+          "NAVI"
+        ]
+      },
+      {
+        "name": "Cholamandalam",
+        "match": [
+          "CHOLAMANDALAM",
+          "CHOLA"
+        ]
+      },
+      {
+        "name": "Piramal Capital",
+        "match": [
+          "PIRAMAL"
+        ]
+      },
+      {
+        "name": "AU Small Finance Bank",
+        "match": [
+          "AU SMALL FIN",
+          "AUSFB",
+          "AU BANK",
+          "AUBANK"
+        ],
+        "note": "listed as NBFC by Gauri - confirm 4 or 6 EMIs"
+      },
+      {
+        "name": "Tata Capital",
+        "match": [
+          "TATA CAPITAL",
+          "TATA CAP",
+          "TATACAP",
+          "TCL",
+          "TCFSL"
+        ]
+      },
+      {
+        "name": "SMFG India Credit (SMICC, ex-Fullerton)",
+        "match": [
+          "SMFG",
+          "SMICC",
+          "FULLERTON"
+        ]
+      },
+      {
+        "name": "Muthoot Fincorp",
+        "match": [
+          "MUTHOOT FINCORP",
+          "MUTHOOTFIN"
+        ]
+      },
+      {
+        "name": "Poonawalla Fincorp",
+        "match": [
+          "POONAWALLA",
+          "POONAWALA",
+          "PFL"
+        ]
+      },
+      {
+        "name": "InCred Finance",
+        "match": [
+          "INCRED"
+        ]
+      }
+    ],
+    "od_check": {
+      "all_nbfc": true,
+      "extra_match": [
+        "KOTAK"
+      ],
+      "note": "NBFCs and Kotak give OD/flexi lines: confirm term loan vs OD; OD taken in BT only once EMIs have started"
+    },
+    "foreclosure_letter_lenders": [
+      {
+        "name": "Hero FinCorp",
+        "match": [
+          "HERO FIN",
+          "HEROFIN"
+        ]
+      }
+    ],
+    "lender_blacklist": [
+      {
+        "name": "Vivifi (FlexSalary)",
+        "match": [
+          "VIVIFIN",
+          "VIVIFI"
+        ]
+      }
+    ],
+    "credit_card_bt": false
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": false,
+      "prelogin_paydown": "none",
+      "rule": "5% of outstanding; payment before login not accepted unless it reflects in CIBIL"
+    },
+    "one_pct_types": [
+      "GOLD",
+      "OD"
+    ],
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "pct_of_emi": 50,
+      "rule": "Joint HL 50% if co-applicant earns enough; 0 if the co-applicant pays the EMI"
+    },
+    "loan_with_emis_remaining_lte": 2,
+    "payment_before_login": "Loan closure accepted before or after login (subject to closure); not for credit cards"
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "recent_dpd_loans_12m"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "enquiries": {
+    "max_30d": 6,
+    "max_90d": 9,
+    "count_types": [
+      "Personal Loan"
+    ],
+    "deviation_possible": false,
+    "note": "30 days max 6, 90 days less than 10"
+  },
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ]
+  },
+  "subject_to_closure_allowed": true,
+  "open_items": [
+    "Super green/Green with a live home loan: keep 75% rule and 6 years at 75K+?",
+    "Amber with a home loan: also 50%?",
+    "Rate for CAT A/B with salary under 50K and loan 10L+ (11% used, flagged)",
+    "CC 5% exemption below salary?",
+    "card late payment: reject or note?"
+  ],
+  "multiplier_by_scorecard": {
+    "basis": "net salary x multiplier, obligations not deducted (confirmed by Gauri: 2,00,000 x 21 = 42,00,000)",
+    "salary_bands": [
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 50000
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 100001
+      },
+      {
+        "salary_min_incl": 100001,
+        "salary_max_excl": null
+      }
+    ],
+    "values": {
+      "Super green": [
+        17,
+        19,
+        21
+      ],
+      "Green": [
+        15,
+        17,
+        19
+      ],
+      "Yellow": [
+        12,
+        15,
+        17
+      ],
+      "Amber": [
+        10,
+        12,
+        14
+      ]
+    },
+    "tenure_months": 60,
+    "note": "Kotak NTH multiplier by scorecard: <50K / 50K-1L / >1L",
+    "apply_on": "salary"
+  },
+  "scorecard_rules": {
+    "Super green": {
+      "no_hl": {
+        "foir_pct": 70,
+        "tenures": [
+          60
+        ]
+      }
+    },
+    "Green": {
+      "no_hl": {
+        "foir_pct": 70,
+        "tenures": [
+          60
+        ]
+      }
+    },
+    "Yellow": {
+      "no_hl": {
+        "foir_pct": 60,
+        "tenures": [
+          60
+        ]
+      },
+      "with_hl": {
+        "foir_pct": 65,
+        "tenures": [
+          60
+        ]
+      }
+    },
+    "Amber": {
+      "any": {
+        "foir_pct": 50,
+        "tenures": [
+          60
+        ],
+        "max_loan": 750000
+      }
+    },
+    "note": "Gauri 19 Oct 2026. Super green/Green WITH a live HL keep the salary-slab FOIR + 75% HL rule (to confirm)."
+  }
+}

@@ -94,8 +94,75 @@ function emiProgress(acc, reportDate) {
   return { emisPaid: paid, emisRemaining: tenure && paid != null ? Math.max(0, tenure - paid) : null };
 }
 
+// Calendar day of an enquiry date. Freshly parsed reports carry Date objects;
+// saved rows carry them JSON-serialised (an IST midnight becomes the previous
+// day in UTC), so timestamps are read back as local dates, never by slicing
+// the ISO string. Plain 'DD/MM/YYYY' / 'DD Mon YYYY' go through parseDate.
+function enquiryDay(value) {
+  if (value instanceof Date) return isNaN(value) ? null : new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const s = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    const d = new Date(s);
+    return isNaN(d) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  return parseDate(s);
+}
+
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Every enquiry in the CIBIL enquiry table (CIBIL.com and PaisaBazaar both save
+// them as enquiries.details: { institution, product, date }), all product
+// types — the engine filters by its own bank and product. Older saved rows
+// without `details` fall back to the 90-day list. Undated entries are skipped.
+// daysAgo counts to `today`, not the report date: the own-bank 30-day wait is
+// about when the case is logged in.
+export function buildEnquiryList(enquiries, today = new Date()) {
+  if (!enquiries) return [];
+  const source = Array.isArray(enquiries.details) ? enquiries.details : (enquiries.items90 || []);
+  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const out = [];
+  for (const e of source) {
+    const day = enquiryDay(e && e.date);
+    if (!day) continue;
+    out.push({
+      lender: String(e.institution || e.lender || '').trim(),
+      product: String(e.product || '').trim(),
+      date: isoDay(day),
+      daysAgo: Math.max(0, Math.round((base - day) / 86400000)),
+    });
+  }
+  return out;
+}
+
+// Personal-loan enquiries in the last 90 days, from the enquiry list (same filter
+// the engine applies for ICICI's count_types). null when there's no list, in
+// which case the engine falls back to credit.enquiries90d.
+export function plEnquiries90d(enquiryList) {
+  if (!Array.isArray(enquiryList) || enquiryList.length === 0) return null;
+  return enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= 90 && /PERSONAL\s*LOAN/i.test(e.product || '')).length;
+}
+
+// Own-bank enquiries per active policy, for the Credit flags summary chips:
+// [{ bankId, short: 'HDFC', daysAgo }]. Mirrors the engine's
+// own_bank_enquiry_block test (word-start match on own_bank_match, product
+// filter, within the block's days); the engine stays the one that rejects.
+export function ownBankEnquiries(enquiryList, policies) {
+  const words = (s) => ' ' + String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const { bank_id: bankId, policy } of policies || []) {
+    const blk = policy && policy.own_bank_enquiry_block;
+    if (!blk) continue;
+    const own = policy.own_bank_match || [String(policy.bank || '').split(' ')[0]];
+    const hits = (enquiryList || []).filter((e) => e.daysAgo != null && e.daysAgo <= blk.days
+      && own.some((m) => words(e.lender).includes(words(m)))
+      && (!blk.products || blk.products.some((p) => words(e.product).includes(words(p)))));
+    if (hits.length) out.push({ bankId, short: own[0], daysAgo: Math.min(...hits.map((e) => e.daysAgo)) });
+  }
+  return out;
+}
+
 // CIBIL row -> { loans, cards, credit (CIBIL-derived flags only), reportDate }
-export function cibilToProfile(cibilRow) {
+export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
   const accounts = (cibilRow && cibilRow.accounts) || [];
   const reportDate = parseDate(cibilRow && cibilRow.report_date) || new Date();
   const loans = [];
@@ -126,6 +193,8 @@ export function cibilToProfile(cibilRow) {
       treatment: 'auto',
       hlEmiPaidBy: null, // HL only: 'applicant' | 'co_applicant'
       closedBeforeLoginWithProof: false,
+      odStatus: null, // NBFC / Kotak PL: null (not confirmed) | 'term' | 'od_emi' | 'od_no_emi'
+      foreclosureLetter: false,
     });
   });
 
@@ -167,6 +236,8 @@ export function cibilToProfile(cibilRow) {
       return { lender: String(a.bankName || '').trim(), productType: type === 'CARD' ? 'CC' : type, inLast12m: lateInLast12m(a) };
     });
 
+  const enquiryList = buildEnquiryList(cibilRow && cibilRow.enquiries, today);
+
   // Member names, de-duplicated; the engine matches each bank's own name against these.
   const lenderNames = (list) => [...new Set(list.map((a) => String(a.bankName || '').trim()).filter(Boolean))];
   const enquiries90 = cibilRow && cibilRow.enquiries && cibilRow.enquiries.last90;
@@ -176,6 +247,7 @@ export function cibilToProfile(cibilRow) {
     settledLenders: lenderNames(settled),
     dpdLenders: lenderNames(accounts.filter(hasDpd)),
     dpdAccounts,
+    enquiryList,
     enquiries90d: enquiries90 == null || enquiries90 === '' || !Number.isFinite(Number(enquiries90)) ? null : Number(enquiries90),
     // hdfc* kept for back-compat: the engine still reads them for HDFC.
     hdfcSettlementOrWO: settled.some((a) => /HDFC/i.test(a.bankName || '')),
@@ -241,6 +313,87 @@ export function hlJointPatch(checked) {
 // "EMI paid by" never changes isJoint (the select is only enabled on joint loans).
 export function hlPayerPatch(value) {
   return { hlEmiPaidBy: value === 'applicant' || value === 'co_applicant' ? value : null };
+}
+
+// ---- Company category per bank ----
+// byBank: { query, banks: { bankId: { candidates, pick, category, variantIdx } } }
+
+// Engine company object for one bank, or null when no company search has run yet.
+// A category the agent typed counts as confirmed; blank / spaces counts as missing.
+export function companyForBank(byBank, bankId) {
+  if (!byBank) return null;
+  const c = byBank.banks[bankId];
+  if (!c || !c.pick) return { name: byBank.query, category: null, categoryConfirmed: true, incorporationYear: null };
+  const variants = Array.isArray(c.pick.variants) && c.pick.variants.length ? c.pick.variants : null;
+  if (variants && c.variantIdx == null) {
+    return { name: c.pick.company_name, category: c.category, categoryConfirmed: false, incorporationYear: c.pick.incorporation_year };
+  }
+  const v = variants ? variants[c.variantIdx] : null;
+  return {
+    name: c.pick.company_name,
+    category: String(c.category || '').trim() || null,
+    categoryConfirmed: true,
+    incorporationYear: (v ? v.incorporation_year : c.pick.incorporation_year) ?? null,
+  };
+}
+
+// Bank row patch for a typed category. With no match, the searched name stands in
+// as the company so the typed category is used (e.g. CAT A for Kotak).
+export function typedCategoryPatch(bank, query, value) {
+  return { category: value, pick: (bank && bank.pick) || { company_name: query, category: value } };
+}
+
+// Banks with no company list (policy.company.manual_category, e.g. Kotak): the agent
+// picks the banker-confirmed category from policy.company.categories.
+// -> { bankId: ['CAT A', 'CAT B', ...] }
+export function manualCategoryBanks(policies) {
+  const out = {};
+  (policies || []).forEach((p) => {
+    const c = p.policy?.company;
+    if (c?.manual_category) out[p.bank_id] = Array.isArray(c.categories) ? c.categories : [];
+  });
+  return out;
+}
+
+// Engine company object for a manual-category bank. Needs no company search: the
+// engine only uses the category, and the agent's pick counts as confirmed.
+export function manualCompany(byBank, value) {
+  return { name: (byBank && byBank.query) || null, category: String(value || '').trim() || null, categoryConfirmed: true, incorporationYear: null };
+}
+
+// ---- Bank scorecard (e.g. Kotak Super green / Green / Yellow / Red) ----
+
+// Draft patch for the result-card select; '' (—) clears that bank's value.
+export function scorecardPatch(scorecardByBank, bankId, value) {
+  return { scorecardByBank: { ...(scorecardByBank || {}), [bankId]: value || null } };
+}
+
+// Colour for a scorecard value: a rejected value is always red.
+export function scorecardTone(scorecard, value) {
+  if (!value) return null;
+  const v = String(value).toLowerCase();
+  if ((scorecard?.reject || []).some((r) => String(r).toLowerCase() === v) || /red/.test(v)) return 'red';
+  if (/green/.test(v)) return 'green';
+  if (/yellow|amber/.test(v)) return 'amber';
+  return null;
+}
+
+// ---- Subject-to-closure plan ----
+
+// The engine also words each closure item as a note; the card shows its own line instead.
+export const isClosureNote = (note) => /^Subject to closure/.test(note);
+
+// Closure items to show: none when the bank declines for a permanent reason
+// (only a wait, eligibleAfterWait, keeps the figures).
+export function visibleClosurePlan(result) {
+  if (!result || !Array.isArray(result.closurePlan)) return [];
+  if (result.status === 'NOT_ELIGIBLE' && !result.eligibleAfterWait) return [];
+  return result.closurePlan;
+}
+
+// "Subject to closure of KRAZYBEE (₹40,000) → eligible ₹22.5L (+₹1.2L), in hand ₹7.1L after paying it"
+export function closureLineText(c, { fmtAmount, fmtLakh }) {
+  return `Subject to closure of ${c.lender} (${fmtAmount(c.outstanding)}) → eligible ${fmtLakh(c.newEligible)} (+${fmtLakh(c.gain)}), in hand ${fmtLakh(c.netInHandAfterClosing)} after paying it`;
 }
 
 // ---- Credit card actions ----
@@ -504,8 +657,8 @@ export function averageNetPay(payslips) {
 
 // Combined pre-fill for the screen. Either row may be null. A payslip net pay,
 // when given, takes priority over the bank-statement salary estimate.
-export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null } = {}) {
-  const c = cibilToProfile(cibilRow);
+export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, today = new Date() } = {}) {
+  const c = cibilToProfile(cibilRow, { today });
   const b = bankStatementToProfile(bsaRow);
   const fromPayslip = payslipNetPay > 0;
   return {
@@ -520,6 +673,7 @@ export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null } = {
       settledLenders: c.credit.settledLenders,
       dpdLenders: c.credit.dpdLenders,
       dpdAccounts: c.credit.dpdAccounts,
+      enquiryList: c.credit.enquiryList,
       enquiries90d: c.credit.enquiries90d,
       hdfcSettlementOrWO: c.credit.hdfcSettlementOrWO,
       hdfcBadHistory: c.credit.hdfcBadHistory,

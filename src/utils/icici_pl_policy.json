@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v2-2026-10-15",
+  "policy_version": "v5-2026-10-17",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -116,12 +116,19 @@
       "nbfc": 6
     },
     "min_emis_note": "Gauri: 'more than 6' - set to 6 paid; confirm if 7 needed",
-    "nbfc_mode": "all_except",
+    "nbfc_mode": "whitelist",
     "product_types": [
       "PL"
     ],
     "non_bt_note": "Overdraft/flexi products (Bajaj Flexi, ABFL OD, Tata Capital OD, Chola OD, Poonawalla OD) are not BT - mark type OD or treatment Obligate if CIBIL shows them as PL",
     "lender_blacklist": [
+      {
+        "name": "Vivifi (FlexSalary)",
+        "match": [
+          "VIVIFIN",
+          "VIVIFI"
+        ]
+      },
       {
         "name": "Fibe / EarlySalary",
         "match": [
@@ -194,9 +201,115 @@
         ]
       }
     ],
-    "blacklist_status": "Gauri named Fibe and KreditBee; rest are proposed defaults - TO CONFIRM",
     "credit_card_bt": false,
-    "product_types_note": "Only personal loans are taken in BT (consumer durable, BL etc. stay as obligations)"
+    "product_types_note": "Only personal loans are taken in BT (consumer durable, BL etc. stay as obligations)",
+    "nbfc_whitelist": [
+      {
+        "name": "Aditya Birla Finance",
+        "match": [
+          "ADITYA BIRLA",
+          "ADBIRLA",
+          "ABFL",
+          "ABCL"
+        ]
+      },
+      {
+        "name": "Bajaj Finance",
+        "match": [
+          "BAJAJ FIN",
+          "BAJAJFIN"
+        ]
+      },
+      {
+        "name": "L&T Finance",
+        "match": [
+          "L&T FIN",
+          "L AND T FIN",
+          "LT FINANCE",
+          "LTFIN",
+          "LTFS",
+          "L&TFIN"
+        ]
+      },
+      {
+        "name": "Navi Finserv",
+        "match": [
+          "NAVI"
+        ]
+      },
+      {
+        "name": "Cholamandalam",
+        "match": [
+          "CHOLAMANDALAM",
+          "CHOLA"
+        ]
+      },
+      {
+        "name": "Piramal Capital",
+        "match": [
+          "PIRAMAL"
+        ]
+      },
+      {
+        "name": "AU Small Finance Bank",
+        "match": [
+          "AU SMALL FIN",
+          "AUSFB",
+          "AU BANK",
+          "AUBANK"
+        ],
+        "note": "listed as NBFC by Gauri - confirm 4 or 6 EMIs"
+      },
+      {
+        "name": "Tata Capital",
+        "match": [
+          "TATA CAPITAL",
+          "TATA CAP",
+          "TATACAP",
+          "TCL",
+          "TCFSL"
+        ]
+      },
+      {
+        "name": "SMFG India Credit (SMICC, ex-Fullerton)",
+        "match": [
+          "SMFG",
+          "SMICC",
+          "FULLERTON"
+        ]
+      },
+      {
+        "name": "Poonawalla Fincorp",
+        "match": [
+          "POONAWALLA",
+          "POONAWALA",
+          "PFL"
+        ]
+      },
+      {
+        "name": "Kotak Mahindra Prime",
+        "match": [
+          "KOTAK"
+        ]
+      }
+    ],
+    "od_check": {
+      "all_nbfc": true,
+      "extra_match": [
+        "KOTAK"
+      ],
+      "note": "NBFCs and Kotak give OD/flexi lines: confirm term loan vs OD; OD taken in BT only once EMIs have started"
+    },
+    "foreclosure_letter_lenders": [
+      {
+        "name": "Hero FinCorp",
+        "match": [
+          "HERO FIN",
+          "HEROFIN"
+        ]
+      }
+    ],
+    "nbfc_note": "Same NBFC list as HDFC plus Poonawalla Fincorp and Kotak (Gauri, 17 Oct 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -230,8 +343,18 @@
   "hard_rejects_status": "TO CONFIRM: ICICI rules for DPD / settlements / own-bank history",
   "enquiries": {
     "max_90d": 6,
-    "deviation_possible": true
+    "deviation_possible": true,
+    "count_types": [
+      "Personal Loan"
+    ]
   },
   "subject_to_closure_allowed": true,
-  "test_cases": []
+  "test_cases": [],
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> bank can't do the case (Gauri, 16 Oct 2026)"
+  }
 }
