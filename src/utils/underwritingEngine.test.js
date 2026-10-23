@@ -340,7 +340,7 @@ test('IndusInd: lower of FOIR and multiplier, salary-based multiplier with own h
   expect(r.best.eligibleAmount).toBe(Math.min(m.amount, Math.max(...r.best.methods.filter((x) => x.key.startsWith('foir')).map((x) => x.amount))));
   expect(r.foirPct).toBe(65);
   const own = evaluateBank(indusind, p({ ownHouse: true, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', outstanding: 3000000, emi: 30000, emisPaid: 40 }] }));
-  expect(own.foirPct).toBe(70);
+  expect(own.foirPct).toBe(75);   // own house + live home loan
   expect(own.best.methods.find((x) => x.key === 'multiplier').multiplier).toBe(28);
   const c = evaluateBank(indusind, p({ company: { categoriesByBank: { indusind: 'CAT C1000' } } }));
   expect(c.best.methods.filter((x) => x.key.startsWith('foir')).map((x) => x.tenure)).toEqual([48]);
@@ -408,4 +408,17 @@ test('L&T: FOIR by NTH x CIBIL x category, lower of FOIR & multiplier, city mini
   // own L&T loan is a top-up
   const own = evaluateBank(lt, p({ netSalary: 120000, loans: [{ id: 'lt', lender: 'L&T FINANCE LTD', productType: 'PL', outstanding: 200000, emi: 9000, emisPaid: 10 }] }));
   expect(own.obligations.loans[0].bt.topUp).toBe(true);
+});
+
+test('IndusInd: own house + live home loan at 75K+ gives FOIR 75%; Navi taken in BT; Navi needs no OD confirmation at HDFC', () => {
+  const hl = { id: 'hl', lender: 'HDFC BANK', productType: 'HL', outstanding: 7263752, emi: 59610, emisPaid: 8, emisRemaining: 232 };
+  const navi = { id: 'navi', lender: 'NAVI', productType: 'PL', outstanding: 1314664, emi: 46500, emisPaid: 8, emisRemaining: 42 };
+  const p = { ...base, netSalary: 250000, ownHouse: true, loans: [hl, navi], cards: [], cibilScore: 780,
+    company: { categoriesByBank: { indusind: 'CAT A', hdfc_bank: 'CAT A' } }, credit: { enquiryList: [] } };
+  const r = evaluateBank(indusind, p);
+  expect(r.foirPct).toBe(75);
+  expect(r.obligations.loans.find((l) => l.id === 'navi').bt.ok).toBe(true);
+  expect(evaluateBank(indusind, { ...p, loans: [navi] }).foirPct).toBe(70);   // own house, no home loan
+  const h = evaluateBank(policy, p);
+  expect(h.obligations.loans.find((l) => l.id === 'navi').bt.odUnconfirmed).toBe(false);
 });

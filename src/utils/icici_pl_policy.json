@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v7-2026-10-20",
+  "policy_version": "v8-2026-10-23",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -294,11 +294,25 @@
       }
     ],
     "od_check": {
-      "all_nbfc": true,
+      "all_nbfc": false,
       "extra_match": [
+        "BAJAJ FIN",
+        "BAJAJFIN",
+        "ADITYA BIRLA",
+        "ADBIRLA",
+        "ABFL",
+        "ABCL",
+        "TATA CAP",
+        "TATACAP",
+        "TCL",
+        "TCFSL",
+        "CHOLA",
+        "POONAWALLA",
+        "POONAWALA",
+        "PFL",
         "KOTAK"
       ],
-      "note": "NBFCs and Kotak give OD/flexi lines: confirm term loan vs OD; OD taken in BT only once EMIs have started"
+      "note": "Only lenders that give OD/flexi lines are checked (Bajaj, Aditya Birla, Tata Capital, Chola, Poonawalla, Kotak). Navi etc. give term loans only."
     },
     "foreclosure_letter_lenders": [
       {

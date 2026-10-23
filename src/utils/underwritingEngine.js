@@ -443,8 +443,15 @@ export function evaluateBank(policy, profile) {
 
   // Policy parameters
   const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore);
-  let foirPct = profile.ownHouse && foirSlab?.foir_pct_own_house != null ? foirSlab.foir_pct_own_house : foirSlab?.foir_pct;
-  if (profile.ownHouse && foirSlab?.foir_pct_own_house != null) out.notes.push(`Own house — FOIR ${foirPct}%`);
+  const liveHlAny = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
+  let foirPct = foirSlab?.foir_pct;
+  if (profile.ownHouse && liveHlAny && foirSlab?.foir_pct_own_house_hl != null) {
+    foirPct = foirSlab.foir_pct_own_house_hl;
+    out.notes.push(`Own house with live home loan — FOIR ${foirPct}%`);
+  } else if (profile.ownHouse && foirSlab?.foir_pct_own_house != null) {
+    foirPct = foirSlab.foir_pct_own_house;
+    out.notes.push(`Own house — FOIR ${foirPct}%`);
+  }
   const hlBonus = policy.eligibility.foir_hl_bonus;   // e.g. { salary_min_incl: 75000, foir_pct: 75 }
   if (hlBonus && salary >= hlBonus.salary_min_incl
       && loanLines.some((l) => l.productType === 'HL' && l.obligation.amount > 0)) {

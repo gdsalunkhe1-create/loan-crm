@@ -23,7 +23,7 @@ import {
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, summarizeEmployer,
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
-  cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, ownBankEnquiries, plEnquiries90d,
+  cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
   isUnlistedFor, searchedIncorporationYear,
 } from '../utils/underwritingAdapters';
@@ -1431,6 +1431,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
         <td style={td}>
           <NumInput value={l.emi} invalid={needsEmi} onChange={(v) => setLoanById(l.id, { emi: v })} />
           {needsEmi && <div style={{ fontSize: '10px', color: RED, textAlign: 'right', fontWeight: 600 }}>Enter EMI</div>}
+          {emiLooksTooLow(l) && <div style={{ fontSize: '10px', color: AMBER, textAlign: 'right', fontWeight: 600 }}>EMI looks too low — check</div>}
         </td>
         <td style={td}><NumInput value={l.emisPaid} onChange={(v) => setLoanById(l.id, { emisPaid: v })} /></td>
         <td style={td}><NumInput nullable placeholder="?" value={l.emisRemaining} onChange={(v) => setLoanById(l.id, { emisRemaining: v })} /></td>

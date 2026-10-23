@@ -7,7 +7,7 @@
 //   customer_cibil_data row  — { report_date: 'YYYY-MM-DD' (upload date; the parsed
 //     report date itself isn't stored), accounts: [{ bankName, loanType, status,
 //     openDate, closedDate, tenure, emi, outstanding, overdue, dpds, lateMonths,
-//     settlement, writtenOff, ... }] } — all values are strings. Dates arrive as
+//     settlement, writtenOff, ownership (CIBIL.com: 'Individual' | 'Joint' | …), ... }] } — all values are strings. Dates arrive as
 //     'DD/MM/YYYY' or 'DD Mon YYYY'; dpds as '30' or '90+ days (×4)'; lateMonths as
 //     'Feb 2025 (30d)' or '2025 OCT (90+)'.
 //   customer_bank_statement_data row — { bank_name, result } where result is the
@@ -187,7 +187,8 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
       outstanding: toNum(acc.outstanding),
       emi: toNum(acc.emi),
       ...emiProgress(acc, reportDate),
-      isJoint: false,
+      // CIBIL Ownership "Joint"; who pays the EMI / co-applicant income stay for the agent.
+      isJoint: /\bjoint\b/i.test(acc.ownership || ''),
       coApplicantIncomeOk: null,
       // 'auto' (engine decides) | 'bt' (always BT if the bank allows) | 'obligate' (never BT)
       treatment: 'auto',
@@ -454,6 +455,11 @@ export function cardCountedShare(cardCalc, cardId) {
 // Loans with no balance and no EMI (closed / zero-balance CIBIL accounts) are
 // tucked into a collapsed group; rows the agent added stay in the main list.
 export const isZeroBalanceLoan = (l) => !l.manual && !(l.outstanding > 0) && !(l.emi > 0);
+
+// PL / BL EMI under 1% of the loan amount is almost always a misread or a typo
+// (e.g. 100 on ₹14,70,000) — the screen shows a warning, nothing is changed.
+export const emiLooksTooLow = (l) => (l.productType === 'PL' || l.productType === 'BL')
+  && l.emi > 0 && l.loanAmount > 0 && l.emi < l.loanAmount * 0.01;
 
 // Same test the engine uses for out.missingEmi.
 export const loanNeedsEmi = (l) => (l.outstanding || 0) > 0 && !(l.emi > 0) && !l.closedBeforeLoginWithProof

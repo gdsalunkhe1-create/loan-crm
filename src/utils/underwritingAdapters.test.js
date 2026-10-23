@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -766,5 +766,62 @@ describe('unlisted company (year of incorporation)', () => {
     expect(searchedIncorporationYear({ banks: { a: { pick: null }, b: { pick: { incorporation_year: 2011 } } } })).toBe(2011);
     expect(searchedIncorporationYear({ banks: { a: { pick: { variants: [{ incorporation_year: null }, { incorporation_year: '2015' }] } } } })).toBe(2015);
     expect(searchedIncorporationYear({ banks: { a: { pick: { company_name: 'X' } } } })).toBe(null);
+  });
+});
+
+describe('CIBIL.com account fields stay with their own account', () => {
+  const { parseCibil } = require('../pages/CibilParser');
+  // A small loan with a ₹100 EMI sits right before the NAVI PL, whose ACCOUNT DETAILS
+  // print as a grouped block (labels, then values) with "EMI Amount ₹ 46,500" after it.
+  const raw = [
+    'Member Name', 'BAJAJ FIN LTD', 'Account Type', 'Consumer Loan', 'Account Number', '555', 'Ownership', 'Individual',
+    'ACCOUNT DETAILS', 'Sanctioned Amount ₹ 1,199', 'Current Balance ₹ 800', 'EMI Amount ₹ 100',
+    'Date Opened / Disbursed 01/01/2026',
+    'Member Name', 'NAVI', 'Account Type', 'Personal Loan', 'Account Number', '010013975134', 'Ownership', 'Individual',
+    'ACCOUNT DETAILS', 'Credit Limit', 'Sanctioned Amount', 'Current Balance', 'Cash Limit', 'Amount Overdue',
+    'Rate of Interest', 'Repayment Tenure',
+    '-', '₹ 14,70,000', '₹ 13,14,664', '-', '₹ 0', '-', '50',
+    'EMI Amount ₹ 46,500', 'Date Opened / Disbursed 04/02/2026',
+    'Member Name', 'HDFC BANK', 'Account Type', 'Housing Loan', 'Account Number', '306', 'Ownership', 'Joint',
+    'ACCOUNT DETAILS', 'Sanctioned Amount ₹ 73,43,610', 'Current Balance ₹ 72,63,752', 'EMI Amount ₹ 59,610',
+    'Date Opened / Disbursed 02/02/2026',
+  ].join('\n');
+  const accounts = parseCibil(raw).accounts;
+
+  test('grouped block: NAVI keeps its own EMI, amount and balance, not the previous account\'s', () => {
+    const navi = accounts.find((a) => a.bankName === 'NAVI');
+    expect(navi).toMatchObject({ loanAmount: '1470000', outstanding: '1314664', emi: '46500', tenure: '50', ownership: 'Individual' });
+    expect(accounts.find((a) => a.bankName === 'BAJAJ FIN LTD').emi).toBe('100');
+  });
+
+  test('Ownership "Joint" sets isJoint; EMI payer and co-applicant income are left for the agent', () => {
+    const loans = cibilToProfile({ report_date: '2026-10-23', accounts }).loans;
+    const hl = loans.find((l) => l.productType === 'HL');
+    expect(hl).toMatchObject({ isJoint: true, hlEmiPaidBy: null, coApplicantIncomeOk: null });
+    expect(loans.find((l) => l.lender === 'NAVI').isJoint).toBe(false);
+  });
+});
+
+describe('EMI sanity warning', () => {
+  test('PL/BL EMI under 1% of the loan amount is flagged; other types and blanks are not', () => {
+    expect(emiLooksTooLow({ productType: 'PL', loanAmount: 1470000, emi: 100 })).toBe(true);
+    expect(emiLooksTooLow({ productType: 'BL', loanAmount: 1000000, emi: 9999 })).toBe(true);
+    expect(emiLooksTooLow({ productType: 'PL', loanAmount: 1470000, emi: 46500 })).toBe(false);
+    expect(emiLooksTooLow({ productType: 'PL', loanAmount: 1470000, emi: 0 })).toBe(false);
+    expect(emiLooksTooLow({ productType: 'PL', loanAmount: 0, emi: 100 })).toBe(false);
+    expect(emiLooksTooLow({ productType: 'HL', loanAmount: 7343610, emi: 50000 })).toBe(false);
+  });
+});
+
+describe('CIBIL.com account numbers keep their separators', () => {
+  const { parseCibil } = require('../pages/CibilParser');
+  test('dash, slash and underscore numbers are saved in full', () => {
+    const acct = (bank, num) => ['Member Name', bank, 'Account Type', 'Personal Loan', 'Account Number', num, 'Ownership', 'Individual',
+      'ACCOUNT DETAILS', 'Sanctioned Amount ₹ 1,00,000', 'Current Balance ₹ 50,000', 'EMI Amount ₹ 5,000'].join('\n');
+    const raw = [acct('HDFC BANK', '306-720029633'), acct('SBMBKINDIA', 'SBM-6-CRE-333369-5IFES8'),
+      acct('SBI', 'PL/2024/00123'), acct('UTKARFIN', 'ACC_109628961880014806'), acct('AXIS BANK', '126000003696662')].join('\n');
+    expect(parseCibil(raw).accounts.map((a) => a.accountNum)).toEqual([
+      '306-720029633', 'SBM-6-CRE-333369-5IFES8', 'PL/2024/00123', 'ACC_109628961880014806', '126000003696662',
+    ]);
   });
 });

@@ -5,7 +5,7 @@
     "INDUSIND"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-10-20",
+  "policy_version": "v3-2026-10-23",
   "sources": {
     "rules": "Gauri's IndusInd template, 20 Oct 2026"
   },
@@ -28,7 +28,8 @@
         "salary_min_incl": 75000,
         "salary_max_excl": null,
         "foir_pct": 65,
-        "foir_pct_own_house": 70
+        "foir_pct_own_house": 70,
+        "foir_pct_own_house_hl": 75
       }
     ],
     "tenure_slabs": [
@@ -215,12 +216,12 @@
     "category_source": "IndusInd list in Company Category Checker (CAT A, CAT B, CAT C1000, CAT G, A+)",
     "unlisted_rules": {
       "min_company_age_years": 3,
-      "note": "Unlisted company: check 50+ employees on EPFO; LLP allowed; eligibility on 3 years; max \u20b910L; min salary \u20b930K"
+      "note": "Unlisted company: check 50+ employees on EPFO; LLP allowed; eligibility on 3 years; max ₹10L; min salary ₹30K"
     }
   },
   "first_time_borrower": {
     "cap": 500000,
-    "range": "\u20b93\u20135L",
+    "range": "₹3–5L",
     "note": "No loan ever (card used 1+ year) or CIBIL -1"
   },
   "balance_transfer": {
@@ -323,9 +324,15 @@
           "HDB FIN",
           "HDBFS"
         ]
+      },
+      {
+        "name": "Navi Finserv",
+        "match": [
+          "NAVI"
+        ]
       }
     ],
-    "conflict_note": "Tata Capital, Piramal Finance, L&T Finance, IIFL Finance, SMFG/Fullerton and Navi appear in BOTH Gauri's allowed and never lists - treated as NOT BT until confirmed",
+    "conflict_note": "Tata Capital, Piramal, L&T Finance, IIFL, SMFG/Fullerton in both lists - NOT BT until confirmed. Navi confirmed BT (23 Oct 2026).",
     "lender_blacklist": [
       {
         "name": "Listed as both allowed and never - confirm",
@@ -343,8 +350,7 @@
           "IIFL",
           "SMFG",
           "SMICC",
-          "FULLERTON",
-          "NAVI"
+          "FULLERTON"
         ]
       },
       {
@@ -485,14 +491,12 @@
     "Age 23+",
     "Job stability: 6 months+ in current job",
     "Not bachelor accommodation",
-    "Net salary only \u2014 bonus not counted",
-    "Unlisted company: 50+ employees on EPFO"
+    "Net salary only — bonus not counted"
   ],
   "open_items": [
     "Tata Capital / Piramal / L&T / IIFL / SMFG / Navi: BT allowed or not? (in both lists)",
     "A+ and CAT G rules",
     "CAT C1000 FOIR for 75K+",
-    "Own house FOIR: 70% or 75% at 75K+?",
     "Unlisted ROI",
     "Enquiries: hard reject or deviation; own-bank 30-day block?"
   ]

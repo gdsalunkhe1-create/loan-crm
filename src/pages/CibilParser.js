@@ -315,6 +315,31 @@ function detectMissingPages(raw) {
   return missing.length ? { missing, total } : null
 }
 
+// Some extractions print ACCOUNT DETAILS as a run of labels followed by their values in the
+// same order ("Sanctioned Amount Current Balance … Repayment Tenure ₹ 14,70,000 ₹ 13,14,664 … 50"),
+// often with "EMI Amount ₹ 46,500" printed separately after. Maps each label to its value by
+// position; '-' becomes ''. Only the first such run in the block is read.
+const GROUPED_LABELS = [
+  ['creditLimit', 'Credit\\s*Limit'], ['sanctioned', 'Sanctioned\\s*Amount'], ['highCredit', 'High\\s*Credit'],
+  ['balance', 'Current\\s*Balance'], ['cashLimit', 'Cash\\s*Limit'], ['overdue', 'Amount\\s*Overdue'],
+  ['rate', 'Rate\\s*of\\s*Interest'], ['tenure', 'Repayment\\s*Tenure'], ['emi', 'EMI\\s*Amount'],
+]
+const GROUPED_LABEL_RX = GROUPED_LABELS.map(([, rx]) => rx).join('|')
+const GROUPED_VALUE_RX = '[₹₹]\\s*[\\d,]+|-(?=\\s|$)|\\d+(?:\\.\\d+)?(?![\\d\\/])'
+function groupedAmounts(block) {
+  const run = block.match(new RegExp(`((?:(?:${GROUPED_LABEL_RX})\\s+){2,})((?:(?:${GROUPED_VALUE_RX})\\s*)+)`, 'i'))
+  if (!run) return {}
+  const labels = [...run[1].matchAll(new RegExp(GROUPED_LABEL_RX, 'gi'))].map(m => m[0])
+  const values = [...run[2].matchAll(new RegExp(GROUPED_VALUE_RX, 'g'))].map(m => m[0])
+  if (values.length < labels.length) return {}
+  const out = {}
+  labels.forEach((label, i) => {
+    const key = GROUPED_LABELS.find(([, rx]) => new RegExp(`^${rx}$`, 'i').test(label))[0]
+    out[key] = values[i] === '-' ? '' : values[i].replace(/[₹₹,\s]/g, '')
+  })
+  return out
+}
+
 export function parseCibil(raw) {
   const pageGaps = detectMissingPages(raw)
   const text = cleanCibilText(raw)
@@ -370,7 +395,6 @@ export function parseCibil(raw) {
   for (let i = 0; i < anchors.length; i++) {
     const pos = anchors[i]
     const nextPos = i + 1 < anchors.length ? anchors[i + 1] : acctRegion.length
-    const fieldWin = acctRegion.slice(Math.max(0, pos - 450), nextPos)
     const payWin = acctRegion.slice(pos, nextPos)
     const bm = acctRegion.slice(pos).match(/Member\s*Name\s+(.+?)\s+(?:Account\s*Type|Credit\s*Limit|Sanctioned\s*Amount|High\s*Credit|Current\s*Balance|Cash\s*Limit)/is)
     const bankName = bm ? bm[1].replace(/\s+/g, ' ').trim() : ''
@@ -378,28 +402,47 @@ export function parseCibil(raw) {
     const tm = payWin.match(/Account\s*Type\s+(.+?)\s+(?:Account\s*Number|Ownership|Credit\s*Limit|Sanctioned\s*Amount|High\s*Credit)/is)
     const loanType = tm ? tm[1].replace(/\s+/g, ' ').trim() : ''
     if (!loanType || /employment/i.test(loanType)) continue
-    const accNumM = payWin.match(/Account\s*Number\s+([A-Za-z0-9]+)/i)
+    // Keep '-', '/' and '_' inside the number ("306-720029633", "SBM-6-CRE-333369-5IFES8",
+    // "ACC_109628961880014806") — [A-Za-z0-9]+ alone saved these as "306" / "SBM" / "ACC".
+    const accNumM = payWin.match(/Account\s*Number\s+([A-Za-z0-9]+(?:[-\/_][A-Za-z0-9]+)*)/i)
     const accountNum = accNumM ? accNumM[1] : ''
+    // The account's own block (payWin) is read first. The 450 chars before the anchor are only a
+    // fallback, used when the label isn't in the block at all: taking the first match across both
+    // gave this account the PREVIOUS account's values (a ₹100 EMI shown on a ₹14.7L NAVI loan).
+    const lookback = acctRegion.slice(Math.max(0, pos - 450), pos)
+    const grouped = groupedAmounts(payWin)
     const g = (s, rx) => { const m = s.match(rx); return m ? m[1].replace(/,/g, '').trim() : '' }
-    const loanAmount = g(fieldWin, /Sanctioned\s*Amount\s*[₹₹]\s*([\d,]+)/i) || g(fieldWin, /Credit\s*Limit\s*[₹₹]\s*([\d,]+)/i) || g(fieldWin, /High\s*Credit\s*[₹₹]\s*([\d,]+)/i)
-    const outstandingRaw = g(fieldWin, /Current\s*Balance\s*[₹₹]\s*([\d,]+)/i)
-    const emi = g(fieldWin, /EMI\s*Amount\s*[₹₹]\s*([\d,]+)/i)
-    const overdue = g(fieldWin, /Amount\s*Overdue\s*[₹₹]\s*([\d,]+)/i)
-    const settlement = g(fieldWin, /Settlement\s*Amount\s*[₹₹]\s*([\d,]+)/i)
-    const writtenOffRaw = g(fieldWin, /Written[- ]?off\s*Amount\s*\(\s*Total\s*\)\s*[₹₹]?\s*([\d,]+)/i) ||
-                          g(fieldWin, /Written[- ]?off\s*Amount\s*\(\s*Principal\s*\)\s*[₹₹]?\s*([\d,]+)/i)
-    const openDate = g(fieldWin, /Date\s*Opened\s*\/?\s*Disbursed\s+(\d{2}\/\d{2}\/\d{4})/i)
-    const closedDate = g(fieldWin, /Date\s*Closed\s+(\d{2}\/\d{2}\/\d{4})/i)
-    const tenure = g(fieldWin, /Repayment\s*Tenure\s+(\d+)/i)
-    const interestRate = g(fieldWin, /Rate\s*of\s*Interest\s+([\d.]+)/i)
+    // label: regex source for the field's label; value: regex source for what follows it.
+    const gAcc = (label, value, key) => {
+      const own = g(payWin, new RegExp(label + value, 'i'))
+      if (own) return own
+      if (key && grouped[key]) return grouped[key]
+      if (new RegExp(label, 'i').test(payWin)) return ''
+      const hits = [...lookback.matchAll(new RegExp(label + value, 'gi'))]
+      return hits.length ? hits[hits.length - 1][1].replace(/,/g, '').trim() : ''
+    }
+    const AMT = '\\s*[₹₹]\\s*([\\d,]+)'
+    const loanAmount = gAcc('Sanctioned\\s*Amount', AMT, 'sanctioned') || gAcc('Credit\\s*Limit', AMT, 'creditLimit') || gAcc('High\\s*Credit', AMT, 'highCredit')
+    const outstandingRaw = gAcc('Current\\s*Balance', AMT, 'balance')
+    const emi = gAcc('EMI\\s*Amount', AMT, 'emi')
+    const overdue = gAcc('Amount\\s*Overdue', AMT, 'overdue')
+    const settlement = gAcc('Settlement\\s*Amount', AMT)
+    const writtenOffRaw = gAcc('Written[- ]?off\\s*Amount\\s*\\(\\s*Total\\s*\\)', '\\s*[₹₹]?\\s*([\\d,]+)') ||
+                          gAcc('Written[- ]?off\\s*Amount\\s*\\(\\s*Principal\\s*\\)', '\\s*[₹₹]?\\s*([\\d,]+)')
+    const openDate = gAcc('Date\\s*Opened\\s*\\/?\\s*Disbursed', '\\s+(\\d{2}\\/\\d{2}\\/\\d{4})')
+    const closedDate = gAcc('Date\\s*Closed', '\\s+(\\d{2}\\/\\d{2}\\/\\d{4})')
+    const tenure = gAcc('Repayment\\s*Tenure', '\\s+(\\d+)', 'tenure')
+    const interestRate = gAcc('Rate\\s*of\\s*Interest', '\\s+([\\d.]+)', 'rate')
+    const ownershipM = payWin.match(/Ownership\s+(Individual|Joint|Guarantor|Authori[sz]ed\s*User)/i)
+    const ownership = ownershipM ? ownershipM[1].replace(/\s+/g, ' ') : ''
     const isClosed = !!closedDate
     const settlementVal = (!settlement || settlement === '0' || settlement === '-') ? '' : settlement
     const writtenOffVal  = (!writtenOffRaw || writtenOffRaw === '0' || writtenOffRaw === '-') ? '' : writtenOffRaw
     // Real status text CIBIL.com prints — e.g. Standard, Closed, Written-off, Settled,
     // Post (WO) Settled, Suit Filed. "-" means the field wasn't populated for this account.
-    const creditFacilityStatusRaw = g(fieldWin, /Credit\s*Facility\s*Status\s+(-|.+?)(?=\s*Written[- ]?off\s*Amount|\s*Settlement\s*Amount|\s*PAYMENT\s*STATUS|$)/i)
+    const creditFacilityStatusRaw = gAcc('Credit\\s*Facility\\s*Status', '\\s+(-|.+?)(?=\\s*Written[- ]?off\\s*Amount|\\s*Settlement\\s*Amount|\\s*PAYMENT\\s*STATUS|$)')
     const creditFacilityStatus = (creditFacilityStatusRaw && creditFacilityStatusRaw !== '-') ? creditFacilityStatusRaw.trim() : ''
-    const suitFiledRaw = g(fieldWin, /Suit\s*-?\s*Filed\s*\/?\s*Wilful\s*Default\s+(-|.+?)(?=\s*Credit\s*Facility\s*Status|$)/i)
+    const suitFiledRaw = gAcc('Suit\\s*-?\\s*Filed\\s*\\/?\\s*Wilful\\s*Default', '\\s+(-|.+?)(?=\\s*Credit\\s*Facility\\s*Status|$)')
     const suitFiled = (suitFiledRaw && suitFiledRaw !== '-') ? suitFiledRaw.trim() : ''
     const cibilStatusTag = creditFacilityStatus
       ? creditFacilityStatus
@@ -411,7 +454,7 @@ export function parseCibil(raw) {
     const dpdNums = dpdHits.map(m => +m[2]).filter(n => n > 0 && n <= 365)
     const maxDpd = dpdNums.length ? Math.max(...dpdNums) : 0
     accounts.push({
-      bankName, loanType, loanAmount, accountNum,
+      bankName, loanType, loanAmount, accountNum, ownership,
       outstanding: isClosed ? '0' : outstandingRaw,
       emi, openDate, closedDate, tenure, interestRate, dpds: String(maxDpd), lateMonths: lateMonthsCibil,
       overdue: (!overdue || overdue === '0') ? '' : overdue,
