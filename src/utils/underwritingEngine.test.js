@@ -374,3 +374,38 @@ test('IndusInd: unlisted company, first-time borrower cap, DPD window, OD 2%, lo
   const lock = evaluateBank(policy, { ...base, loans: [{ id: 'ib', lender: 'INDUSIND BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 8 }] });
   expect(lock.obligations.loans[0].bt.why).toMatch(/IndusInd Bank lock-in/);
 });
+
+import lt from './lt_pl_policy.json';
+
+test('L&T: FOIR by NTH x CIBIL x category, lower of FOIR & multiplier, city minimum, other income, caps', () => {
+  const p = (extra) => ({ ...base, loans: [], cards: [], cibilScore: 760, city: 'Pune', company: { categoriesByBank: { lt: 'CAT C' } },
+    credit: { enquiryList: [] }, ...extra });
+  const c = evaluateBank(lt, p({ netSalary: 120000 }));
+  expect(c.foirPct).toBe(70);                                   // CAT C, 1L-2L, CIBIL >720
+  const m = c.best.methods.find((x) => x.key === 'multiplier');
+  expect(m.multiplier).toBe(20);
+  expect(c.best.eligibleRule).toBe('lower');
+  expect(evaluateBank(lt, p({ netSalary: 120000, cibilScore: 705 })).foirPct).toBe(65);
+  const top = evaluateBank(lt, p({ netSalary: 120000, company: { categoriesByBank: { lt: 'Super CAT A' } } }));
+  expect(top.best.methods.some((x) => x.key === 'multiplier')).toBe(false);   // NA above 50K
+  expect(top.best.methods.filter((x) => x.key.startsWith('foir')).map((x) => x.tenure)).toEqual([60, 72]);
+  expect(evaluateBank(lt, p({ netSalary: 30000, city: 'Mumbai' })).status).toBe('NOT_ELIGIBLE');   // Mumbai min 35K
+  expect(evaluateBank(lt, p({ netSalary: 30000, city: 'Nagpur' })).status).not.toBe('NOT_ELIGIBLE');
+  // rental: 50% below 1L, 100% at 1L+, capped at salary; only when verified
+  const r1 = evaluateBank(lt, p({ netSalary: 80000, otherIncome: { rentMonthly: 30000, rentVerified: true } }));
+  expect(r1.otherIncome.total).toBe(15000);
+  const r2 = evaluateBank(lt, p({ netSalary: 120000, otherIncome: { rentMonthly: 30000, rentVerified: true, bonusAnnualNet: 240000 } }));
+  expect(r2.otherIncome.lines.map((l) => [l.key, l.amount])).toEqual([['bonus', 10000], ['rent', 30000]]);
+  expect(evaluateBank(lt, p({ netSalary: 80000, otherIncome: { rentMonthly: 30000 } })).otherIncome.total).toBe(0);
+  // NTC -1: CAT A capped at 10L, CAT C at 5L; govt class 3 capped at 7L
+  expect(evaluateBank(lt, p({ netSalary: 150000, cibilScore: -1, company: { categoriesByBank: { lt: 'CAT A' } } })).best.eligibleAmount).toBeLessThanOrEqual(1000000);
+  expect(evaluateBank(lt, p({ netSalary: 150000, cibilScore: -1 })).best.eligibleAmount).toBeLessThanOrEqual(500000);
+  expect(evaluateBank(lt, p({ netSalary: 150000, govtClass3: true, company: { categoriesByBank: { lt: 'Govt' } } })).best.eligibleAmount).toBeLessThanOrEqual(700000);
+  // max loan by salary: 25-50K capped at 10L
+  expect(evaluateBank(lt, p({ netSalary: 45000, company: { categoriesByBank: { lt: 'CAT A' } } })).best.eligibleAmount).toBeLessThanOrEqual(1000000);
+  // loan late payment within 6 months rejects
+  expect(evaluateBank(lt, p({ netSalary: 120000, credit: { enquiryList: [], dpdAccounts: [{ lender: 'SBI', productType: 'PL', monthsAgo: 4 }] } })).status).toBe('NOT_ELIGIBLE');
+  // own L&T loan is a top-up
+  const own = evaluateBank(lt, p({ netSalary: 120000, loans: [{ id: 'lt', lender: 'L&T FINANCE LTD', productType: 'PL', outstanding: 200000, emi: 9000, emisPaid: 10 }] }));
+  expect(own.obligations.loans[0].bt.topUp).toBe(true);
+});

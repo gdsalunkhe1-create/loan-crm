@@ -5838,10 +5838,41 @@ export default function Dashboard({ session }) {
     const [reassignType,setReassignType]   =useState('transfer')
     const [reassigning,setReassigning]     =useState(false)
     const [showDupOnly,setShowDupOnly]     =useState(false)
+    // All Leads is server-paginated: adminLeads holds only the current page,
+    // and every filter below is applied inside the Supabase query.
+    const [leadPage,setLeadPage]           =useState(0)
+    const [leadTotal,setLeadTotal]         =useState(0)
+    const [leadsLoading,setLeadsLoading]   =useState(false)
+    const [leadSearchQ,setLeadSearchQ]     =useState('')
+    const [dupLeadIds,setDupLeadIds]       =useState(()=>new Set())
+    const [dupScanning,setDupScanning]     =useState(false)
+    const [selectingAll,setSelectingAll]   =useState(false)
+    const [distinctSheets,setDistinctSheets]=useState([])
+    const [overviewLeads,setOverviewLeads] =useState([])
     const fetchLeadsRef                    =useRef(null)
-    const fetchLeadsInFlightRef            =useRef(false)
+    const leadsReqRef                      =useRef(0)
+    const prevLeadQueryRef                 =useRef(null)
 
-    useEffect(()=>{ (async()=>{ await supabase.auth.getSession(); fetchUsers(); fetchDispositions(); fetchLeadSources(); fetchLeads(); fetchAuthUsers(); fetchSettings(); fetchActivityFull(); fetchAdminStages() })() },[])
+    useEffect(()=>{ (async()=>{ await supabase.auth.getSession(); await Promise.all([fetchUsers(),fetchDispositions(),fetchLeadSources(),fetchLeads(),fetchAuthUsers(),fetchSettings(),fetchActivityFull(),fetchAdminStages()]).catch(e=>console.error('[AdminPanel] startup fetch failed',e)) })() },[])
+
+    useEffect(()=>{ const t=setTimeout(()=>setLeadSearchQ(leadSearch),400); return()=>clearTimeout(t) },[leadSearch])
+
+    // Refetch the page when the page or any filter changes. A filter change on a
+    // later page first jumps back to page 1 (that state change re-runs this effect).
+    const leadFilterKey=JSON.stringify([leadSearchQ,leadStatusSet,leadAgentF,selectedSheets,leadAmtMin,leadAmtMax,leadDateFrom,leadDateTo,showDupOnly])
+    useEffect(()=>{
+      const prev=prevLeadQueryRef.current
+      prevLeadQueryRef.current={key:leadFilterKey,page:leadPage}
+      if(!prev) return // first load runs in the mount effect above
+      if(prev.key!==leadFilterKey&&leadPage!==0){ setLeadPage(0); return }
+      fetchLeads()
+    },[leadFilterKey,leadPage])
+
+    // Overview stats need every lead, but only three small columns, and only while that tab is open.
+    useEffect(()=>{ if(activeTab!=='overview') return; (async()=>{ await supabase.auth.getSession(); try{ setOverviewLeads(await fetchAllPaged(()=>supabase.from('leads').select('id,assigned_to,status,created_at'))) }catch(e){ console.error('[AdminPanel] overview leads failed',e) } })() },[activeTab])
+
+    // The Sheet No. list is loaded only when its dropdown is opened.
+    useEffect(()=>{ if(!sheetDropOpen) return; fetchAllPaged(()=>supabase.from('leads').select('id,sheet_number').not('sheet_number','is',null).neq('sheet_number','')).then(rows=>setDistinctSheets([...new Set(rows.map(r=>r.sheet_number))].sort())).catch(e=>console.error('[AdminPanel] sheet list failed',e)) },[sheetDropOpen])
 
     // Close Sheet No. filter panel when clicking anywhere outside it
     useEffect(()=>{
@@ -5925,27 +5956,124 @@ export default function Dashboard({ session }) {
       if(data) setActivityLogs(data)
     }
 
+    const LEAD_PAGE_SIZE=100
+    const LEAD_TABLE_COLUMNS='id,full_name,mobile,status,assigned_to,assigned_to_name,loan_amount,login_amount,disbursed_amount,created_at,mirror_agents,mirror_agent_statuses,sheet_number'
+    const pgQuote=v=>'"'+String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"'
+    // Applies the All Leads filters to a leads query, matching the old in-browser filter.
+    const applyLeadFilters=q=>{
+      const s=leadSearchQ.replace(/[*%_\\"]/g,'')
+      if(s) q=q.or('full_name.ilike.'+pgQuote('*'+s+'*')+',mobile.ilike.'+pgQuote('*'+s+'*'))
+      if(leadStatusSet.length) q=q.in('status',leadStatusSet)
+      if(leadAgentF!=='All') q=q.or('assigned_to.eq.'+leadAgentF+',mirror_agents.cs.{'+leadAgentF+'}')
+      if(selectedSheets.length){
+        const vals=selectedSheets.filter(x=>x!=='__none__')
+        const parts=selectedSheets.includes('__none__')?['sheet_number.is.null','sheet_number.eq.""']:[]
+        if(vals.length) parts.push('sheet_number.in.('+vals.map(pgQuote).join(',')+')')
+        q=q.or(parts.join(','))
+      }
+      // loan_amount is a TEXT column of plain digit strings ('' / null count as 0), so a
+      // plain gte/lte would compare alphabetically ('9' > '10'). Compare by digit count
+      // first, then as text only between strings of equal length.
+      const min=leadAmtMin===''?NaN:Math.ceil(Number(leadAmtMin))
+      if(Number.isFinite(min)&&min>0){ const L=String(min).length; q=q.or('loan_amount.match.'+pgQuote('^[1-9][0-9]{'+L+'}[0-9]*$')+',and(loan_amount.match.'+pgQuote('^[1-9][0-9]{'+(L-1)+'}$')+',loan_amount.gte.'+pgQuote(min)+')') }
+      const max=leadAmtMax===''?NaN:Math.floor(Number(leadAmtMax))
+      if(Number.isFinite(max)){
+        if(max<0) q=q.is('id',null)
+        else { const L=String(max).length; const parts=['loan_amount.is.null','loan_amount.eq.""']; if(L>1) parts.push('loan_amount.match.'+pgQuote('^[0-9]{1,'+(L-1)+'}$')); parts.push('and(loan_amount.match.'+pgQuote('^[0-9]{'+L+'}$')+',loan_amount.lte.'+pgQuote(max)+')'); q=q.or(parts.join(',')) }
+      }
+      // Date range is on COALESCE(assigned_at, created_at).
+      if(leadDateFrom) q=q.or('assigned_at.gte.'+leadDateFrom+',and(assigned_at.is.null,created_at.gte.'+leadDateFrom+')')
+      if(leadDateTo) q=q.or('assigned_at.lte.'+leadDateTo+'T23:59:59,and(assigned_at.is.null,created_at.lte.'+leadDateTo+'T23:59:59)')
+      return q
+    }
+    const sortLeadsDesc=rows=>rows.sort((a,b)=>a.created_at===b.created_at?(a.id<b.id?1:a.id>b.id?-1:0):((a.created_at||'')<(b.created_at||'')?1:-1))
+    // Fetches every row of a query 1000 at a time. Only used on demand (export,
+    // duplicates, select-all, sheet list, overview stats) — never for the table itself.
+    const fetchAllPaged=async(build)=>{
+      let all=[],from=0
+      while(true){
+        const{data,error}=await build().order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
+        if(error) throw error
+        all=all.concat(data||[])
+        if(!data||data.length<1000) return all
+        from+=1000
+      }
+    }
+    const fetchLeadsByIds=async(ids,cols='*',filtered=false)=>{
+      let all=[]
+      for(let i=0;i<ids.length;i+=100){
+        let q=supabase.from('leads').select(cols).in('id',ids.slice(i,i+100))
+        if(filtered) q=applyLeadFilters(q)
+        const{data,error}=await q
+        if(error) throw error
+        all=all.concat(data||[])
+      }
+      return sortLeadsDesc(all)
+    }
+    // Every lead matching the current filters (and the Duplicates toggle).
+    const fetchAllMatchingLeads=cols=>showDupOnly?fetchLeadsByIds([...dupLeadIds],cols,true):fetchAllPaged(()=>applyLeadFilters(supabase.from('leads').select(cols)))
+    // With "All Agents", a lead also gets one extra row per mirror agent.
+    const expandMirrorRows=rows=>leadAgentF==='All'?rows.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):rows
+
+    // Loads only the current page. Later requests win, so a slow response for old
+    // filters can never overwrite a newer one.
     const fetchLeads=async()=>{
-      if(fetchLeadsInFlightRef.current) return
-      fetchLeadsInFlightRef.current=true
+      const reqId=++leadsReqRef.current
+      const from=leadPage*LEAD_PAGE_SIZE
+      setLeadsLoading(true)
       try{
-        let all=[],from=0
-        while(true){
-          const{data,error}=await supabase.from('leads').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+999)
-          if(error){ console.error('[fetchLeads] page failed at offset',from,error); showApToast?.('Leads list failed to load: '+error.message,'error'); break }
-          if(!data) break
-          all=[...all,...data]
-          setAdminLeads(all)
-          if(data.length<1000) break
-          from+=1000
+        let rows,total
+        if(showDupOnly){
+          const all=await fetchLeadsByIds([...dupLeadIds],LEAD_TABLE_COLUMNS,true)
+          rows=all.slice(from,from+LEAD_PAGE_SIZE); total=all.length
+        } else {
+          const{data,error,count}=await applyLeadFilters(supabase.from('leads').select(LEAD_TABLE_COLUMNS,{count:'exact'})).order('created_at',{ascending:false}).order('id',{ascending:false}).range(from,from+LEAD_PAGE_SIZE-1)
+          if(error) throw error
+          rows=data||[]; total=count||0
         }
-        const{data:obls}=await supabase.from('loan_obligations').select('*')
-        if(obls){const m={};obls.forEach(o=>{if(!m[o.lead_id])m[o.lead_id]=[];m[o.lead_id].push(o)});setAdminObligations(m)}
-      } finally {
-        fetchLeadsInFlightRef.current=false
+        if(reqId!==leadsReqRef.current) return
+        // e.g. after deletes, the current page can fall past the end
+        if(rows.length===0&&leadPage>0&&total>0){ setLeadPage(Math.ceil(total/LEAD_PAGE_SIZE)-1); return }
+        setAdminLeads(rows); setLeadTotal(total)
+      }catch(error){
+        if(reqId!==leadsReqRef.current) return
+        console.error('[fetchLeads] page failed',error); showApToast('Leads list failed to load: '+error.message,'error')
+      }finally{
+        if(reqId===leadsReqRef.current) setLeadsLoading(false)
       }
     }
     fetchLeadsRef.current=fetchLeads
+    const scanDuplicates=async()=>{
+      const rows=await fetchAllPaged(()=>supabase.from('leads').select('id,mobile,assigned_to').not('mobile','is',null).not('assigned_to','is',null))
+      const dupKeyCount={}
+      rows.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
+      const ids=new Set()
+      rows.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) ids.add(l.id) })
+      return ids
+    }
+    const toggleDuplicates=async()=>{
+      if(showDupOnly){ setShowDupOnly(false); return }
+      setDupScanning(true)
+      try{ setDupLeadIds(await scanDuplicates()); setShowDupOnly(true) }
+      catch(e){ showApToast('Duplicate scan failed: '+e.message,'error') }
+      setDupScanning(false)
+    }
+    const selectAllMatching=async()=>{
+      setSelectingAll(true)
+      try{ const rows=await fetchAllMatchingLeads('id'); setSelected(prev=>{ const n=new Set(prev); rows.forEach(r=>n.add(r.id)); return n }) }
+      catch(e){ showApToast('Error: '+e.message,'error') }
+      setSelectingAll(false)
+    }
+    const exportForReassignment=async()=>{
+      try{ doReassignExport(selected.size>0?await fetchLeadsByIds([...selected]):expandMirrorRows(await fetchAllMatchingLeads('*'))) }
+      catch(e){ showApToast('Export error: '+e.message,'error') }
+    }
+    // The table holds only a few columns; load the full lead (notes etc.) when it is opened.
+    const openLeadView=async(l)=>{
+      const{data,error}=await supabase.from('leads').select('*').eq('id',l.id).maybeSingle()
+      if(error){ showApToast('Error: '+error.message,'error'); return }
+      setViewLead(data||l)
+    }
     const fetchAuthUsers=async()=>{
       try{
         const{data,error}=await supabase.functions.invoke('admin-users',{body:{action:'list'}})
@@ -6104,7 +6232,10 @@ export default function Dashboard({ session }) {
       if(!reassignTo||!reassignTarget)return
       setReassigning(true)
       try{
-        const{error,obligationsFailed,skipped}=await reassignLeads([reassignTarget],reassignTo,reassignType)
+        // The table row has only a few columns; the clone needs the full lead.
+        const[fullTarget]=await fetchLeadsByIds([reassignTarget.id])
+        if(!fullTarget){ showApToast('Lead not found — it may have been deleted','error'); setReassigning(false); return }
+        const{error,obligationsFailed,skipped}=await reassignLeads([fullTarget],reassignTo,reassignType)
         if(error){ showApToast('Error: '+error.message,'error'); setReassigning(false); return }
         const agentName=users.find(u=>u.id===reassignTo)?.full_name||'agent'
         if(skipped&&skipped.length){
@@ -6243,31 +6374,16 @@ export default function Dashboard({ session }) {
     const td=new Date().toISOString().split('T')[0]
     const tm=new Date().toISOString().slice(0,7)
     const callsToday=callLogs.filter(c=>(c.created_at||'').startsWith(td)).length
-    const leadsToday=adminLeads.filter(l=>(l.created_at||'').startsWith(td)).length
-    const leadsMonth=adminLeads.filter(l=>(l.created_at||'').startsWith(tm)).length
+    const leadsToday=overviewLeads.filter(l=>(l.created_at||'').startsWith(td)).length
+    const leadsMonth=overviewLeads.filter(l=>(l.created_at||'').startsWith(tm)).length
     const agentIds=new Set(users.filter(u=>u.role==='agent').map(u=>u.id))
     const agentLogT=authUsers.filter(u=>agentIds.has(u.id)&&(u.last_sign_in_at||'').startsWith(td)).length
     const agentLogM=authUsers.filter(u=>agentIds.has(u.id)&&(u.last_sign_in_at||'').startsWith(tm)).length
-    const agentRows=useMemo(()=>users.filter(u=>u.role==='agent').map(a=>{ const ml=adminLeads.filter(l=>l.assigned_to===a.id); const au=authUsers.find(u=>u.id===a.id); return{...a,callsToday:callLogs.filter(c=>c.agent_id===a.id&&(c.created_at||'').startsWith(td)).length,totalLeads:ml.length,leadsMonth:ml.filter(l=>(l.created_at||'').startsWith(tm)).length,interested:ml.filter(l=>l.status==='Interested').length,callback:ml.filter(l=>l.status==='Callback').length,disbursed:ml.filter(l=>l.status==='Disbursed').length,lastLogin:au?.last_sign_in_at||null} }).sort((a,b)=>b.callsToday-a.callsToday),[users,adminLeads,authUsers,callLogs,td,tm])
+    const agentRows=useMemo(()=>users.filter(u=>u.role==='agent').map(a=>{ const ml=overviewLeads.filter(l=>l.assigned_to===a.id); const au=authUsers.find(u=>u.id===a.id); return{...a,callsToday:callLogs.filter(c=>c.agent_id===a.id&&(c.created_at||'').startsWith(td)).length,totalLeads:ml.length,leadsMonth:ml.filter(l=>(l.created_at||'').startsWith(tm)).length,interested:ml.filter(l=>l.status==='Interested').length,callback:ml.filter(l=>l.status==='Callback').length,disbursed:ml.filter(l=>l.status==='Disbursed').length,lastLogin:au?.last_sign_in_at||null} }).sort((a,b)=>b.callsToday-a.callsToday),[users,overviewLeads,authUsers,callLogs,td,tm])
     const mk=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:IST_TZ}).toLowerCase().replace(' ','_')
     const manualStats=[{key:'disbursements_'+mk,label:'Disbursements This Month'},{key:'applications_'+mk,label:'Applications Logged In'},{key:'obligations_'+mk,label:'Obligations Disbursed'}]
-    // Duplicate detection, sheet list, and the filtered/paged leads list below were
-    // all being recomputed from scratch on EVERY render of AdminPanel — including
-    // a render triggered by nothing more than toggling a single row checkbox
-    // (setSelected). None of these actually depend on `selected`, so wrapping them
-    // in useMemo means a checkbox click now skips re-filtering/re-scanning the
-    // full leads list entirely, which is what was making rapid multi-select feel
-    // slow.
-    const dupLeadIds=useMemo(()=>{
-      const dupKeyCount={}
-      adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; dupKeyCount[k]=(dupKeyCount[k]||0)+1 })
-      const ids=new Set()
-      adminLeads.forEach(l=>{ if(!l.mobile||!l.assigned_to)return; const k=l.mobile.replace(/\D/g,'').slice(-10)+'|'+l.assigned_to; if(dupKeyCount[k]>1) ids.add(l.id) })
-      return ids
-    },[adminLeads])
-    const distinctSheets=useMemo(()=>[...new Set(adminLeads.map(l=>l.sheet_number).filter(Boolean))].sort(),[adminLeads])
-    const baseFiltered=useMemo(()=>adminLeads.filter(l=>{ const q=leadSearch.toLowerCase(); const mQ=!q||(l.full_name||'').toLowerCase().includes(q)||(l.mobile||'').includes(q); const mS=leadStatusSet.length===0||leadStatusSet.includes(l.status); const mA=leadAgentF==='All'||l.assigned_to===leadAgentF||(Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mSh=selectedSheets.length===0||(l.sheet_number?selectedSheets.includes(l.sheet_number):selectedSheets.includes('__none__')); const amt=Number(l.loan_amount)||0; const mAmt=(leadAmtMin===''&&leadAmtMax==='')||((leadAmtMin===''||amt>=Number(leadAmtMin))&&(leadAmtMax===''||amt<=Number(leadAmtMax))); const mF=!leadDateFrom||(l.assigned_at||l.created_at||'')>=leadDateFrom; const mT=!leadDateTo||(l.assigned_at||l.created_at||'')<=leadDateTo+'T23:59:59'; const mDup=!showDupOnly||dupLeadIds.has(l.id); return mQ&&mS&&mA&&mSh&&mAmt&&mF&&mT&&mDup }),[adminLeads,leadSearch,leadStatusSet,leadAgentF,selectedSheets,leadAmtMin,leadAmtMax,leadDateFrom,leadDateTo,showDupOnly,dupLeadIds])
-    const filteredLeads=useMemo(()=>leadAgentF==='All'?baseFiltered.reduce((acc,l)=>{ acc.push(l); if(Array.isArray(l.mirror_agents)) l.mirror_agents.filter(mid=>mid!==l.assigned_to).forEach(mid=>acc.push({...l,_mirrorAgentId:mid,_isMirrorRow:true})); return acc },[]):baseFiltered,[baseFiltered,leadAgentF])
+    // adminLeads is already filtered server-side; only the mirror-row expansion happens here.
+    const filteredLeads=useMemo(()=>expandMirrorRows(adminLeads),[adminLeads,leadAgentF])
     const allLdSel=filteredLeads.length>0&&filteredLeads.every(l=>selected.has(l.id))
     const filteredAct=activityFull.filter(a=>{ const mA=!actFdAgent||a.assigned_to===actFdAgent||a.assigned_by===actFdAgent; const mD=!actFdDate||(a.created_at||'').startsWith(actFdDate); return mA&&mD })
     const apStageStyle=name=>{const s=adminStages.find(st=>st.name===name);if(s?.color)return{bg:s.color+'22',color:s.color};return{bg:'#F7FAFC',color:'#4A5568'}}
@@ -6563,8 +6679,8 @@ export default function Dashboard({ session }) {
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateFrom} onChange={e=>setLeadDateFrom(e.target.value)}/>
                 <input type='date' className='form-input' style={{width:'auto',fontSize:13}} value={leadDateTo} onChange={e=>setLeadDateTo(e.target.value)}/>
                 <button className='btn btn-ghost btn-sm' onClick={()=>{setLeadSearch('');setLeadStatusSet([]);setStatusDropOpen(false);setLeadAgentF('All');setSelectedSheets([]);setSheetDropOpen(false);setSheetSearch('');setLeadAmtMin('');setLeadAmtMax('');setAmtDropOpen(false);setLeadDateFrom('');setLeadDateTo('')}}>Clear</button>
-                <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={()=>doReassignExport(selected.size>0?adminLeads.filter(l=>selected.has(l.id)):filteredLeads)}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
-                <button onClick={()=>setShowDupOnly(o=>!o)} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</button>
+                <button className='btn btn-outline btn-sm' style={{whiteSpace:'nowrap',fontSize:12}} onClick={exportForReassignment}>↓ Export{selected.size>0?' Selected':''} for Reassignment</button>
+                <button onClick={toggleDuplicates} disabled={dupScanning} style={{padding:'7px 13px',borderRadius:8,border:'1.5px solid '+(showDupOnly?'#dc2626':'#E2E8F0'),background:showDupOnly?'#FEF2F2':'white',color:showDupOnly?'#dc2626':'#64748B',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>{dupScanning?'Scanning…':<>⚠️ Duplicates{dupLeadIds.size>0?' ('+dupLeadIds.size+')':''}</>}</button>
               </div>
               {dupLeadIds.size>0&&(
                 <div style={{fontSize:12,color:'#dc2626',fontWeight:600,marginBottom:10}}>⚠️ {dupLeadIds.size} duplicate lead{dupLeadIds.size>1?'s':''} detected (same mobile assigned to the same agent)</div>
@@ -6576,15 +6692,21 @@ export default function Dashboard({ session }) {
                     <option value=''>Reassign to agent...</option>
                     {users.filter(u=>['agent','team_leader'].includes(u.role)).map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
-                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,obligationsFailed,skipped}=await reassignLeads(selLeads,assignTo,'transfer'); if(error){ showApToast('Error: '+error.message,'error') } else { const skipCount=skipped?skipped.length:0; const processedCount=selLeads.length-skipCount; const skipSuffix=skipCount?(' — '+skipCount+' skipped ('+agentName+' already has this number)'):''; showApToast(obligationsFailed?(processedCount+' lead'+(processedCount>1?'s':'')+' shared with '+agentName+' — some obligations couldn\'t be copied, please check manually'+skipSuffix):(processedCount+' lead'+(processedCount>1?'s':'')+' shared with '+agentName+' as new independent copies. Original agents\' leads are untouched.'+skipSuffix)); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
-                  <button className='btn' style={{background:'transparent',color:'white',border:'1px solid rgba(255,255,255,0.5)',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=adminLeads.filter(l=>selected.has(l.id)); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,skipped}=await reassignLeads(selLeads,assignTo,'mirror'); if(error){ showApToast('Error: '+error.message,'error') } else { const skipCount=skipped?skipped.length:0; const processedCount=selLeads.length-skipCount; const skipSuffix=skipCount?(' — '+skipCount+' skipped ('+agentName+' already has this number)'):''; showApToast(processedCount+' lead'+(processedCount>1?'s':'')+' mirrored to '+agentName+'. Original agents retain access.'+skipSuffix); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo} title='Original agent keeps access; new agent also gets it'>{assigning?'…':'🪞 Mirror'}</button>
+                  <button className='btn' style={{background:'white',color:'#185FA5',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=await fetchLeadsByIds([...selected]); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,obligationsFailed,skipped}=await reassignLeads(selLeads,assignTo,'transfer'); if(error){ showApToast('Error: '+error.message,'error') } else { const skipCount=skipped?skipped.length:0; const processedCount=selLeads.length-skipCount; const skipSuffix=skipCount?(' — '+skipCount+' skipped ('+agentName+' already has this number)'):''; showApToast(obligationsFailed?(processedCount+' lead'+(processedCount>1?'s':'')+' shared with '+agentName+' — some obligations couldn\'t be copied, please check manually'+skipSuffix):(processedCount+' lead'+(processedCount>1?'s':'')+' shared with '+agentName+' as new independent copies. Original agents\' leads are untouched.'+skipSuffix)); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo}>{assigning?'Reassigning…':'↩ Reassign'}</button>
+                  <button className='btn' style={{background:'transparent',color:'white',border:'1px solid rgba(255,255,255,0.5)',fontSize:13,padding:'5px 14px'}} onClick={async()=>{ if(!assignTo||selected.size===0)return; setAssigning(true); try{ const selLeads=await fetchLeadsByIds([...selected]); const agentName=users.find(u=>u.id===assignTo)?.full_name||'agent'; const{error,skipped}=await reassignLeads(selLeads,assignTo,'mirror'); if(error){ showApToast('Error: '+error.message,'error') } else { const skipCount=skipped?skipped.length:0; const processedCount=selLeads.length-skipCount; const skipSuffix=skipCount?(' — '+skipCount+' skipped ('+agentName+' already has this number)'):''; showApToast(processedCount+' lead'+(processedCount>1?'s':'')+' mirrored to '+agentName+'. Original agents retain access.'+skipSuffix); setSelected(new Set()); setAssignTo(''); fetchLeads(); fetchActivityFull() } }catch(err){showApToast('Error: '+err.message,'error')} setAssigning(false)}} disabled={assigning||!assignTo} title='Original agent keeps access; new agent also gets it'>{assigning?'…':'🪞 Mirror'}</button>
                   <button onClick={async()=>{ if(!window.confirm('Delete '+selected.size+' selected lead'+(selected.size>1?'s':'')+' permanently?\n\nThis also deletes their call logs, tasks and obligations. This cannot be undone.'))return; try{ const ids=[...selected]; for(let i=0;i<ids.length;i+=50){ const batch=ids.slice(i,i+50); await supabase.from('calls').delete().in('lead_id',batch); await supabase.from('tasks').delete().in('lead_id',batch); await supabase.from('loan_obligations').delete().in('lead_id',batch); await supabase.from('activity_log').delete().in('lead_id',batch); await supabase.from('leads').delete().in('id',batch) } showApToast(ids.length+' lead'+(ids.length>1?'s':'')+' deleted'); setSelected(new Set()); fetchLeads() }catch(e){showApToast('Error: '+e.message,'error')} }} style={{background:'#FEF2F2',border:'1px solid #FECACA',color:'#DC2626',borderRadius:6,padding:'5px 12px',cursor:'pointer',fontSize:13,fontWeight:600}}>🗑 Delete Selected</button>
                   <button onClick={()=>setSelected(new Set())} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',borderRadius:6,padding:'5px 10px',cursor:'pointer',fontSize:12}}>Clear</button>
                 </div>
               )}
               <div className='table-container'>
                 <div style={{padding:'10px 14px',borderBottom:'1px solid #E2E8F0',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                  <span style={{fontSize:13,fontWeight:600}}>{filteredLeads.length} of {adminLeads.length} leads</span>
+                  <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontSize:13,fontWeight:600}}>{leadTotal===0?'Showing 0 of 0':'Showing '+(leadPage*LEAD_PAGE_SIZE+1).toLocaleString('en-IN')+'–'+Math.min((leadPage+1)*LEAD_PAGE_SIZE,leadTotal).toLocaleString('en-IN')+' of '+leadTotal.toLocaleString('en-IN')}</span>
+                    <button className='btn btn-ghost btn-sm' style={{fontSize:11}} disabled={leadPage===0||leadsLoading} onClick={()=>setLeadPage(p=>Math.max(0,p-1))}>Prev</button>
+                    <button className='btn btn-ghost btn-sm' style={{fontSize:11}} disabled={(leadPage+1)*LEAD_PAGE_SIZE>=leadTotal||leadsLoading} onClick={()=>setLeadPage(p=>p+1)}>Next</button>
+                    {leadsLoading&&<span style={{fontSize:11,color:'#94A3B8'}}>Loading…</span>}
+                    {allLdSel&&selected.size<leadTotal&&<button className='btn btn-ghost btn-sm' style={{fontSize:11,color:'#185FA5'}} disabled={selectingAll} onClick={selectAllMatching}>{selectingAll?'Selecting…':'Select all '+leadTotal.toLocaleString('en-IN')+' matching'}</button>}
+                  </div>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600,color:apRtConnected?'#16a34a':'#9ca3af'}}>
                       <div style={{width:7,height:7,borderRadius:'50%',background:apRtConnected?'#22c55e':'#d1d5db',boxShadow:apRtConnected?'0 0 4px #22c55e':undefined}}/>
@@ -6599,7 +6721,7 @@ export default function Dashboard({ session }) {
 <th style={{width:32,padding:'8px 6px',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1}}><input type='checkbox' checked={allLdSel} onChange={()=>{ const next=new Set(selected); allLdSel?filteredLeads.forEach(l=>next.delete(l.id)):filteredLeads.forEach(l=>next.add(l.id)); setSelected(next) }}/></th>
 {[['Name',130],['Mobile',105],['Status',120],['Agent',110],['Loan Amt',90],['Actions',180],['Date',90]].map(([h,w])=><th key={h} style={{width:w,padding:'8px 6px',textAlign:'left',fontSize:10.5,fontWeight:600,color:'#94A3B8',textTransform:'uppercase',letterSpacing:'0.04em',whiteSpace:'nowrap',background:'#F8FAFC',borderBottom:'1px solid #E2E8F0',position:'sticky',top:0,zIndex:1,overflow:'hidden'}}>{h}</th>)}
 </tr></thead>
-                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=usersById[l.assigned_to]; const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const obs=adminObligations[l.id]||[]; const totalEMI=obs.reduce((s,o)=>s+(parseFloat(o.emi_amount)||0),0); const sal=parseFloat(l.monthly_salary)||0; const foir=sal>0?Math.round((totalEMI/sal)*100):null; const lastNote=l.notes?l.notes.split('\n').filter(Boolean).pop():''; const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id+(l._mirrorAgentId||'')} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
+                  <tbody>{filteredLeads.length===0?(<tr><td colSpan={8}><div className='empty-state'><h3>No leads found</h3></div></td></tr>):filteredLeads.map(l=>{ const agent=usersById[l.assigned_to]; const isMirrorRow=l._isMirrorRow||(leadAgentF!=='All'&&l.assigned_to!==leadAgentF&&Array.isArray(l.mirror_agents)&&l.mirror_agents.includes(leadAgentF)); const mirrorAgentId=l._mirrorAgentId||(leadAgentF!=='All'?leadAgentF:null); const displayStatus=isMirrorRow&&mirrorAgentId?((l.mirror_agent_statuses||{})[mirrorAgentId]||l.status):l.status; const ss=apStageStyle(displayStatus); const isDup=dupLeadIds.has(l.id); const rowBg=selected.has(l.id)?'#EFF6FF':isDup?'#FFF7ED':'white'; return(<tr key={l.id+(l._mirrorAgentId||'')} style={{background:rowBg,borderBottom:'1px solid #F1F5F9'}} onMouseEnter={e=>{if(!selected.has(l.id))e.currentTarget.style.background='#F8FAFC'}} onMouseLeave={e=>{if(!selected.has(l.id))e.currentTarget.style.background=rowBg}}>
 <td style={{padding:'8px 6px',verticalAlign:'middle'}}><input type='checkbox' checked={selected.has(l.id)} onChange={()=>{ const n=new Set(selected); n.has(l.id)?n.delete(l.id):n.add(l.id); setSelected(n) }}/></td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',overflow:'hidden'}}><div style={{fontWeight:600,fontSize:12,color:'#1E293B',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={l.full_name||''}>{l.full_name||'—'}</div>{isDup&&<span style={{display:'inline-block',marginTop:2,padding:'1px 5px',borderRadius:8,background:'#FEF3C7',color:'#92400E',fontSize:9,fontWeight:700}}>⚠️ DUP</span>}</td>
 <td style={{padding:'8px 6px',verticalAlign:'middle',fontSize:11.5,color:'#475569',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>{l.mobile||'—'}</td>
@@ -6610,7 +6732,7 @@ export default function Dashboard({ session }) {
 
 <td style={{padding:'8px 4px',verticalAlign:'middle',whiteSpace:'nowrap'}}>
   <div style={{display:'flex',alignItems:'center',gap:3}}>
-    <button onClick={()=>setViewLead(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
+    <button onClick={()=>openLeadView(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
     <a href={'tel:'+(l.mobile||'')} title='Call' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></a>
     <a href={'https://wa.me/91'+(l.mobile||'')} target='_blank' rel='noreferrer' title='WhatsApp' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #BBF7D0',background:'#F0FDF4',textDecoration:'none'}}><IconBrandWhatsapp size={13} color='#25D366'/></a>
     <button onClick={()=>{setReassignTarget(l);setReassignTo('');setReassignType('transfer')}} title='Reassign lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>↩</button>

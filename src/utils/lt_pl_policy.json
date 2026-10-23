@@ -1,0 +1,543 @@
+{
+  "bank": "L&T Finance",
+  "bank_id": "lt",
+  "own_bank_match": [
+    "L&T FIN",
+    "L AND T FIN",
+    "LT FINANCE",
+    "LTFIN",
+    "LTFS",
+    "L&TFIN"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v1-2026-10-21",
+  "sources": {
+    "rules": "L&T PL policy flyer + Other Income page + Gauri's template, 21 Oct 2026"
+  },
+  "eligibility": {
+    "method": "lower_of_foir_and_multiplier",
+    "combine": "lower",
+    "salary_basis": "net take-home (NTH); other income added per rules",
+    "groups": {
+      "TOP": {
+        "categories": [
+          "Super CAT A",
+          "CAT A",
+          "CAT B",
+          "Govt"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "cibil_min_incl": 720,
+            "foir_pct": 80
+          },
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "cibil_max_excl": 720,
+            "foir_pct": 70,
+            "note": "2L+ needs 720; below 720 uses 1L-2L <720 value - TO CONFIRM"
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "cibil_min_incl": 720,
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "cibil_max_excl": 720,
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "cibil_min_incl": 720,
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "cibil_max_excl": 720,
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "foir_pct": 55
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 100000,
+            "months": [
+              60
+            ]
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": null,
+            "months": [
+              60,
+              72
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "multiplier": 18
+          }
+        ]
+      },
+      "C": {
+        "categories": [
+          "CAT C"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "cibil_min_incl": 720,
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "cibil_max_excl": 720,
+            "foir_pct": 65,
+            "note": "2L+ needs 720; below 720 uses 1L-2L <720 value - TO CONFIRM"
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "cibil_min_incl": 720,
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "cibil_max_excl": 720,
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "cibil_min_incl": 720,
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "cibil_max_excl": 720,
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "foir_pct": 50
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "multiplier": 18
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "multiplier": 16
+          }
+        ]
+      },
+      "D": {
+        "categories": [
+          "CAT D"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "cibil_min_incl": 720,
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "cibil_max_excl": 720,
+            "foir_pct": 60,
+            "note": "2L+ needs 720; below 720 uses 1L-2L <720 value - TO CONFIRM"
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "cibil_min_incl": 720,
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "cibil_max_excl": 720,
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "cibil_min_incl": 720,
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "cibil_max_excl": 720,
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "foir_pct": 50
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 200000,
+            "salary_max_excl": null,
+            "multiplier": 16
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 200000,
+            "multiplier": 16
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "multiplier": 15
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "multiplier": 14
+          }
+        ]
+      }
+    },
+    "tenure_note": "Gauri: below 1L 5 years; 1L+ Super A/A/B 6 years; C/D 5 years (flyer says 48 months for C/D above 50K - using Gauri's 5 years)",
+    "roi_slabs_by_loan_amount": [
+      {
+        "categories": [
+          "Super CAT A",
+          "CAT A"
+        ],
+        "salary_min_incl": 100000,
+        "cibil_min_incl": 775,
+        "own_house": true,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.5
+      },
+      {
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "roi_pct": 11.5
+      }
+    ],
+    "roi_unconfirmed": true,
+    "roi_note": "Only 'starting 11.50%' and the 10.50% special (Super A/A, 1L+ salary, CIBIL 775+, own house, 15L+) given - full rate card pending",
+    "max_loan": 3000000,
+    "max_loan_by_salary": [
+      {
+        "salary_min_incl": 100000,
+        "salary_max_excl": null,
+        "max_loan": 3000000
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 100000,
+        "max_loan": 2500000
+      },
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 50000,
+        "max_loan": 1000000
+      }
+    ],
+    "min_cibil": null,
+    "cibil_note": "Flyer says min 720 but FOIR table has <720 columns - lowest score accepted TO CONFIRM"
+  },
+  "multiplier_by_salary": {
+    "apply_on": "salary",
+    "slabs": [],
+    "note": "Group-wise grid; NA for Super A/A/B/Govt above 50K"
+  },
+  "min_net_salary_by_city": {
+    "cities": [
+      {
+        "match": [
+          "MUMBAI"
+        ],
+        "min": 35000
+      }
+    ],
+    "default": 25000
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "category_source": "L&T list in Company Category Checker (re-upload needed: 28,599 rows have CIN as category)"
+  },
+  "first_time_borrower": {
+    "trigger": "ntc_only",
+    "cap": 500000,
+    "cap_by_category": {
+      "Super CAT A": 1000000,
+      "CAT A": 1000000
+    }
+  },
+  "profile_caps": [
+    {
+      "flag": "govtClass3",
+      "cap": 700000,
+      "label": "Government class 3"
+    }
+  ],
+  "other_income": {
+    "bonus": {
+      "pct": 50,
+      "cap_pct_of_salary": 100,
+      "note": "50% of net bonus / quarterly incentive, monthly value; Gauri: 'this for less than 1 lac salary' - 1L+ treatment TO CONFIRM"
+    },
+    "monthly_incentive": {
+      "pct": 100,
+      "cap_pct_of_salary": 100
+    },
+    "rental": {
+      "pct": 50,
+      "high_salary_min": 100000,
+      "pct_high": 100,
+      "cap_pct_of_salary": 100,
+      "needs": "registered/notarised agreement 3+ months old + 6 months rent credits"
+    },
+    "pension": {
+      "pct": 100
+    },
+    "consulting": {
+      "pct": 100,
+      "needs": "doctors: 26AS/Form 16/16A not older than 15 months + bank credits"
+    }
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 6,
+      "nbfc": 6
+    },
+    "nbfc_mode": "all_except",
+    "product_types": [
+      "PL",
+      "OD"
+    ],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 6,
+    "lender_blacklist": [
+      {
+        "name": "Vivifi (FlexSalary)",
+        "match": [
+          "VIVIFIN",
+          "VIVIFI"
+        ]
+      },
+      {
+        "name": "Small fintech / microfinance",
+        "match": [
+          "POCKETLY",
+          "MPOKKET",
+          "FLEXSALARY",
+          "VIVIFI",
+          "FLEXPAY",
+          "KREDITZY",
+          "OLYV",
+          "TRUE BALANCE",
+          "STASHFIN",
+          "AKARA",
+          "CASHE",
+          "TSLC",
+          "KISSHT",
+          "SI CREVA",
+          "FINNABLE",
+          "MONEYTAP",
+          "BRANCH INTERNATIONAL",
+          "PAYRUPIK",
+          "LENDINGPLATE",
+          "LAZYPAY",
+          "FREO",
+          "MONEYVIEW",
+          "MONEY VIEW",
+          "WHIZDM",
+          "FIBE",
+          "EARLYSALARY",
+          "EARLY SALARY",
+          "SOCIAL WORTH",
+          "BUDDY LOAN",
+          "INDIALENDS",
+          "LOANTAP",
+          "FLEXILOANS",
+          "LENDINGKART",
+          "INDIFI",
+          "NEOGROWTH",
+          "KINARA",
+          "UGRO",
+          "OXYZO",
+          "CREDIT SAISON",
+          "DMI FIN",
+          "DMIFIN",
+          "FINCFRIENDS",
+          "PREFR",
+          "LOANFRONT",
+          "RUPEEREDEE",
+          "SMARTCOIN",
+          "RAPIDRUPEE",
+          "ZYPE",
+          "KRAZYBEE",
+          "KREDITBEE",
+          "PAYSENSE",
+          "MONEYONCLICK",
+          "PAYSME",
+          "RING ",
+          "ZESTMONEY",
+          "HOME CREDIT",
+          "MI FINANCE",
+          "CLIX",
+          "NORTHERN ARC",
+          "ARKA FINCAP",
+          "BAJAJ HOUSING",
+          "ADITYA BIRLA HOUSING"
+        ]
+      }
+    ],
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ],
+    "blacklist_note": "L&T NBFC lists not given - all NBFCs except small fintech/microfinance (IndusInd list) TO CONFIRM",
+    "credit_card_bt": false
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": false,
+      "prelogin_paydown": "none",
+      "rule": "5% of whatever the outstanding is; payment counts only once it reflects in CIBIL"
+    },
+    "pct_by_type": {
+      "GOLD": 1,
+      "OD": 1,
+      "KCC": 1
+    },
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "pct_of_emi": 50,
+      "rule": "100% if applicant pays; 50% if applicant transfers funds (shared); 0 if co-applicant pays within co-applicant's own eligibility"
+    },
+    "loan_with_emis_remaining_lte": 3
+  },
+  "credit_rules": {
+    "loan_dpd": {
+      "reject_within_months": 6,
+      "deviation_within_months": 6,
+      "max_count_12m": 2,
+      "over_count": "reject"
+    }
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "enquiries": {
+    "note": "No enquiry limit"
+  },
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ]
+  },
+  "subject_to_closure_allowed": true,
+  "checklist": [
+    "Age 21–60",
+    "Not an employee of a partnership / proprietorship firm",
+    "Bachelor: PA address + PA TVR",
+    "Address proof: Aadhaar / DL / passport / rent agreement / WiFi bill",
+    "Fixed salary (without incentives) meets the minimum salary"
+  ],
+  "product_info": {
+    "processing_fee": "1.5–2% + GST",
+    "tat": "1 day",
+    "foreclosure": "after 6 months, 5%",
+    "part_payment": "20% allowed after 1 year, 5%",
+    "insurance": "can be waived",
+    "loan_amount": "₹1L–30L"
+  },
+  "open_items": [
+    "Full ROI rate card",
+    "Lowest CIBIL accepted (<720 columns)",
+    "Govt category: in list or manual?",
+    "Unlisted companies",
+    "NBFC BT lists",
+    "Bonus treatment for salary 1L+",
+    "Mumbai: include Thane / Navi Mumbai?"
+  ]
+}

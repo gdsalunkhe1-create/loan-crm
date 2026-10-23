@@ -39,11 +39,43 @@ function pickSlab(slabs, x, minKey = 'salary_min_incl', maxKey = 'salary_max_exc
 
 // ROI slabs may also depend on CIBIL score (cibil_min_incl / cibil_max_excl). Missing score = lowest score band.
 // Slabs may also be limited by CIBIL score, company category (categories) and salary (salary_min_incl).
-function roiSlabsFor(policy, score, category, salary) {
+function roiSlabsFor(policy, score, category, salary, ownHouse) {
   const all = policy.eligibility.roi_slabs_by_loan_amount || [];
-  return all.filter((s) => ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(score ?? 0, s.cibil_min_incl, s.cibil_max_excl))
+  const sc = Math.max(score ?? 0, 0);   // CIBIL -1 (no history) is priced like the lowest score band
+  return all.filter((s) => ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl))
     && (!s.categories || (category && s.categories.map(norm).includes(norm(category))))
-    && (s.salary_min_incl == null || (salary ?? 0) >= s.salary_min_incl));
+    && (s.salary_min_incl == null || (salary ?? 0) >= s.salary_min_incl)
+    && (!s.own_house || ownHouse));
+}
+
+// FOIR slab: salary band, optionally limited by CIBIL score (cibil_min_incl / cibil_max_excl).
+function pickFoirSlab(slabs, salary, score) {
+  const sc = Math.max(score ?? 0, 0);
+  return (slabs || []).find((s) => inBand(salary, s.salary_min_incl, s.salary_max_excl)
+    && ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl)));
+}
+
+// Other income added to net salary for eligibility (bonus, incentives, rent, pension, consulting).
+// profile.otherIncome: { bonusAnnualNet, quarterlyIncentiveNet, monthlyIncentiveAvg6m, rentMonthly, rentVerified, pensionMonthly, consultingMonthly }
+function otherIncomeFor(policy, profile) {
+  const rules = policy.other_income;
+  const oi = profile.otherIncome || {};
+  const base = profile.netSalary || 0;
+  const lines = [];
+  if (!rules) return { total: 0, lines };
+  const add = (key, label, raw, pct, capPct) => {
+    if (!(raw > 0) || pct == null) return;
+    let amt = raw * pct / 100;
+    if (capPct != null) amt = Math.min(amt, base * capPct / 100);
+    lines.push({ key, label, raw: Math.round(raw), pct, amount: Math.round(amt) });
+  };
+  const seg = (r) => (r?.high_salary_min != null && base >= r.high_salary_min ? r.pct_high : r?.pct);
+  if (rules.bonus) add('bonus', 'Bonus & quarterly incentives', (oi.bonusAnnualNet || 0) / 12 + (oi.quarterlyIncentiveNet || 0) / 3, seg(rules.bonus), rules.bonus.cap_pct_of_salary);
+  if (rules.monthly_incentive) add('incentive', 'Monthly incentives (6-month avg)', oi.monthlyIncentiveAvg6m, rules.monthly_incentive.pct, rules.monthly_incentive.cap_pct_of_salary);
+  if (rules.rental && oi.rentVerified) add('rent', 'Rental income', oi.rentMonthly, seg(rules.rental), rules.rental.cap_pct_of_salary);
+  if (rules.pension) add('pension', 'Pension', oi.pensionMonthly, rules.pension.pct, rules.pension.cap_pct_of_salary);
+  if (rules.consulting) add('consulting', 'Consulting income', oi.consultingMonthly, rules.consulting.pct, rules.consulting.cap_pct_of_salary);
+  return { total: lines.reduce((a, l) => a + l.amount, 0), lines };
 }
 
 // ROI depends on the loan amount, which depends on ROI: start at the best rate, step down.
@@ -59,7 +91,12 @@ function foirLoanWithRoi(emi, months, roiSlabs, cap) {
   return { amount: capped(amt), roi: last.roi_pct, roiAssumed: true, capped: cap != null && amt > cap };
 }
 
-function minSalaryFor(policy, category, salaryAccountBank) {
+function minSalaryFor(policy, category, salaryAccountBank, city) {
+  const byCity = policy.min_net_salary_by_city;   // { cities: [{ match: ['MUMBAI'], min: 35000 }], default: 25000 }
+  if (byCity) {
+    const hit = (byCity.cities || []).find((c) => wordStartMatch(city || '', c.match));
+    return hit ? hit.min : byCity.default;
+  }
   const rule = policy.min_net_salary?.[category] ?? policy.min_net_salary?._all;
   if (rule == null) return null;
   if (typeof rule === 'number') return rule;
@@ -170,7 +207,10 @@ function hardChecks(policy, profile) {
     const count12 = loans.reduce((n, a) => n + (a.count12m || (a.monthsAgo <= 12 ? 1 : 0)), 0);
     if (recent.length) reasons.push(`Late payment in last ${cr.loan_dpd.reject_within_months} months on ${[...new Set(recent.map((a) => a.lender))].join(', ')}`);
     else if (mid.length) deviations.push(`Late payment ${cr.loan_dpd.reject_within_months}–${cr.loan_dpd.deviation_within_months} months ago on ${[...new Set(mid.map((a) => a.lender))].join(', ')} — check with banker`);
-    if (!recent.length && count12 > cr.loan_dpd.max_count_12m) deviations.push(`${count12} late payments on loans in last 12 months (allowed ${cr.loan_dpd.max_count_12m}, older than 6 months)`);
+    if (!recent.length && count12 > cr.loan_dpd.max_count_12m) {
+      const msg = `${count12} late payments on loans in last 12 months (allowed ${cr.loan_dpd.max_count_12m})`;
+      if (cr.loan_dpd.over_count === 'reject') reasons.push(msg); else deviations.push(msg);
+    }
   }
   if (cr.card_dpd_12m === 'deviation' && Array.isArray(c.dpdAccounts)) {
     const cards = c.dpdAccounts.filter((a) => CARD_TYPES.includes(a.productType) && a.inLast12m);
@@ -194,7 +234,7 @@ function hardChecks(policy, profile) {
     else if (has('settlement_or_writeoff_with_fresh_loan_after') && f.exists && (f.emisPaid || 0) < 12) reasons.push(`Post-settlement loan has ${f.emisPaid || 0} EMIs paid — eligible after ${12 - (f.emisPaid || 0)} more`);
   }
   if (cat) {
-    const min = minSalaryFor(policy, cat, profile.salaryAccountBank);
+    const min = minSalaryFor(policy, cat, profile.salaryAccountBank, profile.city);
     if (min != null && profile.netSalary < min) reasons.push(`Net salary ${fmtINR(profile.netSalary)} below ${cat} minimum ${fmtINR(min)}`);
   }
   // Own-bank enquiry in the last N days: this bank won't take the case yet.
@@ -352,10 +392,17 @@ export function evaluateBank(policy, profile) {
     out.status = 'NOT_ELIGIBLE'; return out;
   }
 
-  const salary = profile.netSalary;
+  const salary = profile.netSalary;                 // slabs, segments and minimums use net salary alone
+  const oiRes = otherIncomeFor(policy, profile);
+  const income = salary + oiRes.total;              // amounts use net salary + allowed other income
+  out.otherIncome = oiRes;
+  const oiNotes = [];
+  if (oiRes.total > 0) oiNotes.push(`Other income added: ${oiRes.lines.map((l) => `${l.label} ${fmtINR(l.amount)} (${l.pct}%)`).join(', ')} — eligibility on ${fmtINR(income)}/month`);
+  if (policy.other_income?.rental && profile.otherIncome?.rentMonthly > 0 && !profile.otherIncome?.rentVerified) out.warnings.push('Rental income not counted — tick "agreement + 6 months credits verified"');
   const risk = riskIndication(policy, profile);
   out.risk = risk;
   out.notes = risk.notes;   // informational, e.g. card late payment that this bank accepts
+  out.notes.push(...oiNotes);
 
   // Obligations
   const loanLines = (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l), bt: btCandidate(policy, l) }));
@@ -369,7 +416,7 @@ export function evaluateBank(policy, profile) {
   const score = profile.cibilScore ?? null;
   const usesScore = (policy.eligibility.roi_slabs_by_loan_amount || []).some((x) => x.cibil_min_incl != null || x.cibil_max_excl != null);
   if (usesScore && score == null) out.warnings.push('CIBIL score missing — lowest score band rates used');
-  let roiSlabs = roiSlabsFor(policy, score, cat, salary);
+  let roiSlabs = roiSlabsFor(policy, score, cat, salary, profile.ownHouse);
   if (!roiSlabs.length) {
     // No rate defined for this category / salary: use the bank's highest known rate and flag it.
     const hi = Math.max(...(policy.eligibility.roi_slabs_by_loan_amount || []).map((x) => x.roi_pct));
@@ -379,16 +426,23 @@ export function evaluateBank(policy, profile) {
   let cap = policy.eligibility.max_loan ?? null;
   if (group?.max_loan != null) cap = cap != null ? Math.min(cap, group.max_loan) : group.max_loan;
   if (cat === 'UNLISTED' && policy.company?.unlisted_rules?.note) out.notes.push(policy.company.unlisted_rules.note);
+  const capBySal = pickSlab(policy.eligibility.max_loan_by_salary, salary)?.max_loan;
+  if (capBySal != null) cap = cap != null ? Math.min(cap, capBySal) : capBySal;
+  for (const pc of policy.profile_caps || []) {          // e.g. { flag: 'govtClass3', cap: 700000, label: 'Government class 3' }
+    if (profile[pc.flag]) { cap = cap != null ? Math.min(cap, pc.cap) : pc.cap; out.notes.push(`${pc.label}: max ${fmtINR(pc.cap)}`); }
+  }
   const ftb = policy.first_time_borrower;
-  const isFtb = ftb && (profile.cibilScore === -1 || (profile.credit || {}).loanAccountsEver === 0);
+  const isFtb = ftb && (profile.cibilScore === -1 || (ftb.trigger !== 'ntc_only' && (profile.credit || {}).loanAccountsEver === 0));
   if (isFtb) {
-    cap = cap != null ? Math.min(cap, ftb.cap) : ftb.cap;
-    out.notes.push(`First-time borrower${profile.cibilScore === -1 ? ' (CIBIL -1)' : ''} — ${policy.bank} gives ${ftb.range || fmtINR(ftb.cap)} only`);
+    const catCap = Object.entries(ftb.cap_by_category || {}).find(([k]) => norm(k) === norm(cat || ''))?.[1];
+    const ftbCap = catCap ?? ftb.cap;
+    cap = cap != null ? Math.min(cap, ftbCap) : ftbCap;
+    out.notes.push(`First-time borrower${profile.cibilScore === -1 ? ' (CIBIL -1)' : ''} — ${policy.bank} gives ${ftb.range && catCap == null ? ftb.range : fmtINR(ftbCap)} max`);
   }
   if (policy.checklist?.length) out.checklist = policy.checklist;
 
   // Policy parameters
-  const foirSlab = pickSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary);
+  const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore);
   let foirPct = profile.ownHouse && foirSlab?.foir_pct_own_house != null ? foirSlab.foir_pct_own_house : foirSlab?.foir_pct;
   if (profile.ownHouse && foirSlab?.foir_pct_own_house != null) out.notes.push(`Own house — FOIR ${foirPct}%`);
   const hlBonus = policy.eligibility.foir_hl_bonus;   // e.g. { salary_min_incl: 75000, foir_pct: 75 }
@@ -441,14 +495,14 @@ export function evaluateBank(policy, profile) {
     const picked = cands.filter((_, i) => mask & (1 << i));
     const obl = baseObl - picked.reduce((s, l) => s + l.obligation.amount, 0);
     const btOutstanding = picked.reduce((s, l) => s + (l.outstanding || 0), 0);
-    const emiRoom = salary * foirPct / 100 - obl;
+    const emiRoom = income * foirPct / 100 - obl;
     const foir = {};
     for (const t of foirTenures) foir[t] = emiRoom > 0 ? foirLoanWithRoi(emiRoom, t, roiSlabs, cap) : { amount: 0, roi: null };
     const mult = {};
     if (bands) {
       for (const which of ['better', 'lower']) {
         const b = bands[which]; const t = bestTenure(b, 60);
-        const raw = Math.max(0, (salary - obl) * b.multipliers[t]);
+        const raw = Math.max(0, (income - obl) * b.multipliers[t]);
         mult[which] = t ? { tenure: t, multiplier: b.multipliers[t], band: b.risk_band || b.label || null, amount: cap != null ? Math.min(raw, cap) : raw } : null;
       }
     }
@@ -478,7 +532,7 @@ export function evaluateBank(policy, profile) {
         const mx = key && col >= 0 ? msc.values[key][col] : null;
         if (mx == null) continue;
         // apply_on: 'salary' = gross multiple of net salary (Kotak); default = (salary - obligations) x M
-        const raw = Math.max(0, (msc.apply_on === 'salary' ? salary : salary - obl) * mx);
+        const raw = Math.max(0, (msc.apply_on === 'salary' ? income : income - obl) * mx);
         const amt = cap != null ? Math.min(raw, cap) : raw;
         methods.push({ key: `multiplier_${norm(key).replace(/ /g, '_').toLowerCase()}`, label: `Multiplier — ${key}`, tenure: msc.tenure_months || 60,
           amount: amt, roi: rateFor(amt), netInHand: amt - btOutstanding, multiplier: mx, band: key, indicative: !chosen });
@@ -486,12 +540,12 @@ export function evaluateBank(policy, profile) {
     }
     const mbs = policy.multiplier_by_salary;   // { slabs: [{salary_min_incl, salary_max_excl, multiplier}], bonus: [{salary_min_incl, own_house, live_hl, multiplier}] }
     if (mbs) {
-      let mx = pickSlab(mbs.slabs, salary)?.multiplier ?? null;
+      let mx = pickSlab(group?.multiplier_slabs || mbs.slabs, salary)?.multiplier ?? null;
       const liveHl = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
       const bonus = (mbs.bonus || []).find((b) => salary >= b.salary_min_incl && (!b.own_house || profile.ownHouse) && (!b.live_hl || liveHl));
       if (bonus) mx = Math.max(mx ?? 0, bonus.multiplier);
       if (mx != null && (!group?.no_multiplier)) {
-        const raw = Math.max(0, (mbs.apply_on === 'salary' ? salary : salary - obl) * mx);
+        const raw = Math.max(0, (mbs.apply_on === 'salary' ? income : income - obl) * mx);
         const amt = cap != null ? Math.min(raw, cap) : raw;
         methods.push({ key: 'multiplier', label: 'Multiplier', tenure: foirTenures[foirTenures.length - 1], amount: amt, roi: rateFor(amt),
           netInHand: amt - btOutstanding, multiplier: mx, band: bonus ? 'own house + home loan' : null });

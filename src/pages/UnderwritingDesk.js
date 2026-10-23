@@ -388,7 +388,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
       source: 'Referral',
       sheet_number: 'Referral',
       org_id: orgId,
-    }]).select('id,full_name,mobile,company_name').single();
+    }]).select('id,full_name,mobile,company_name,city').single();
     if (error) {
       if (error.code === '23505') throw new Error('You already have a lead with this mobile number — find it in Existing lead mode.');
       throw error;
@@ -456,6 +456,8 @@ export default function UnderwritingDesk({ userId, orgId }) {
   );
   const searchedIncYear = useMemo(() => searchedIncorporationYear(companyByBank), [companyByBank]);
   const incorporationYear = draft && draft.incorporationYear !== undefined ? draft.incorporationYear : searchedIncYear;
+  // City pre-fills from the lead until the agent edits it (L&T: higher minimum salary in Mumbai).
+  const city = draft && draft.city !== undefined ? draft.city : (lead?.city || '');
 
   const results = useMemo(() => {
     if (!draft) return [];
@@ -480,13 +482,13 @@ export default function UnderwritingDesk({ userId, orgId }) {
       if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
       try {
         // One bad policy must never blank the page: errors stay on that bank's card.
-        const result = evaluateBank(p.policy, { ...draft, company: { ...company, categoriesByBank, confirmedByBank } });
-        return { bankId: p.bank_id, version: p.version, label, scorecard, result };
+        const result = evaluateBank(p.policy, { ...draft, city, company: { ...company, categoriesByBank, confirmedByBank } });
+        return { bankId: p.bank_id, version: p.version, label, scorecard, productInfo: p.policy?.product_info || null, result };
       } catch (e) {
         return { bankId: p.bank_id, version: p.version, label, scorecard, error: e.message || String(e) };
       }
     });
-  }, [draft, policies, companyFor, incorporationYear]);
+  }, [draft, policies, companyFor, incorporationYear, city]);
 
   const customerName = lead?.full_name || newLeadForm.full_name || sources.uploads.cibil?.parsed.customerName || '';
   const canUpload = mode === 'new' || !!lead;
@@ -591,7 +593,10 @@ export default function UnderwritingDesk({ userId, orgId }) {
               unlistedBanks={unlistedBanks}
               incorporationYear={incorporationYear}
               searchedIncYear={searchedIncYear}
+              city={city}
+              cityFromLead={!!lead?.city && draft.city === undefined}
             />
+            <OtherIncomePanel draft={draft} patchDraft={patchDraft} />
           </>
         )}
       </div>
@@ -609,6 +614,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               entry={r}
               loans={draft.loans}
               cards={draft.cards}
+              netSalary={draft.netSalary}
               scorecardValue={(draft.scorecardByBank || {})[r.bankId] || null}
               onScorecard={(v) => patchDraft(scorecardPatch(draft.scorecardByBank, r.bankId, v))}
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
@@ -659,7 +665,7 @@ function LeadPicker({ lead, onPick }) {
   useEffect(() => {
     if (!search || search.length < 2) { setLeads([]); return; }
     const t = setTimeout(async () => {
-      const { data } = await supabase.from('leads').select('id,full_name,mobile,company_name').ilike('full_name', `%${search}%`).limit(8);
+      const { data } = await supabase.from('leads').select('id,full_name,mobile,company_name,city').ilike('full_name', `%${search}%`).limit(8);
       setLeads(data || []);
     }, 300);
     return () => clearTimeout(t);
@@ -1234,7 +1240,7 @@ function IncomePanel({ draft, patchDraft, payslips }) {
             onChange={(e) => patchDraft({ cibilScore: numOrNull(e.target.value) })}
             placeholder="e.g. 760"
           />
-          <div style={S.hint}>From the CIBIL report. Some banks set the interest rate by score band.</div>
+          <div style={S.hint}>From the CIBIL report (-1 = no credit history). Some banks set the interest rate by score band.</div>
         </div>
     </Sub>
   );
@@ -1242,15 +1248,30 @@ function IncomePanel({ draft, patchDraft, payslips }) {
 
 // Own house (FOIR / multiplier bonus at some banks) and, for an unlisted company,
 // the year of incorporation the engine checks against the bank's minimum company age.
-function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, searchedIncYear }) {
+function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, searchedIncYear, city, cityFromLead }) {
   return (
     <Sub title="Residence &amp; company" bodyStyle={S.grid2}>
+        <div>
+          <label style={S.label}>City</label>
+          <input style={inp} value={city || ''} onChange={(e) => patchDraft({ city: e.target.value })} placeholder="e.g. Bengaluru" />
+          <div style={S.hint}>
+            Some banks set a higher minimum salary in metro cities (L&amp;T: Mumbai).
+            {cityFromLead ? ' From the lead — confirm.' : ''}
+          </div>
+        </div>
         <div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 20 }}>
             <input type="checkbox" checked={!!draft.ownHouse} onChange={(e) => patchDraft({ ownHouse: e.target.checked })} />
             Own house (on customer or spouse name)
           </label>
           <div style={S.hint}>Some banks allow a higher FOIR or multiplier for an own house.</div>
+        </div>
+        <div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 20 }}>
+            <input type="checkbox" checked={!!draft.govtClass3} onChange={(e) => patchDraft({ govtClass3: e.target.checked })} />
+            Government class 3 employee
+          </label>
+          <div style={S.hint}>Some banks cap the loan for class 3 government staff (L&amp;T: ₹7L).</div>
         </div>
         {unlistedBanks.length > 0 && (
           <div>
@@ -1266,6 +1287,52 @@ function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, s
               Company not listed for {unlistedBanks.join(', ')} — needed for the unlisted-company rules.
               {searchedIncYear != null && draft.incorporationYear === undefined ? ' Pre-filled from the company search — confirm.' : ''}
             </div>
+          </div>
+        )}
+    </Sub>
+  );
+}
+
+// Income on top of net salary. Each bank counts its own share of each item
+// (the result card shows what was counted); banks without other-income rules ignore it.
+const OTHER_INCOME_FIELDS = [
+  ['bonusAnnualNet', 'Annual bonus (net)', 'Per year'],
+  ['quarterlyIncentiveNet', 'Quarterly incentive (net)', 'Per quarter'],
+  ['monthlyIncentiveAvg6m', 'Monthly incentive', 'Average of the last 6 months'],
+  ['rentMonthly', 'Monthly rent', null],
+  ['pensionMonthly', 'Monthly pension', null],
+  ['consultingMonthly', 'Consulting income per month', 'Doctors, with 26AS / Form 16A'],
+];
+function OtherIncomePanel({ draft, patchDraft }) {
+  const oi = draft.otherIncome || {};
+  const hasAny = OTHER_INCOME_FIELDS.some(([k]) => oi[k] > 0);
+  const [open, setOpen] = useState(false);
+  const patchOi = (patch) => { setOpen(true); patchDraft({ otherIncome: { ...oi, ...patch } }); };
+  if (!open && !hasAny) {
+    return (
+      <div style={{ marginTop: 14 }}>
+        <button type="button" style={btnLink} onClick={() => setOpen(true)}>+ Add other income</button>
+      </div>
+    );
+  }
+  return (
+    <Sub title="Other income" bodyStyle={S.grid2}>
+        {OTHER_INCOME_FIELDS.map(([k, label, hint]) => (
+          <div key={k}>
+            <label style={S.label}>{label} (₹)</label>
+            <input style={inp} type="number" value={oi[k] ?? ''} onChange={(e) => patchOi({ [k]: numOrNull(e.target.value) })} />
+            {hint && <div style={S.hint}>{hint}</div>}
+            {k === 'rentMonthly' && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, cursor: 'pointer', marginTop: 6 }}>
+                <input type="checkbox" style={{ margin: '2px 0 0' }} checked={!!oi.rentVerified} onChange={(e) => patchOi({ rentVerified: e.target.checked })} />
+                Registered/notarised agreement (3+ months) and 6 months rent credits verified
+              </label>
+            )}
+          </div>
+        ))}
+        {!hasAny && (
+          <div style={{ alignSelf: 'end' }}>
+            <button type="button" style={btnLink} onClick={() => setOpen(false)}>Hide</button>
           </div>
         )}
     </Sub>
@@ -1814,7 +1881,7 @@ function ClosurePlan({ plan, onMarkClosed }) {
   ));
 }
 
-function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkClosed }) {
+function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecard, onMarkClosed }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const lenderOf = (id) => loans.find((l) => l.id === id);
@@ -1862,7 +1929,7 @@ function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkCl
             Eligible after {result.waitDays} day{result.waitDays === 1 ? '' : 's'}: {fmtINR(best.eligibleAmount)} (amount in hand {fmtINR(best.netInHand)})
           </div>
           <div style={{ opacity: 0.55, marginTop: '10px' }} title="Applies once the wait is over">
-            <ResultTiles result={result} />
+            <ResultTiles result={result} netSalary={netSalary} />
             {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
             <BtPlan best={best} lenderOf={lenderOf} />
           </div>
@@ -1871,7 +1938,7 @@ function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkCl
 
       {best && !notEligible && (
         <div style={needsInput ? { opacity: 0.45, marginTop: '10px' } : undefined} title={needsInput ? 'Provisional — fix the input above' : undefined}>
-          <ResultTiles result={result} />
+          <ResultTiles result={result} netSalary={netSalary} />
           {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
           {closurePlan.length > 0 && <ClosurePlan plan={closurePlan} onMarkClosed={onMarkClosed} />}
           <BtPlan best={best} lenderOf={lenderOf} />
@@ -1888,6 +1955,7 @@ function ResultCard({ entry, loans, cards, scorecardValue, onScorecard, onMarkCl
       )}
 
       {result && result.checklist && result.checklist.length > 0 && <Checklist items={result.checklist} />}
+      {entry.productInfo && <ProductInfoLine info={entry.productInfo} />}
     </div>
   );
 }
@@ -1900,6 +1968,44 @@ function Checklist({ items }) {
       <ul style={{ margin: 0, paddingLeft: '18px', lineHeight: 1.6 }}>
         {items.map((c, i) => <li key={i}>{c}</li>)}
       </ul>
+    </div>
+  );
+}
+
+// "Processing fee 1.5–2% + GST · TAT 1 day · Foreclosure after 6 months, 5% · …"
+const PRODUCT_INFO_LABELS = { processing_fee: 'Processing fee', tat: 'TAT', foreclosure: 'Foreclosure', part_payment: 'Part payment', insurance: 'Insurance', loan_amount: 'Loan amount' };
+const productInfoText = (info) => Object.entries(info || {})
+  .filter(([, v]) => v != null && String(v).trim() !== '')
+  .map(([k, v]) => `${PRODUCT_INFO_LABELS[k] || (k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' '))} ${v}`)
+  .join(' · ');
+function ProductInfoLine({ info }) {
+  const text = productInfoText(info);
+  if (!text) return null;
+  return <div style={{ marginTop: '10px', fontSize: '11.5px', color: '#9aa1b2', lineHeight: 1.5 }}>{text}</div>;
+}
+
+// Other income this bank counts on top of net salary (bank-specific %).
+function OtherIncomeTable({ otherIncome, netSalary }) {
+  if (!otherIncome || !(otherIncome.total > 0)) return null;
+  const cols = ['Income item', 'Entered', 'Counted %', 'Added per month'];
+  return (
+    <div style={{ marginTop: '12px', overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '420px' }}>
+        <thead><tr>{cols.map((h, i) => <th key={h} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {otherIncome.lines.map((l) => (
+            <tr key={l.key}>
+              <td style={{ ...td, fontSize: '12px' }}>{l.label}</td>
+              <td style={{ ...td, ...num, fontSize: '12px' }}>{fmtINR(l.raw)}</td>
+              <td style={{ ...td, ...num, fontSize: '12px' }}>{l.pct}%</td>
+              <td style={{ ...td, ...num, fontSize: '12px', fontWeight: 700 }}>{fmtINR(l.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize: '12px', color: '#48506b', marginTop: '4px', textAlign: 'right' }}>
+        Eligibility on <b>{fmtINR((netSalary || 0) + otherIncome.total)}/month</b>
+      </div>
     </div>
   );
 }
@@ -1966,13 +2072,14 @@ function EligibilityTable({ result }) {
 }
 
 // Eligibility table for the best scenario, then the supporting tiles.
-function ResultTiles({ result }) {
+function ResultTiles({ result, netSalary }) {
   const best = result.best;
   const risk = result.risk;
   const btCount = best.bt.length;
   return (
     <>
       <EligibilityTable result={result} />
+      <OtherIncomeTable otherIncome={result.otherIncome} netSalary={netSalary} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
         <SItem label="Counted obligations" value={`${fmtINR(best.obligations)}/month`} />
         <SItem label={hasTopUp(best) ? 'BT + top-up POS' : 'BT POS'} value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />

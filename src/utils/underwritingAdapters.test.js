@@ -265,6 +265,10 @@ describe('multi-bank profile fields', () => {
     expect(d.credit.dpdLenders).toEqual(['SHRIRAMFIN']);
     expect(d.loans.find((l) => l.productType === 'HL').hlEmiPaidBy).toBeNull();
     expect(buildProfileDraft({ ...row, cibil_score: null, enquiries: null }, null)).toMatchObject({ cibilScore: null, credit: { enquiries90d: null } });
+    // NTC: a CIBIL score of -1 stays -1; 0 / junk is still missing.
+    expect(buildProfileDraft({ ...row, cibil_score: -1 }, null).cibilScore).toBe(-1);
+    expect(buildProfileDraft({ ...row, cibil_score: '-1' }, null).cibilScore).toBe(-1);
+    expect(buildProfileDraft({ ...row, cibil_score: 0 }, null).cibilScore).toBe(null);
   });
 
   test('one profile, each bank with its own category: HDFC and ICICI policies both evaluate', () => {

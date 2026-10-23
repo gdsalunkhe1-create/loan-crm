@@ -275,7 +275,8 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
   };
 
   const score = cibilRow ? Number(cibilRow.cibil_score) : NaN;
-  return { loans, cards, credit, cibilScore: score > 0 ? score : null, reportDate, latestSettlement };
+  // -1 = no credit history (NTC): kept, the engine prices and caps it.
+  return { loans, cards, credit, cibilScore: score > 0 || score === -1 ? score : null, reportDate, latestSettlement };
 }
 
 const CARD_OR_GOLD_RE = /CARD|\bCC\b|GOLD|MUTHOOT|MANAPPURAM/i;
