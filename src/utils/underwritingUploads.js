@@ -13,7 +13,7 @@ import {
 } from '../pages/CibilParser';
 import { extractTextFromPDF as extractPayslipText, parseSalaryText } from '../pages/TaxCalculator';
 import { analyzeBankStatement } from './bankBehaviour';
-import { detectPayslipMonth, extractEmployerName, companyNameVariants } from './underwritingAdapters';
+import { detectPayslipMonth, extractEmployerName, companyNameVariants, isExactMatch, uniqueCompanyNames } from './underwritingAdapters';
 
 export const NO_TEXT_LAYER_MSG = 'This PDF has no text. Open it in CIBIL Analyzer (OCR) or re-save it from the browser using Save as PDF.';
 export const READ_TIMEOUT_MSG = "Couldn't read this file — try again or use CIBIL Analyzer / Bank Statement Analyzer";
@@ -125,10 +125,10 @@ export async function matchEmployerToCompanyList(rawName) {
   for (const v of variants) {
     const { data, error } = await supabase.rpc('search_company_category', { p_query: v });
     if (error) throw error;
-    if ((data || []).some((r) => r.match_type === 'exact')) return { exactTerm: v, suggestions: [] };
+    if ((data || []).some(isExactMatch)) return { exactTerm: v, suggestions: [] };
   }
   const expanded = variants[1] || variants[0];
   if (!expanded) return { exactTerm: null, suggestions: [] };
   const { data } = await supabase.rpc('autocomplete_company_name', { p_query: expanded, p_limit: 5 });
-  return { exactTerm: null, suggestions: [...new Set((data || []).map((s) => s.company_name))] };
+  return { exactTerm: null, suggestions: uniqueCompanyNames((data || []).map((s) => s.company_name)) };
 }

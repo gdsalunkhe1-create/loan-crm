@@ -43,12 +43,12 @@ test('non-BT types stay as full-EMI obligations in the engine', () => {
 test('open loans and cards, EMI progress from open date to report date', () => {
   const p = cibilToProfile({ report_date: '2026-10-09', accounts: [
     acc({ bankName: 'ICICI BANK', openDate: '27/03/2025', tenure: '36', emi: '10,370', outstanding: '83640' }),
-    acc({ bankName: 'HDFC BANK', loanType: 'Credit Card', outstanding: '45000' }),
+    acc({ bankName: 'HDFC BANK', loanType: 'Credit Card', outstanding: '45000', loanAmount: '1,50,000', openDate: '14/02/2024' }),
     acc({ bankName: 'AXIS BANK', status: 'Closed', closedDate: '01/01/2026' }),
   ] });
   expect(p.loans).toHaveLength(1);
   expect(p.loans[0]).toMatchObject({ productType: 'PL', emi: 10370, emisPaid: 18, emisRemaining: 18 });
-  expect(p.cards).toEqual([{ id: 'C1', issuer: 'HDFC BANK', outstanding: 45000, paidBeforeLoginWithProof: 0, action: 'keep' }]);
+  expect(p.cards).toEqual([{ id: 'C1', issuer: 'HDFC BANK', limit: 150000, openDate: '14/02/2024', outstanding: 45000, paidBeforeLoginWithProof: 0, action: 'keep' }]);
 });
 
 test('credit flags: settlement, fresh loan after it, HDFC history, recent DPD', () => {
@@ -823,5 +823,55 @@ describe('CIBIL.com account numbers keep their separators', () => {
     expect(parseCibil(raw).accounts.map((a) => a.accountNum)).toEqual([
       '306-720029633', 'SBM-6-CRE-333369-5IFES8', 'PL/2024/00123', 'ACC_109628961880014806', '126000003696662',
     ]);
+  });
+});
+
+describe('Company names: PVT LTD = PRIVATE LIMITED', () => {
+  const { normCompany, sameCompany, isExactMatch, uniqueCompanyNames } = require('./underwritingAdapters');
+
+  test('normCompany treats PVT/LTD/&/punctuation the way the search RPC does', () => {
+    expect(normCompany('Accenture Solutions Pvt Ltd')).toBe('ACCENTURE SOLUTIONS PRIVATE LIMITED');
+    expect(sameCompany('Accenture Solutions Pvt Ltd', 'ACCENTURE SOLUTIONS PRIVATE LIMITED')).toBe(true);
+    expect(sameCompany('M/s ABC Pvt. Ltd.', 'ABC PRIVATE LIMITED')).toBe(true);
+    expect(sameCompany('X & Y Ltd', 'X AND Y LIMITED')).toBe(true);
+    expect(normCompany('Foo  PvtLtd')).toBe('FOO PRIVATE LIMITED');
+    expect(sameCompany('ABC Pvt Ltd', 'ABCD PRIVATE LIMITED')).toBe(false);
+    expect(sameCompany('', '')).toBe(false);
+  });
+
+  test('"exact (PVT/LTD form)" counts as exact; suggestions de-duplicated canonically', () => {
+    expect(isExactMatch({ match_type: 'exact' })).toBe(true);
+    expect(isExactMatch({ match_type: 'exact (PVT/LTD form)' })).toBe(true);
+    expect(isExactMatch({ match_type: 'fuzzy' })).toBe(false);
+    expect(isExactMatch(null)).toBe(false);
+    expect(uniqueCompanyNames(['ABC PVT LTD', 'ABC PRIVATE LIMITED', 'ABC Private Ltd.', 'ABCD LTD']))
+      .toEqual(['ABC PVT LTD', 'ABCD LTD']);
+  });
+});
+
+describe('Merged obligations table helpers', () => {
+  const { cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal, countedObligationsTotal } = require('./underwritingAdapters');
+  const calc = (o) => ({ total: 100000, amount: 5000, rule: '5% of total CC outstanding', lines: [], ...o });
+
+  test('card reason line', () => {
+    const c = { id: 'C1', paidBeforeLoginWithProof: 0 };
+    expect(cardReason(null, c)).toBe('');
+    expect(cardReason(calc({ lines: [{ id: 'C1', paydownAccepted: true, remaining: 40000 }] }), c)).toBe('5% of outstanding');
+    expect(cardReason(calc({ amount: 0, rule: 'Total CC outstanding ≤ net salary — not obligated' }), c)).toBe('Not counted — total below salary');
+    const paid = { id: 'C1', paidBeforeLoginWithProof: 40000 };
+    expect(cardReason(calc({ lines: [{ id: 'C1', paydownAccepted: false, remaining: 40000 }] }), paid)).toBe('Must reflect in CIBIL');
+    expect(cardReason(calc({ lines: [{ id: 'C1', paydownAccepted: true, remaining: 0 }] }), paid)).toBe('Not counted — paid before login');
+  });
+
+  test('zero-balance cards, bullet loans, totals', () => {
+    expect(isZeroBalanceCard({ outstanding: 0 })).toBe(true);
+    expect(isZeroBalanceCard({ outstanding: 0, manual: true })).toBe(false);
+    expect(isZeroBalanceCard({ outstanding: 500 })).toBe(false);
+    expect(['GOLD', 'OD', 'KCC', 'PL'].map((t) => isBulletLoan({ productType: t }))).toEqual([true, true, true, false]);
+    expect(bulletNote(null)).toBe('bullet — 1% of outstanding counted');
+    expect(bulletNote({ obligation: { rule: '2% of outstanding' } })).toBe('bullet — 2% of outstanding counted');
+    expect(termEmiTotal([{ productType: 'PL', emi: 10000 }, { productType: 'GOLD', emi: 3000 }, { productType: 'HL', emi: 20000 }])).toBe(30000);
+    expect(countedObligationsTotal(null)).toBe(null);
+    expect(countedObligationsTotal({ loans: [{ obligation: { amount: 10000 } }, { obligation: { amount: 500 } }], cards: { amount: 2500 } })).toBe(13000);
   });
 });

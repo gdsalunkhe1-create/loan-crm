@@ -173,7 +173,11 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
     const type = mapProductType(acc.loanType);
     if (type === 'CARD') {
       // Stable id per card: the engine's card plan and per-card lines refer to it.
-      cards.push({ id: `C${i}`, issuer: acc.bankName || '', outstanding: toNum(acc.outstanding), paidBeforeLoginWithProof: 0, action: 'keep' });
+      // limit / openDate: display only (the parser's loanAmount is the card's credit limit).
+      cards.push({
+        id: `C${i}`, issuer: acc.bankName || '', limit: toNum(acc.loanAmount), openDate: acc.openDate || '',
+        outstanding: toNum(acc.outstanding), paidBeforeLoginWithProof: 0, action: 'keep',
+      });
       return;
     }
     loans.push({
@@ -452,9 +456,41 @@ export function cardCountedShare(cardCalc, cardId) {
   return line ? cardCalc.amount * (line.remaining / cardCalc.total) : null;
 }
 
+// Grey reason line under a card's Counted share, for the selected bank.
+export function cardReason(cardCalc, card) {
+  if (!cardCalc) return '';
+  const line = (cardCalc.lines || []).find((l) => l.id === card.id);
+  if (line && !line.paydownAccepted && (card.paidBeforeLoginWithProof || 0) > 0) return 'Must reflect in CIBIL';
+  if (!(cardCalc.amount > 0)) return /salary/i.test(cardCalc.rule || '') ? 'Not counted — total below salary' : 'Not counted';
+  if (line && !(line.remaining > 0)) return 'Not counted — paid before login';
+  const pct = String(cardCalc.rule || '').match(/^([\d.]+)%/);
+  return pct ? `${pct[1]}% of outstanding` : cardCalc.rule;
+}
+
 // Loans with no balance and no EMI (closed / zero-balance CIBIL accounts) are
 // tucked into a collapsed group; rows the agent added stay in the main list.
 export const isZeroBalanceLoan = (l) => !l.manual && !(l.outstanding > 0) && !(l.emi > 0);
+// Same for cards: CIBIL cards with nothing outstanding.
+export const isZeroBalanceCard = (c) => !c.manual && !(c.outstanding > 0);
+
+// GOLD / OD / KCC are bullet / revolving: the bank counts a % of outstanding, not the EMI.
+const BULLET_TYPES = ['GOLD', 'OD', 'KCC'];
+export const isBulletLoan = (l) => BULLET_TYPES.includes(l.productType);
+
+// "bullet — 1% of outstanding counted", with the selected bank's % when it has a calculation.
+export function bulletNote(line) {
+  const m = line && String(line.obligation.rule || '').match(/[\d.]+% of outstanding/);
+  return `bullet — ${m ? m[0] : '1% of outstanding'} counted`;
+}
+
+// EMI total of the obligations table: term loans only (bullet loans have no real EMI).
+export const termEmiTotal = (loans) => (loans || []).reduce((s, l) => s + (isBulletLoan(l) ? 0 : Number(l.emi) || 0), 0);
+
+// Counted total for the selected bank: counted loan obligations + counted CC obligation.
+export function countedObligationsTotal(obligations) {
+  if (!obligations) return null;
+  return (obligations.loans || []).reduce((s, l) => s + l.obligation.amount, 0) + ((obligations.cards && obligations.cards.amount) || 0);
+}
 
 // PL / BL EMI under 1% of the loan amount is almost always a misread or a typo
 // (e.g. 100 on ₹14,70,000) — the screen shows a warning, nothing is changed.
@@ -653,6 +689,37 @@ export function extractEmployerName(text, headerLines = [], { knownNames = [] } 
 }
 
 const normalizeName = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Canonical company name — the same rule search_company_category uses in the
+// database: PVT = PRIVATE, LTD = LIMITED, & = AND, punctuation and extra spaces
+// ignored. A leading "M/s" is dropped too, so "M/s ABC Pvt. Ltd." = "ABC PRIVATE LIMITED".
+export function normCompany(s) {
+  return String(s || '').toUpperCase()
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/^\s*M S\s+/, ' ')
+    .replace(/\bPVTLTD\b/g, 'PRIVATE LIMITED')
+    .replace(/\bPVT\b/g, 'PRIVATE')
+    .replace(/\bLTD\b/g, 'LIMITED')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export const sameCompany = (a, b) => !!normCompany(a) && normCompany(a) === normCompany(b);
+
+// match_type 'exact' or 'exact (PVT/LTD form)' (canonical match in the database).
+export const isExactMatch = (row) => /^exact\b/i.test(String((row && row.match_type) || ''));
+
+// Company names de-duplicated by normCompany, first spelling kept.
+export function uniqueCompanyNames(names) {
+  const seen = new Set();
+  return (names || []).filter((n) => {
+    const k = normCompany(n);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 
 // Search variants for the company list: as printed, abbreviations expanded,
 // and the short PVT LTD / LTD form.

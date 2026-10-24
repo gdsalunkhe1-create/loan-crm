@@ -422,3 +422,14 @@ test('IndusInd: own house + live home loan at 75K+ gives FOIR 75%; Navi taken in
   const h = evaluateBank(policy, p);
   expect(h.obligations.loans.find((l) => l.id === 'navi').bt.odUnconfirmed).toBe(false);
 });
+
+test('No card-closing suggestion when it would not raise eligibility; Kisetsu (Credit Saison) not BT at L&T', () => {
+  const r = evaluateBank(icici, { ...iBase, netSalary: 50000,
+    loans: [{ id: 'big', lender: 'SBI', productType: 'HL', emi: 60000, emisPaid: 20, emisRemaining: 200 }],
+    cards: [{ id: 'c1', issuer: 'ICICI BANK', outstanding: 11425 }] });
+  expect(r.cardPlan).toBeUndefined();
+  expect(r.warnings.join()).not.toMatch(/^Close /);
+  const l = evaluateBank(lt, { ...base, netSalary: 87867, cibilScore: 777, company: { categoriesByBank: { lt: 'CAT A' } }, credit: { enquiryList: [] },
+    loans: [{ id: 'k', lender: 'KISETSU', productType: 'PL', outstanding: 104693, emi: 9617, emisPaid: 13, emisRemaining: 11 }] });
+  expect(l.obligations.loans[0].bt.ok).toBe(false);
+});

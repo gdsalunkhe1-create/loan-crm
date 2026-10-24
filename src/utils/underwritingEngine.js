@@ -638,7 +638,8 @@ export function evaluateBank(policy, profile) {
         gain: (sim.best?.eligibleAmount ?? 0) - out.best.eligibleAmount,
         mustReflectInCibil: (policy.obligations?.credit_card?.prelogin_paydown || 'all') !== 'all',
       };
-      out.warnings.unshift(`Close ${pick.map((c) => c.issuer).join(', ')} before login (${fmtINR(closeAmount)}) → eligible ${fmtINR(out.cardPlan.newEligible)} (+${fmtINR(out.cardPlan.gain)})`);
+      if (!(out.cardPlan.gain > 0)) delete out.cardPlan;   // closing cards wouldn't help — don't suggest it
+      else out.warnings.unshift(`Close ${pick.map((c) => c.issuer).join(', ')} before login (${fmtINR(closeAmount)}) → eligible ${fmtINR(out.cardPlan.newEligible)} (+${fmtINR(out.cardPlan.gain)})`);
     }
     out.warnings = out.warnings.filter((w) => !w.startsWith('Paying '));   // replaced by the card plan
     if (need && !pick.length) out.warnings.unshift(`Card outstanding must come down by ${fmtINR(need)} to remove the CC obligation`);

@@ -10,6 +10,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabase';
+import { isExactMatch } from '../utils/underwritingAdapters';
 import { IconSearch, IconUpload, IconBuildingBank } from '@tabler/icons-react';
 
 const UPSERT_BATCH_SIZE = 150;
@@ -217,7 +218,7 @@ function SearchPanel({ banks }) {
         const g = grouped[row.bank];
         if (!g) return;
         g.rows.push(row);
-        if (row.match_type === 'exact') g.status = 'exact';
+        if (isExactMatch(row)) g.status = 'exact';
         else if (g.status !== 'exact') g.status = 'fuzzy';
       });
       setResults(grouped);
@@ -323,7 +324,7 @@ function SearchPanel({ banks }) {
           {banks.map((b) => {
             const r = results[b.id];
             if (!r) return null; // bank was added after this search ran
-            const exact = r.rows.find((x) => x.match_type === 'exact');
+            const exact = r.rows.find(isExactMatch);
             const badgeClass = exact ? 'badge-green' : r.rows.length ? 'badge-yellow' : 'badge-gray';
             const borderColor = exact ? 'var(--success)' : r.rows.length ? 'var(--warning)' : 'var(--border)';
             return (

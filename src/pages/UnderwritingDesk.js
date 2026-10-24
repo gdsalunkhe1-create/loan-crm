@@ -25,7 +25,8 @@ import {
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
-  isUnlistedFor, searchedIncorporationYear,
+  isUnlistedFor, searchedIncorporationYear, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
+  countedObligationsTotal, sameCompany, isExactMatch, uniqueCompanyNames,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -333,7 +334,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
   };
 
   const selectedCompanyName = () => {
-    const picked = companyByBank && Object.values(companyByBank.banks).find((b) => b.pick?.match_type === 'exact');
+    const picked = companyByBank && Object.values(companyByBank.banks).find((b) => isExactMatch(b.pick));
     return picked?.pick.company_name || companyByBank?.query || companyQuery.trim() || null;
   };
 
@@ -535,42 +536,47 @@ export default function UnderwritingDesk({ userId, orgId }) {
           </p>
         )}
 
-        {canUpload && (
-          <UploadPanel
-            uploads={{ ...sources.uploads, payslips: payslipsView }}
-            employer={employer}
-            docs={docs}
-            saveTarget={mode === 'lead' && lead ? { name: lead.full_name, saved: sources.saved || {} } : null}
-            onSaveToLead={saveUploadToLead}
-            onCibil={uploadCibil}
-            onBsa={uploadBsa}
-            onPayslips={uploadPayslips}
-            onRetry={retryWithPassword}
-            onRemove={removeUpload}
-          />
-        )}
+        {/* Two columns from 1200px (App.css .uw-two-col): documents left, customer details right. */}
+        <div className={draft && !loadingLead ? 'uw-two-col' : undefined}>
+          <div>
+            {canUpload && (
+              <UploadPanel
+                uploads={{ ...sources.uploads, payslips: payslipsView }}
+                employer={employer}
+                docs={docs}
+                saveTarget={mode === 'lead' && lead ? { name: lead.full_name, saved: sources.saved || {} } : null}
+                onSaveToLead={saveUploadToLead}
+                onCibil={uploadCibil}
+                onBsa={uploadBsa}
+                onPayslips={uploadPayslips}
+                onRetry={retryWithPassword}
+                onRemove={removeUpload}
+              />
+            )}
+            {draft && !loadingLead && <SourceNotes sources={sources} draft={draft} />}
 
-        {mode === 'new' && sources.uploads.cibil && (
-          <div ref={saveLeadRef}>
-            <SaveLeadPanel
-              form={newLeadForm}
-              setForm={setNewLeadForm}
-              findExisting={findExistingLeads}
-              onCreate={createLead}
-              onAttach={attachDocsAndOpen}
-            />
+            {/* New customer only — an existing lead is already saved. */}
+            {mode === 'new' && sources.uploads.cibil && (
+              <div ref={saveLeadRef}>
+                <SaveLeadPanel
+                  form={newLeadForm}
+                  setForm={setNewLeadForm}
+                  findExisting={findExistingLeads}
+                  onCreate={createLead}
+                  onAttach={attachDocsAndOpen}
+                />
+              </div>
+            )}
+
+            {mode === 'new' && !draft && (
+              <p style={{ fontSize: '13px', color: '#7a8194', margin: '12px 0 0' }}>
+                Start with the CIBIL report — the bank statement and payslips are optional.
+              </p>
+            )}
           </div>
-        )}
-
-        {mode === 'new' && !draft && (
-          <p style={{ fontSize: '13px', color: '#7a8194', margin: '12px 0 0' }}>
-            Start with the CIBIL report — the bank statement and payslips are optional.
-          </p>
-        )}
 
         {draft && !loadingLead && (
-          <>
-            <SourceNotes sources={sources} draft={draft} />
+          <div>
             <CompanyPanel
               query={companyQuery}
               setQuery={setCompanyQuery}
@@ -597,8 +603,9 @@ export default function UnderwritingDesk({ userId, orgId }) {
               cityFromLead={!!lead?.city && draft.city === undefined}
             />
             <OtherIncomePanel draft={draft} patchDraft={patchDraft} />
-          </>
+          </div>
         )}
+        </div>
       </div>
 
       {draft && !loadingLead && (
@@ -983,7 +990,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankL
     });
     Object.values(banks).forEach((b) => {
       // Auto-select only an exact match; fuzzy candidates wait for the agent.
-      const exact = b.candidates.find((c) => c.match_type === 'exact');
+      const exact = b.candidates.find(isExactMatch);
       b.pick = exact || null;
       b.category = exact && !hasVariants(exact) ? exact.category : '';
       b.variantIdx = null;
@@ -1010,7 +1017,7 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankL
       const reqId = ++sugReqRef.current;
       const { data, error: rpcError } = await supabase.rpc('autocomplete_company_name', { p_query: val.trim(), p_limit: 10 });
       if (reqId !== sugReqRef.current) return;
-      if (!rpcError) { setSuggestions(data || []); setShowSug(true); }
+      if (!rpcError) { setSuggestions(uniqueCompanyNames((data || []).map((s) => s.company_name))); setShowSug(true); }
     }, AUTOCOMPLETE_DEBOUNCE_MS);
   };
 
@@ -1022,10 +1029,103 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankL
   })); };
 
   // Manual-category banks (Kotak) are listed before any search; the rest once a search has run.
+  // Banks with an active policy come first; every other company list sits in a collapsed group.
   const manualIds = policyBankIds.filter((id) => manualCategories[id]);
-  const bankIds = byBank
-    ? [...new Set([...policyBankIds, ...Object.keys(byBank.banks)])].sort((a, b) => policyBankIds.includes(b) - policyBankIds.includes(a))
-    : manualIds;
+  const policyIds = byBank ? policyBankIds : manualIds;
+  const otherIds = byBank ? Object.keys(byBank.banks).filter((id) => !policyBankIds.includes(id)) : [];
+  const [showOther, setShowOther] = useState(false);
+  const [listLabels, setListLabels] = useState({}); // company_category_banks: { id: label }
+  useEffect(() => {
+    let live = true;
+    supabase.from('company_category_banks').select('id, label').then(({ data }) => {
+      if (live && data) setListLabels(Object.fromEntries(data.map((b) => [b.id, b.label])));
+    });
+    return () => { live = false; };
+  }, []);
+  const labelOf = (id) => bankLabels[id] || listLabels[id] || id;
+
+  const bankRow = (id) => {
+    const b = (byBank && byBank.banks[id]) || { candidates: [], pick: null, category: '' };
+    const variants = b.pick && hasVariants(b.pick) ? b.pick.variants : null;
+    const manual = manualCategories[id];
+    if (manual) {
+      return (
+        <tr key={id}>
+          <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
+            {labelOf(id)}
+          </td>
+          <td style={td} colSpan={2}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-primary)', flexWrap: 'wrap' }}>
+              {labelOf(id)} category (confirm with banker)
+              <select
+                style={{ ...cellInp, width: 'auto', minWidth: 110 }}
+                value={manualValues[id] || ''}
+                onChange={(e) => setManualValue(id, e.target.value)}
+              >
+                <option value="">—</option>
+                {manual.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+          </td>
+        </tr>
+      );
+    }
+    return (
+      <tr key={id}>
+        <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
+          {labelOf(id)}
+        </td>
+        <td style={td}>
+          {b.candidates.length === 0 && <span style={S.stat}>Not listed</span>}
+          {b.candidates.length > 0 && (
+            <select
+              style={cellInp}
+              value={b.pick ? b.candidates.indexOf(b.pick) : -1}
+              onChange={(e) => {
+                const pick = b.candidates[+e.target.value] || null;
+                updateBank(id, { pick, variantIdx: null, category: pick && !hasVariants(pick) ? pick.category : '' });
+              }}
+            >
+              <option value={-1}>— not this company / not listed —</option>
+              {b.candidates.map((c, i) => (
+                <option key={i} value={i}>{c.company_name} ({c.match_type})</option>
+              ))}
+            </select>
+          )}
+          {b.pick && <CinLine row={b.pick} />}
+        </td>
+        <td style={td}>
+          {variants ? (
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600, marginBottom: 4 }}>
+                Listed twice — pick the banker-confirmed one:
+              </div>
+              {variants.map((v, i) => (
+                <label key={i} style={{ ...S.check, marginBottom: 3 }}>
+                  <input
+                    type="radio"
+                    name={`variant-${id}`}
+                    checked={b.variantIdx === i}
+                    onChange={() => updateBank(id, { variantIdx: i, category: v.category || '' })}
+                  />
+                  <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{v.cin ? `CIN ${v.cin}` : 'No CIN'}</span>
+                  <strong>{v.category || '—'}</strong>
+                  {v.incorporation_year && <span style={S.stat}>Inc. {v.incorporation_year}</span>}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <input
+              style={cellInp}
+              value={b.category || ''}
+              placeholder={`Enter ${labelOf(id)} category`}
+              onChange={(e) => updateBank(id, typedCategoryPatch(b, byBank.query, e.target.value))}
+            />
+          )}
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <Sub title="Company">
@@ -1044,112 +1144,38 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankL
           </button>
           {showSug && suggestions.length > 0 && (
             <div style={S.dropdown}>
-              {suggestions.map((s, i) => (
+              {suggestions.map((name, i) => (
                 <div
                   key={i}
                   style={S.option}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pickTerm(s.company_name)}
+                  onClick={() => pickTerm(name)}
                 >
-                  {s.company_name}
+                  {name}
                 </div>
               ))}
             </div>
           )}
         </div>
         {error && <div className="info-box info-box-red" style={{ marginTop: 10 }}>Company search failed: {error}</div>}
-        {payslipHint && <PayslipCompanyHint hint={payslipHint} applied={fromPayslip} onPick={pickTerm} />}
+        {payslipHint && <PayslipCompanyHint hint={payslipHint} applied={fromPayslip} chosen={chosenCompanyNames(byBank, query)} onPick={pickTerm} />}
 
-        {bankIds.length > 0 && (
+        {policyIds.length + otherIds.length > 0 && (
           <div style={{ overflowX: 'auto', marginTop: 14 }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '640px' }}>
               <thead>
                 <tr><th style={th}>Bank</th><th style={th}>Matched company</th><th style={th}>Category (editable)</th></tr>
               </thead>
               <tbody>
-                {bankIds.map((id) => {
-                  const b = (byBank && byBank.banks[id]) || { candidates: [], pick: null, category: '' };
-                  const isPolicyBank = policyBankIds.includes(id);
-                  const variants = b.pick && hasVariants(b.pick) ? b.pick.variants : null;
-                  const manual = manualCategories[id];
-                  if (manual) {
-                    return (
-                      <tr key={id}>
-                        <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
-                          {id}<span className="badge badge-blue" style={{ marginLeft: 6 }}>policy</span>
-                        </td>
-                        <td style={td} colSpan={2}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-primary)', flexWrap: 'wrap' }}>
-                            {bankLabels[id] || id} category (confirm with banker)
-                            <select
-                              style={{ ...cellInp, width: 'auto', minWidth: 110 }}
-                              value={manualValues[id] || ''}
-                              onChange={(e) => setManualValue(id, e.target.value)}
-                            >
-                              <option value="">—</option>
-                              {manual.map((c) => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          </label>
-                        </td>
-                      </tr>
-                    );
-                  }
-                  return (
-                    <tr key={id}>
-                      <td style={{ ...td, whiteSpace: 'nowrap', fontSize: '12px' }}>
-                        {id}{isPolicyBank && <span className="badge badge-blue" style={{ marginLeft: 6 }}>policy</span>}
-                      </td>
-                      <td style={td}>
-                        {b.candidates.length === 0 && <span style={S.stat}>Not listed</span>}
-                        {b.candidates.length > 0 && (
-                          <select
-                            style={cellInp}
-                            value={b.pick ? b.candidates.indexOf(b.pick) : -1}
-                            onChange={(e) => {
-                              const pick = b.candidates[+e.target.value] || null;
-                              updateBank(id, { pick, variantIdx: null, category: pick && !hasVariants(pick) ? pick.category : '' });
-                            }}
-                          >
-                            <option value={-1}>— not this company / not listed —</option>
-                            {b.candidates.map((c, i) => (
-                              <option key={i} value={i}>{c.company_name} ({c.match_type})</option>
-                            ))}
-                          </select>
-                        )}
-                        {b.pick && <CinLine row={b.pick} />}
-                      </td>
-                      <td style={td}>
-                        {variants ? (
-                          <div>
-                            <div style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600, marginBottom: 4 }}>
-                              Listed twice — pick the banker-confirmed one:
-                            </div>
-                            {variants.map((v, i) => (
-                              <label key={i} style={{ ...S.check, marginBottom: 3 }}>
-                                <input
-                                  type="radio"
-                                  name={`variant-${id}`}
-                                  checked={b.variantIdx === i}
-                                  onChange={() => updateBank(id, { variantIdx: i, category: v.category || '' })}
-                                />
-                                <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{v.cin ? `CIN ${v.cin}` : 'No CIN'}</span>
-                                <strong>{v.category || '—'}</strong>
-                                {v.incorporation_year && <span style={S.stat}>Inc. {v.incorporation_year}</span>}
-                              </label>
-                            ))}
-                          </div>
-                        ) : (
-                          <input
-                            style={cellInp}
-                            value={b.category || ''}
-                            placeholder={`Enter ${bankLabels[id] || id} category`}
-                            onChange={(e) => updateBank(id, typedCategoryPatch(b, byBank.query, e.target.value))}
-                          />
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {policyIds.map(bankRow)}
+                {otherIds.length > 0 && (
+                  <tr style={{ background: '#f7f9fc', cursor: 'pointer' }} onClick={() => setShowOther(!showOther)}>
+                    <td style={{ ...td, fontSize: '12px', color: '#7a8194' }} colSpan={3}>
+                      Other bank lists ({otherIds.length}) {showOther ? '▾' : '▸'}
+                    </td>
+                  </tr>
+                )}
+                {showOther && otherIds.map(bankRow)}
               </tbody>
             </table>
           </div>
@@ -1160,9 +1186,22 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankL
 
 const hasVariants = (row) => Array.isArray(row.variants) && row.variants.length > 0;
 
+// The company the agent / lead / payslip search chose: the typed or searched
+// term plus every company picked from a bank's list.
+function chosenCompanyNames(byBank, query) {
+  const picks = byBank ? Object.values(byBank.banks).map((b) => b.pick && b.pick.company_name).filter(Boolean) : [];
+  return [query, byBank && byBank.query, ...picks].filter(Boolean);
+}
+
 // Source line under the company field for an employer read from the payslip.
-function PayslipCompanyHint({ hint, applied, onPick }) {
+// Compared with normCompany, so "Accenture Solutions Pvt Ltd" on the payslip is
+// the same company as "ACCENTURE SOLUTIONS PRIVATE LIMITED" chosen here.
+function PayslipCompanyHint({ hint, applied, chosen, onPick }) {
   const raw = <strong>{hint.rawName}</strong>;
+  const same = (chosen || []).some((c) => sameCompany(hint.rawName, c) || (hint.exactTerm && sameCompany(hint.exactTerm, c)));
+  if (same && hint.status !== 'searching') {
+    return <div style={{ ...S.hint, marginTop: 8 }}>From payslip: {raw} <span style={{ color: 'var(--success)', fontWeight: 600 }}>✓ same company</span></div>;
+  }
   const options = hint.status === 'exact' ? (applied ? [] : [hint.exactTerm]) : hint.suggestions;
   let detail = null;
   if (hint.status === 'searching') detail = ' — matching against the company list…';
@@ -1352,12 +1391,12 @@ const dash = <span style={{ fontSize: '12px', color: '#bcc3d2' }}>—</span>;
 const btnGhostSm = { ...btnLink, color: '#9aa1b2', fontSize: '13px', padding: '4px 6px' };
 
 // Fits a 1366px screen with the sidebar open (no sideways scroll): the reason
-// sits under Counted EMI and the HL controls under Treatment instead of their own columns.
+// sits under Counted and the HL / card controls under Treatment / Action instead of their own columns.
 const OBL_COLS = [
-  ['Financier', 150], ['Open date', 92], ['Type', 84], ['Loan amt', 92], ['Outstanding', 100], ['EMI', 90],
-  ['Paid', 52], ['Left', 52], ['Treatment', 128], ['Counted EMI', 150], ['', 28],
+  ['Financier', 150], ['Type', 84], ['Open date', 92], ['Loan amt / Limit', 100], ['Outstanding', 100], ['EMI', 100],
+  ['Paid', 52], ['Left', 52], ['Treatment / Action', 160], ['Counted', 150], ['', 28],
 ];
-const RIGHT_COLS = new Set(['Loan amt', 'Outstanding', 'EMI', 'Paid', 'Left', 'Counted EMI']);
+const RIGHT_COLS = new Set(['Loan amt / Limit', 'Outstanding', 'EMI', 'Paid', 'Left', 'Counted']);
 const OBL_MIN_WIDTH = OBL_COLS.reduce((s, [, w]) => s + w, 0);
 const RED = '#dc2626';
 const AMBER = '#d97706';
@@ -1385,11 +1424,20 @@ function NumInput({ value, onChange, nullable = false, placeholder = '0', invali
   );
 }
 
-// Counted EMI / reason come from the selected bank's calculation (its policy rules).
+const CARD_ACTIONS = [['keep', 'Keep open'], ['paid', 'Paid before login (proof)'], ['close', 'Close before login (suggested)']];
+const tag = (background, color) => ({ display: 'inline-block', padding: '1px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, background, color, whiteSpace: 'nowrap', marginRight: '4px' });
+const smallNote = { fontSize: '10px', textAlign: 'right', fontWeight: 600, lineHeight: 1.3, whiteSpace: 'normal' };
+const totalCell = { ...td, ...num, fontWeight: 700, fontSize: '12px' };
+
+// One table for loans and credit cards. Counted / reason come from the selected
+// bank's calculation (its policy rules); cards show their share of the counted CC obligation.
 function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const [showZero, setShowZero] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const setLoanById = (id, patch) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
   const removeLoan = (id) => patchDraft({ loans: draft.loans.filter((l) => l.id !== id) });
+  const setCard = (id, patch) => patchDraft({ cards: draft.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+  const removeCard = (id) => patchDraft({ cards: draft.cards.filter((c) => c.id !== id) });
   const nextId = (prefix, list) => `${prefix}${Date.now().toString(36)}${list.length}`;
 
   const entry = results.find((r) => r.bankId === bankId) || results[0];
@@ -1397,41 +1445,71 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const lines = (res && res.obligations && res.obligations.loans) || [];
   const cardCalc = res && res.obligations && res.obligations.cards;
   const best = res && res.best;
+  const cardPlan = res && res.cardPlan;
   const lineOf = (id) => lines.find((l) => l.id === id);
 
   const activeLoans = draft.loans.filter((l) => !isZeroBalanceLoan(l));
   const zeroLoans = draft.loans.filter(isZeroBalanceLoan);
-  const loanTotal = (k) => draft.loans.reduce((s, l) => s + (Number(l[k]) || 0), 0);
-  const countedLoans = res && res.obligations ? lines.reduce((s, l) => s + l.obligation.amount, 0) : null;
+  const activeCards = draft.cards.filter((c) => !isZeroBalanceCard(c));
+  const zeroCards = draft.cards.filter(isZeroBalanceCard);
+  const zeroCount = zeroLoans.length + zeroCards.length;
+  const totalOutstanding = [...draft.loans, ...draft.cards].reduce((s, x) => s + (Number(x.outstanding) || 0), 0);
+  const counted = countedObligationsTotal(res && res.obligations);
+
+  const suggested = new Set((cardPlan && cardPlan.closeCards) || []);
+  const pendingSuggestion = cardPlan && cardPlan.closeCards.some((id) => {
+    const c = draft.cards.find((x) => x.id === id);
+    return c && c.action !== 'close';
+  });
+  const applySuggestion = () => patchDraft({
+    cards: draft.cards.map((c) => (suggested.has(c.id) ? { ...c, ...cardActionPatch(c, 'close') } : c)),
+  });
 
   const addLoan = () => patchDraft({ loans: [...draft.loans, {
     id: nextId('M', draft.loans), manual: true, lender: '', lenderType: null, productType: 'PL', openDate: '', loanAmount: 0, outstanding: 0, emi: 0,
     emisPaid: 0, emisRemaining: null, isJoint: false, coApplicantIncomeOk: null, hlEmiPaidBy: null, treatment: 'auto', closedBeforeLoginWithProof: false,
     odStatus: null, foreclosureLetter: false,
   }] });
+  const addCard = () => patchDraft({ cards: [...draft.cards, {
+    id: nextId('K', draft.cards), manual: true, issuer: '', limit: 0, openDate: '', outstanding: 0, paidBeforeLoginWithProof: 0, action: 'keep',
+  }] });
+  const add = (fn) => { fn(); setAddOpen(false); };
+
+  const mutedRow = { background: '#fafbfe', color: '#9aa1b2' };
 
   const loanRow = (l, muted) => {
     const line = lineOf(l.id);
     const isHL = l.productType === 'HL';
+    const bullet = isBulletLoan(l);
     const needsEmi = loanNeedsEmi(l);
     const showOd = !!((line && line.bt.odUnconfirmed) || l.odStatus);
     const odAsk = !l.odStatus && !!(res && res.odConfirm && res.odConfirm.includes(l.id));
     const showLetter = !!((line && line.bt.needsLetter) || l.foreclosureLetter);
     return (
-      <tr key={l.id} style={muted ? { background: '#fafbfe', color: '#9aa1b2' } : undefined}>
+      <tr key={l.id} style={muted ? mutedRow : undefined}>
         <td style={td}><input style={cellInp} value={l.lender} onChange={(e) => setLoanById(l.id, { lender: e.target.value })} placeholder="Bank" title={l.lender} /></td>
-        <td style={td}><input style={cellInp} value={l.openDate || ''} onChange={(e) => setLoanById(l.id, { openDate: e.target.value })} placeholder="dd/mm/yyyy" /></td>
         <td style={td} title={l.sourceType || undefined}>
           <select style={cellSel} value={l.productType} onChange={(e) => setLoanById(l.id, { productType: e.target.value })}>
             {PRODUCT_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t] || t}</option>)}
           </select>
         </td>
+        <td style={td}><input style={cellInp} value={l.openDate || ''} onChange={(e) => setLoanById(l.id, { openDate: e.target.value })} placeholder="dd/mm/yyyy" /></td>
         <td style={td}><NumInput value={l.loanAmount} onChange={(v) => setLoanById(l.id, { loanAmount: v })} /></td>
         <td style={td}><NumInput value={l.outstanding} onChange={(v) => setLoanById(l.id, { outstanding: v })} /></td>
         <td style={td}>
-          <NumInput value={l.emi} invalid={needsEmi} onChange={(v) => setLoanById(l.id, { emi: v })} />
-          {needsEmi && <div style={{ fontSize: '10px', color: RED, textAlign: 'right', fontWeight: 600 }}>Enter EMI</div>}
-          {emiLooksTooLow(l) && <div style={{ fontSize: '10px', color: AMBER, textAlign: 'right', fontWeight: 600 }}>EMI looks too low — check</div>}
+          {bullet ? (
+            // Bullet / revolving: the CIBIL EMI is shown for reference only and left out of the EMI total.
+            <div style={{ ...num, fontSize: '12px', color: '#9aa1b2', padding: '5px 0' }} title="Not in the EMI total">
+              {l.emi > 0 ? fmt(l.emi) : '—'}
+              <div style={{ ...smallNote, fontWeight: 400 }}>{bulletNote(line)}</div>
+            </div>
+          ) : (
+            <>
+              <NumInput value={l.emi} invalid={needsEmi} onChange={(v) => setLoanById(l.id, { emi: v })} />
+              {needsEmi && <div style={{ ...smallNote, color: RED }}>Enter EMI</div>}
+              {emiLooksTooLow(l) && <div style={{ ...smallNote, color: AMBER }}>EMI looks too low — check</div>}
+            </>
+          )}
         </td>
         <td style={td}><NumInput value={l.emisPaid} onChange={(v) => setLoanById(l.id, { emisPaid: v })} /></td>
         <td style={td}><NumInput nullable placeholder="?" value={l.emisRemaining} onChange={(v) => setLoanById(l.id, { emisRemaining: v })} /></td>
@@ -1492,11 +1570,53 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
     );
   };
 
+  const cardRow = (c, muted) => {
+    const action = c.action || (c.paidBeforeLoginWithProof > 0 ? 'paid' : 'keep');
+    const share = cardCountedShare(cardCalc, c.id);
+    return (
+      <tr key={c.id} style={muted ? mutedRow : undefined}>
+        <td style={td}><input style={cellInp} value={c.issuer} onChange={(e) => setCard(c.id, { issuer: e.target.value })} placeholder="Card issuer" title={c.issuer} /></td>
+        <td style={{ ...td, fontSize: '12px' }}>Credit card</td>
+        <td style={td}><input style={cellInp} value={c.openDate || ''} onChange={(e) => setCard(c.id, { openDate: e.target.value })} placeholder="dd/mm/yyyy" /></td>
+        <td style={td}><NumInput value={c.limit} onChange={(v) => setCard(c.id, { limit: v })} /></td>
+        <td style={td}><NumInput value={c.outstanding} onChange={(v) => setCard(c.id, cardOutstandingPatch(c, v))} /></td>
+        <td style={{ ...td, ...num }}>{dash}</td>
+        <td style={{ ...td, ...num }}>{dash}</td>
+        <td style={{ ...td, ...num }}>{dash}</td>
+        <td style={td}>
+          <select style={cellSel} value={action} onChange={(e) => setCard(c.id, cardActionPatch(c, e.target.value))}>
+            {CARD_ACTIONS.map(([v, labelText]) => <option key={v} value={v}>{labelText}</option>)}
+          </select>
+          {action === 'paid' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px', color: '#555' }}>
+              Amount paid
+              <NumInput value={c.paidBeforeLoginWithProof} onChange={(v) => setCard(c.id, { paidBeforeLoginWithProof: v })} />
+            </label>
+          )}
+          {suggested.has(c.id) && <div style={{ marginTop: '4px' }}><span style={tag('#dcfce7', '#166534')}>Suggested: close</span></div>}
+        </td>
+        <td style={{ ...td, ...num }}>
+          <div style={{ fontWeight: 700, fontSize: '12px' }}>{!cardCalc ? '—' : share == null ? '0' : fmt(share)}</div>
+          <ReasonLine text={cardReason(cardCalc, c)} />
+        </td>
+        <td style={td}>
+          <button style={btnGhostSm} title="Remove card" onClick={() => removeCard(c.id)}>✕</button>
+        </td>
+      </tr>
+    );
+  };
+
   return (
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
         <h3 style={{ ...cardHeader, margin: 0 }}>Obligations</h3>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {pendingSuggestion && (
+            <button style={{ ...btnSecSm, color: '#166534', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={applySuggestion}>
+              Apply suggestion — close {cardPlan.closeCards.length} card{cardPlan.closeCards.length === 1 ? '' : 's'} ({fmtINR(cardPlan.closeAmount)})
+              {cardPlan.newEligible != null ? ` → eligible ${fmtINR(cardPlan.newEligible)} (+${fmtINR(cardPlan.gain)})` : ''}
+            </button>
+          )}
           {results.length > 1 && (
             <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
               Counted for
@@ -1505,7 +1625,17 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
               </select>
             </label>
           )}
-          <button style={btnSec} onClick={addLoan}>+ Add row</button>
+          <div style={{ position: 'relative' }}>
+            <button style={btnSecSm} onClick={() => setAddOpen(!addOpen)} onBlur={() => setTimeout(() => setAddOpen(false), 150)}>
+              + Add row ▾
+            </button>
+            {addOpen && (
+              <div style={{ ...S.dropdown, left: 'auto', right: 0, minWidth: 130 }}>
+                <div style={S.option} onMouseDown={(e) => e.preventDefault()} onClick={() => add(addLoan)}>Loan</div>
+                <div style={S.option} onMouseDown={(e) => e.preventDefault()} onClick={() => add(addCard)}>Credit card</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
@@ -1513,27 +1643,36 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
           <colgroup>{OBL_COLS.map(([, w], i) => <col key={i} style={{ width: w + 'px' }} />)}</colgroup>
           <thead><tr>{OBL_COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: RIGHT_COLS.has(h) ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
           <tbody>
-            {activeLoans.length === 0 && (
-              <tr><td colSpan={OBL_COLS.length} style={{ ...td, fontSize: '12px', color: '#7a8194' }}>No open loans.</td></tr>
+            {activeLoans.length === 0 && activeCards.length === 0 && (
+              <tr><td colSpan={OBL_COLS.length} style={{ ...td, fontSize: '12px', color: '#7a8194' }}>No open loans or credit cards.</td></tr>
             )}
             {activeLoans.map((l) => loanRow(l, false))}
 
-            {zeroLoans.length > 0 && (
+            {activeCards.length > 0 && (
+              <tr>
+                <td colSpan={OBL_COLS.length} style={{ ...td, padding: '6px 8px 4px', fontSize: '11px', fontWeight: 700, color: '#7a8194', borderTop: '2px solid #e3e8f0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Credit cards
+                </td>
+              </tr>
+            )}
+            {activeCards.map((c) => cardRow(c, false))}
+
+            {zeroCount > 0 && (
               <tr style={{ background: '#f7f9fc', cursor: 'pointer' }} onClick={() => setShowZero(!showZero)}>
                 <td style={{ ...td, fontSize: '12px', color: '#7a8194' }} colSpan={OBL_COLS.length}>
-                  Zero-balance accounts ({zeroLoans.length}) — not counted {showZero ? '▾' : '▸'}
+                  Zero-balance accounts ({zeroCount}) — not counted {showZero ? '▾' : '▸'}
                 </td>
               </tr>
             )}
             {showZero && zeroLoans.map((l) => loanRow(l, true))}
+            {showZero && zeroCards.map((c) => cardRow(c, true))}
 
             <tr style={{ background: '#f0f4fa' }}>
-              <td style={{ ...td, fontWeight: 700, fontSize: '12px' }} colSpan={3}>Total loans</td>
-              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(loanTotal('loanAmount'))}</td>
-              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(loanTotal('outstanding'))}</td>
-              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(loanTotal('emi'))}</td>
+              <td style={{ ...td, fontWeight: 700, fontSize: '12px' }} colSpan={4}>Total</td>
+              <td style={totalCell}>{fmt(totalOutstanding)}</td>
+              <td style={totalCell} title="Term loans only — gold / OD / KCC left out">{fmt(termEmiTotal(draft.loans))}</td>
               <td style={td} colSpan={3} />
-              <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{countedLoans == null ? '—' : fmt(countedLoans)}</td>
+              <td style={totalCell}>{counted == null ? '—' : fmt(counted)}</td>
               <td style={td} />
             </tr>
           </tbody>
@@ -1542,105 +1681,11 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
       <p style={{ fontSize: '11px', color: '#9aa1b2', margin: '12px 0 0' }}>
         {entry ? (
           res && res.obligations
-            ? <>Counted EMI follows <b>{entry.label}</b>&apos;s policy. </>
-            : <>Counted EMI appears once <b>{entry.label}</b> can be calculated (see its card below). </>
+            ? <>Counted follows <b>{entry.label}</b>&apos;s policy (loans + cards{cardCalc ? `: ${cardCalc.rule}` : ''}). </>
+            : <>Counted appears once <b>{entry.label}</b> can be calculated (see its card below). </>
         ) : null}
-        Treatment: <b>Auto</b> lets the bank decide; <b>BT</b> always takes the loan over when the bank allows it; <b>Obligate</b> keeps it as an obligation.
+        EMI total is term loans only. Treatment: <b>Auto</b> lets the bank decide; <b>BT</b> always takes the loan over when the bank allows it; <b>Obligate</b> keeps it as an obligation.
       </p>
-
-      <CardsSection draft={draft} patchDraft={patchDraft} entry={entry} cardCalc={cardCalc} cardPlan={res && res.cardPlan} />
-    </div>
-  );
-}
-
-const CARD_ACTIONS = [['keep', 'Keep open'], ['paid', 'Paid before login (proof)'], ['close', 'Close before login (suggested)']];
-const CARD_COLS = [['Card', 170], ['Outstanding', 110], ['Action', 200], ['Amount paid', 120], ['Counted', 110], ['Note', 220], ['', 28]];
-const tag = (background, color) => ({ display: 'inline-block', padding: '1px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, background, color, whiteSpace: 'nowrap', marginRight: '4px' });
-
-function CardsSection({ draft, patchDraft, entry, cardCalc, cardPlan }) {
-  const setCard = (id, patch) => patchDraft({ cards: draft.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
-  const addCard = () => patchDraft({
-    cards: [...draft.cards, { id: `K${Date.now().toString(36)}${draft.cards.length}`, issuer: '', outstanding: 0, paidBeforeLoginWithProof: 0, action: 'keep' }],
-  });
-  const lineOf = (id) => ((cardCalc && cardCalc.lines) || []).find((l) => l.id === id);
-  const suggested = new Set((cardPlan && cardPlan.closeCards) || []);
-  const pendingSuggestion = cardPlan && cardPlan.closeCards.some((id) => {
-    const c = draft.cards.find((x) => x.id === id);
-    return c && c.action !== 'close';
-  });
-  const applySuggestion = () => patchDraft({
-    cards: draft.cards.map((c) => (suggested.has(c.id) ? { ...c, ...cardActionPatch(c, 'close') } : c)),
-  });
-  const totalOutstanding = draft.cards.reduce((s, c) => s + (Number(c.outstanding) || 0), 0);
-
-  return (
-    <div style={{ marginTop: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '8px' }}>
-        <div style={{ fontSize: '13px', fontWeight: 700, color: '#333' }}>Credit cards</div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {pendingSuggestion && (
-            <button style={{ ...btnSecSm, color: '#166534', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={applySuggestion}>
-              Apply suggestion — close {cardPlan.closeCards.length} card{cardPlan.closeCards.length === 1 ? '' : 's'} ({fmtINR(cardPlan.closeAmount)})
-              {cardPlan.newEligible != null ? ` → eligible ${fmtINR(cardPlan.newEligible)} (+${fmtINR(cardPlan.gain)})` : ''}
-            </button>
-          )}
-          <button style={btnSecSm} onClick={addCard}>+ Add card</button>
-        </div>
-      </div>
-      {draft.cards.length === 0 ? (
-        <div style={{ fontSize: '12px', color: '#7a8194' }}>No open credit cards.</div>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: `${CARD_COLS.reduce((s, [, w]) => s + w, 0)}px`, tableLayout: 'fixed' }}>
-            <colgroup>{CARD_COLS.map(([, w], i) => <col key={i} style={{ width: w + 'px' }} />)}</colgroup>
-            <thead>
-              <tr>{CARD_COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: ['Outstanding', 'Amount paid', 'Counted'].includes(h) ? 'right' : 'left' }}>{h}</th>)}</tr>
-            </thead>
-            <tbody>
-              {draft.cards.map((c) => {
-                const action = c.action || (c.paidBeforeLoginWithProof > 0 ? 'paid' : 'keep');
-                const line = lineOf(c.id);
-                const share = cardCountedShare(cardCalc, c.id);
-                return (
-                  <tr key={c.id}>
-                    <td style={td}><input style={cellInp} value={c.issuer} onChange={(e) => setCard(c.id, { issuer: e.target.value })} placeholder="Card issuer" title={c.issuer} /></td>
-                    <td style={td}><NumInput value={c.outstanding} onChange={(v) => setCard(c.id, cardOutstandingPatch(c, v))} /></td>
-                    <td style={td}>
-                      <select style={cellSel} value={action} onChange={(e) => setCard(c.id, cardActionPatch(c, e.target.value))}>
-                        {CARD_ACTIONS.map(([v, labelText]) => <option key={v} value={v}>{labelText}</option>)}
-                      </select>
-                    </td>
-                    <td style={td}>
-                      {action === 'paid' && <NumInput value={c.paidBeforeLoginWithProof} onChange={(v) => setCard(c.id, { paidBeforeLoginWithProof: v })} />}
-                      {action === 'close' && <div style={{ ...num, fontSize: '12px' }}>{fmt(c.outstanding)} <span style={{ fontSize: '10px', color: '#7a8194' }}>planned</span></div>}
-                      {action === 'keep' && dash}
-                    </td>
-                    <td style={{ ...td, ...num, fontSize: '12px', fontWeight: 700 }}>
-                      {!cardCalc ? '—' : share == null ? <span style={{ fontWeight: 400, color: '#7a8194' }}>Not counted</span> : fmt(share)}
-                    </td>
-                    <td style={{ ...td, fontSize: '11px', whiteSpace: 'normal', lineHeight: 1.5 }}>
-                      {suggested.has(c.id) && <span style={tag('#dcfce7', '#166534')}>Suggested: close</span>}
-                      {line && !line.paydownAccepted && <span style={{ color: '#b45309', fontWeight: 600 }}>Must reflect in CIBIL before login</span>}
-                    </td>
-                    <td style={td}>
-                      <button style={btnGhostSm} title="Remove card" onClick={() => patchDraft({ cards: draft.cards.filter((x) => x.id !== c.id) })}>✕</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              <tr style={{ background: '#f0f4fa' }}>
-                <td style={{ ...td, fontWeight: 700, fontSize: '12px' }}>Total</td>
-                <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{fmt(totalOutstanding)}</td>
-                <td style={td} colSpan={2} />
-                <td style={{ ...td, ...num, fontWeight: 700, fontSize: '12px' }}>{cardCalc ? fmt(cardCalc.amount) : '—'}</td>
-                <td style={{ ...td, fontSize: '11px', color: '#7a8194', whiteSpace: 'normal' }} colSpan={2}>
-                  {cardCalc ? `${cardCalc.rule}${entry ? ` (${entry.label})` : ''}` : ''}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }

@@ -10,7 +10,7 @@
     "L&TFIN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-10-21",
+  "policy_version": "v2-2026-10-24",
   "sources": {
     "rules": "L&T PL policy flyer + Other Income page + Gauri's template, 21 Oct 2026"
   },
@@ -443,7 +443,8 @@
           "NORTHERN ARC",
           "ARKA FINCAP",
           "BAJAJ HOUSING",
-          "ADITYA BIRLA HOUSING"
+          "ADITYA BIRLA HOUSING",
+          "KISETSU"
         ]
       }
     ],
