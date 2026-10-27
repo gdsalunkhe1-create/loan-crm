@@ -87,9 +87,11 @@ function hasDpd(acc) {
 // An account "has payment history" when the parser produced any DPD reading for it.
 const hasPaymentHistory = (acc) => String(acc.dpds ?? '').trim() !== '' || (acc.lateMonths || []).length > 0;
 
-function emiProgress(acc, reportDate) {
+// Installments since disbursal, counted to today (not the report date). A first
+// interest-only installment counts as one — IndusInd accepts it for BT after 3.
+function emiProgress(acc, today) {
   const tenure = toNum(acc.tenure) || null;
-  let paid = wholeMonthsBetween(parseDate(acc.openDate), reportDate);
+  let paid = wholeMonthsBetween(parseDate(acc.openDate), today);
   if (paid != null && tenure) paid = Math.min(paid, tenure);
   return { emisPaid: paid, emisRemaining: tenure && paid != null ? Math.max(0, tenure - paid) : null };
 }
@@ -190,7 +192,7 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
       loanAmount: toNum(acc.loanAmount), // display only (credit-team sheet column); the engine doesn't use it
       outstanding: toNum(acc.outstanding),
       emi: toNum(acc.emi),
-      ...emiProgress(acc, reportDate),
+      ...emiProgress(acc, today),
       // CIBIL Ownership "Joint"; who pays the EMI / co-applicant income stay for the agent.
       isJoint: /\bjoint\b/i.test(acc.ownership || ''),
       coApplicantIncomeOk: null,
@@ -213,7 +215,7 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
       .forEach((a) => {
         const opened = parseDate(a.openDate);
         if (!opened || opened <= latestSettlement) return;
-        const paid = emiProgress(a, reportDate).emisPaid || 0;
+        const paid = emiProgress(a, today).emisPaid || 0;
         if (!fresh.exists || paid > fresh.emisPaid) fresh = { exists: true, emisPaid: paid };
       });
   }
@@ -710,10 +712,17 @@ export function normCompany(s) {
     .trim();
 }
 
-export const sameCompany = (a, b) => !!normCompany(a) && normCompany(a) === normCompany(b);
+// normCompany without the legal suffix, so the payslip logo "TATA CONSULTANCY
+// SERVICES" = "Tata Consultancy Services Limited".
+const LEGAL_SUFFIX_RE = / (PRIVATE LIMITED|LIMITED|PRIVATE|LLP|INC|CORPORATION|CORP)$/;
+export const normCompanyCore = (s) => normCompany(s).replace(LEGAL_SUFFIX_RE, '').trim();
 
-// match_type 'exact' or 'exact (PVT/LTD form)' (canonical match in the database).
-export const isExactMatch = (row) => /^exact\b/i.test(String((row && row.match_type) || ''));
+export const sameCompany = (a, b) => (!!normCompany(a) && normCompany(a) === normCompany(b))
+  || (!!normCompanyCore(a) && normCompanyCore(a) === normCompanyCore(b));
+
+// Any match_type starting with 'exact': 'exact', 'exact (PVT/LTD form)',
+// 'exact (without Ltd / Pvt Ltd)' (canonical matches in the database).
+export const isExactMatch = (row) => /^exact/i.test(String((row && row.match_type) || ''));
 
 // Company names de-duplicated by normCompany, first spelling kept.
 export function uniqueCompanyNames(names) {
@@ -771,15 +780,26 @@ export function averageNetPay(payslips) {
   return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
 }
 
+// [{ netPay, variablePay }] -> variable pay inside the averaged net pay: averaged
+// over the same payslips (a month without it counts as 0). null if none.
+export function averageVariablePay(payslips) {
+  const counted = (payslips || []).filter((p) => p.netPay > 0);
+  const total = counted.reduce((s, p) => s + (p.variablePay > 0 ? p.variablePay : 0), 0);
+  return total > 0 ? Math.round(total / counted.length) : null;
+}
+
 // Combined pre-fill for the screen. Either row may be null. A payslip net pay,
 // when given, takes priority over the bank-statement salary estimate.
-export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, today = new Date() } = {}) {
+export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, payslipVariablePay = null, today = new Date() } = {}) {
   const c = cibilToProfile(cibilRow, { today });
   const b = bankStatementToProfile(bsaRow);
   const fromPayslip = payslipNetPay > 0;
   return {
     netSalary: fromPayslip ? payslipNetPay : b.salaryFromStatement,
     netSalarySource: fromPayslip ? 'payslip' : b.salaryFromStatement ? 'bank_statement' : null,
+    // Left out by banks that count fixed salary only (policy.exclude_variable_pay).
+    variablePayMonthly: fromPayslip && payslipVariablePay > 0 ? payslipVariablePay : null,
+    variablePaySource: fromPayslip && payslipVariablePay > 0 ? 'payslip' : null,
     salaryAccountBank: b.salaryAccountBank,
     cibilScore: c.cibilScore,
     riskOverride: null,

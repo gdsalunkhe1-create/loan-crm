@@ -1,7 +1,7 @@
 {
   "bank": "HDFC Bank",
   "product": "Personal Loan (salaried)",
-  "policy_version": "v15-2026-10-27",
+  "policy_version": "v16-2026-10-27",
   "sources": {
     "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
     "rules": "Gauri's policy notes, 12 Oct 2026"
@@ -892,7 +892,8 @@
         "POONAWALLA",
         "POONAWALA",
         "PFL",
-        "KOTAK"
+        "KOTAK",
+        "POONAFIN"
       ],
       "note": "Only lenders that give OD/flexi lines are checked (Bajaj, Aditya Birla, Tata Capital, Chola, Poonawalla, Kotak). Navi etc. give term loans only."
     },

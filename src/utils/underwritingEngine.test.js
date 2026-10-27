@@ -464,3 +464,17 @@ test('27 Oct updates: HDFC both, multiple HDFC lates, HDFC BL, co-applicant, clo
   // L&T min CIBIL 720
   expect(evaluateBank(lt, { ...base, cibilScore: 705, company: { categoriesByBank: { lt: 'CAT A' } }, credit: { enquiryList: [] } }).status).toBe('NOT_ELIGIBLE');
 });
+
+test('Abhilash case at IndusInd: POONAFIN = Poonawalla (BT after 3 installments), variable pay left out, no closure suggestion that leaves money negative', () => {
+  const prof = { netSalary: 221702, variablePayMonthly: 30000, cibilScore: 780, company: { categoriesByBank: { indusind: 'A+' } }, cards: [], credit: { enquiryList: [] },
+    loans: [
+      { id: 'pfl', lender: 'POONAFIN', productType: 'PL', outstanding: 1389377, emi: 28000, emisPaid: 3 },
+      { id: 'bajaj', lender: 'BAJAJ FIN LTD', productType: 'PL', outstanding: 795962, emi: 25457, emisPaid: 6, emisRemaining: 42 },
+      { id: 'axis', lender: 'AXIS BANK', productType: 'PL', outstanding: 3397596, emi: 67422, emisPaid: 17, emisRemaining: 67 }] };
+  const r = evaluateBank(indusind, prof);
+  expect(r.status).toBe('ELIGIBLE');
+  expect(r.obligations.loans.find((l) => l.id === 'pfl').bt.ok).toBe(true);
+  expect(r.notes.join()).toMatch(/variable pay ₹30,000 left out/);
+  expect(r.best.netInHand).toBeGreaterThan(0);
+  (r.closurePlan || []).forEach((c) => expect(c.netInHandAfterClosing).toBeGreaterThan(0));
+});

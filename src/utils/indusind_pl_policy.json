@@ -5,7 +5,7 @@
     "INDUSIND"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v5-2026-10-27",
+  "policy_version": "v7-2026-10-27",
   "sources": {
     "rules": "Gauri's IndusInd template, 20 Oct 2026"
   },
@@ -288,7 +288,8 @@
         "match": [
           "POONAWALLA",
           "POONAWALA",
-          "PFL"
+          "PFL",
+          "POONAFIN"
         ]
       },
       {
@@ -451,7 +452,8 @@
         "months": 12
       }
     ],
-    "credit_card_bt": false
+    "credit_card_bt": false,
+    "emi_count_note": "BT after 3 installments since disbursal — a first interest-only installment counts (Gauri, 27 Oct 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -516,5 +518,6 @@
   ],
   "open_items": [
     "Enquiries over 6: hard reject or deviation; own-bank 30-day block?"
-  ]
+  ],
+  "exclude_variable_pay": true
 }

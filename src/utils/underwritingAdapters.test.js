@@ -40,15 +40,26 @@ test('non-BT types stay as full-EMI obligations in the engine', () => {
   expect(r.scenarios).toHaveLength(1);
 });
 
-test('open loans and cards, EMI progress from open date to report date', () => {
+test('open loans and cards, EMI progress from open date to today', () => {
   const p = cibilToProfile({ report_date: '2026-10-09', accounts: [
     acc({ bankName: 'ICICI BANK', openDate: '27/03/2025', tenure: '36', emi: '10,370', outstanding: '83640' }),
     acc({ bankName: 'HDFC BANK', loanType: 'Credit Card', outstanding: '45000', loanAmount: '1,50,000', openDate: '14/02/2024' }),
     acc({ bankName: 'AXIS BANK', status: 'Closed', closedDate: '01/01/2026' }),
-  ] });
+  ] }, { today: new Date(2026, 9, 9) });
   expect(p.loans).toHaveLength(1);
   expect(p.loans[0]).toMatchObject({ productType: 'PL', emi: 10370, emisPaid: 18, emisRemaining: 18 });
   expect(p.cards).toEqual([{ id: 'C1', issuer: 'HDFC BANK', limit: 150000, openDate: '14/02/2024', outstanding: 45000, paidBeforeLoginWithProof: 0, action: 'keep' }]);
+});
+
+test('EMIs paid count to today, not the report date (an old report still shows the latest installments)', () => {
+  // Disbursed 20 Jun 2026; report pulled 01 Aug 2026 (1 installment then); today 27 Oct 2026 -> 4.
+  const row = { report_date: '2026-08-01', accounts: [acc({ bankName: 'INDUSIND BANK', openDate: '20/06/2026', tenure: '48', emi: '15,000', outstanding: '500000' })] };
+  expect(cibilToProfile(row, { today: new Date(2026, 9, 27) }).loans[0]).toMatchObject({ emisPaid: 4, emisRemaining: 44 });
+  // Capped at tenure; no tenure -> remaining unknown.
+  const capped = { report_date: '2026-08-01', accounts: [acc({ openDate: '01/01/2025', tenure: '12' }), acc({ openDate: '01/01/2025' })] };
+  const [a, b] = cibilToProfile(capped, { today: new Date(2026, 9, 27) }).loans;
+  expect(a).toMatchObject({ emisPaid: 12, emisRemaining: 0 });
+  expect(b).toMatchObject({ emisPaid: 21, emisRemaining: null });
 });
 
 test('credit flags: settlement, fresh loan after it, HDFC history, recent DPD', () => {
@@ -56,7 +67,7 @@ test('credit flags: settlement, fresh loan after it, HDFC history, recent DPD', 
     acc({ bankName: 'SHRIRAMFIN', status: 'Post (WO) Settled', closedDate: '10/10/2023' }),
     acc({ bankName: 'HDFC BANK', status: 'Closed', closedDate: '07 Jun 2026', dpds: '1-89 days (×16)', lateMonths: ['2026 JAN', '2025 JAN'] }),
     acc({ bankName: 'ICICI BANK', openDate: '01/01/2025' }),
-  ] });
+  ] }, { today: new Date(2026, 9, 9) });
   expect(p.credit.settlementsOrWO).toBe(1);
   expect(p.credit.hdfcSettlementOrWO).toBe(false);
   expect(p.credit.freshLoanAfterSettlement).toEqual({ exists: true, emisPaid: 21 });
@@ -136,6 +147,28 @@ test('TaxCalculator parseSalaryText reads net pay labels', () => {
   expect(parseSalaryText('Take Home 61,250').netPayMonthly).toBe(61250);
   expect(parseSalaryText('Net Salary 55,000').netPayMonthly).toBe(55000);
   expect(parseSalaryText('Gross 90,000').netPayMonthly).toBe(0);
+});
+
+test('parseSalaryText sums variable earning heads in the earnings table', () => {
+  const tcs = 'Earnings Amount Deductions Amount Basic Salary 45,000 Provident Fund 5,400 House Rent Allowance 22,500 '
+    + 'Performance Pay 8,250 Professional Tax 200 Special Allowance 30,000 Total Earnings 1,05,750 NET PAY 98,150';
+  expect(parseSalaryText(tcs).variablePayMonthly).toBe(8250);
+  // "Performance Bonus" counted once (not again as "Bonus"); several heads add up.
+  const many = 'Earnings Basic 40,000 Performance Bonus 5,000 Incentives 2,000 Commission 1,500 Variable Allowance 500 GROSS PAY 49,000 NET PAY 45,000';
+  expect(parseSalaryText(many).variablePayMonthly).toBe(9000);
+  expect(parseSalaryText('Earnings Basic 40,000 HRA 20,000 NET PAY 55,000').variablePayMonthly).toBe(0);
+  // Outside the earnings table (e.g. a statutory note after net pay) is ignored.
+  expect(parseSalaryText('Earnings Basic 40,000 NET PAY 38,000 Bonus Act eligible 1').variablePayMonthly).toBe(0);
+});
+
+test('averageVariablePay averages over the payslips used for net pay; draft carries it as "from payslip"', () => {
+  const { averageVariablePay } = require('./underwritingAdapters');
+  const slips = [{ netPay: 98150, variablePay: 8250 }, { netPay: 90000, variablePay: 0 }, { netPay: 0, variablePay: 3000 }];
+  expect(averageVariablePay(slips)).toBe(4125);
+  expect(averageVariablePay([{ netPay: 90000 }])).toBeNull();
+  expect(buildProfileDraft(null, null, { payslipNetPay: 94075, payslipVariablePay: 4125 }))
+    .toMatchObject({ variablePayMonthly: 4125, variablePaySource: 'payslip' });
+  expect(buildProfileDraft(null, null, { payslipNetPay: 94075 })).toMatchObject({ variablePayMonthly: null, variablePaySource: null });
 });
 
 describe('employer from payslip', () => {
@@ -850,9 +883,22 @@ describe('Company names: PVT LTD = PRIVATE LIMITED', () => {
     expect(sameCompany('', '')).toBe(false);
   });
 
+  test('normCompanyCore drops the legal suffix: payslip logo name = listed company', () => {
+    const { normCompanyCore } = require('./underwritingAdapters');
+    expect(normCompanyCore('Tata Consultancy Services Limited')).toBe('TATA CONSULTANCY SERVICES');
+    expect(normCompanyCore('Infosys BPM Pvt. Ltd.')).toBe('INFOSYS BPM');
+    expect(normCompanyCore('Deloitte Haskins & Sells LLP')).toBe('DELOITTE HASKINS AND SELLS');
+    expect(normCompanyCore('Oracle Corp')).toBe('ORACLE');
+    expect(normCompanyCore('Limited')).toBe('LIMITED');
+    expect(sameCompany('TATA CONSULTANCY SERVICES', 'Tata Consultancy Services Limited')).toBe(true);
+    expect(sameCompany('Tata Consultancy Services Ltd', 'TATA CONSULTANCY SERVICES PRIVATE LIMITED')).toBe(true);
+    expect(sameCompany('TATA CONSULTANCY', 'Tata Consultancy Services Limited')).toBe(false);
+  });
+
   test('"exact (PVT/LTD form)" counts as exact; suggestions de-duplicated canonically', () => {
     expect(isExactMatch({ match_type: 'exact' })).toBe(true);
     expect(isExactMatch({ match_type: 'exact (PVT/LTD form)' })).toBe(true);
+    expect(isExactMatch({ match_type: 'exact (without Ltd / Pvt Ltd)' })).toBe(true);
     expect(isExactMatch({ match_type: 'fuzzy' })).toBe(false);
     expect(isExactMatch(null)).toBe(false);
     expect(uniqueCompanyNames(['ABC PVT LTD', 'ABC PRIVATE LIMITED', 'ABC Private Ltd.', 'ABCD LTD']))

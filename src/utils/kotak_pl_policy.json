@@ -5,7 +5,7 @@
     "KOTAK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v9-2026-10-27",
+  "policy_version": "v10-2026-10-27",
   "sources": {
     "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
   },
@@ -247,7 +247,8 @@
         "match": [
           "POONAWALLA",
           "POONAWALA",
-          "PFL"
+          "PFL",
+          "POONAFIN"
         ]
       },
       {
@@ -274,7 +275,8 @@
         "POONAWALLA",
         "POONAWALA",
         "PFL",
-        "KOTAK"
+        "KOTAK",
+        "POONAFIN"
       ],
       "note": "Only lenders that give OD/flexi lines are checked (Bajaj, Aditya Birla, Tata Capital, Chola, Poonawalla, Kotak). Navi etc. give term loans only."
     },

@@ -21,7 +21,7 @@ import {
   btnPri, btnSec, btnPriSm, btnSecSm, btnLink, SItem,
 } from '../utils/uiStyles';
 import {
-  buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, summarizeEmployer,
+  buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, summarizeEmployer,
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
@@ -80,7 +80,10 @@ const S = {
 function mergeDraft(prev, changed, sources) {
   const cibil = sources.uploads.cibil?.row || sources.saved?.cibil || null;
   const bsa = sources.uploads.bsa?.row || sources.saved?.bsa || null;
-  const fresh = buildProfileDraft(cibil, bsa, { payslipNetPay: averageNetPay(sources.uploads.payslips) });
+  const fresh = buildProfileDraft(cibil, bsa, {
+    payslipNetPay: averageNetPay(sources.uploads.payslips),
+    payslipVariablePay: averageVariablePay(sources.uploads.payslips),
+  });
   if (!prev || changed === 'all') return fresh;
   if (changed === 'cibil') {
     return {
@@ -97,7 +100,12 @@ function mergeDraft(prev, changed, sources) {
     }
     return next;
   }
-  if (changed === 'payslip') return { ...prev, netSalary: fresh.netSalary, netSalarySource: fresh.netSalarySource };
+  if (changed === 'payslip') {
+    return {
+      ...prev, netSalary: fresh.netSalary, netSalarySource: fresh.netSalarySource,
+      variablePayMonthly: fresh.variablePayMonthly, variablePaySource: fresh.variablePaySource,
+    };
+  }
   return prev;
 }
 
@@ -475,8 +483,11 @@ export default function UnderwritingDesk({ userId, orgId }) {
     return policies.map((p) => {
       const label = p.policy?.bank || p.bank_id;
       const scorecard = p.policy?.scorecard || null;
-      // Salary the bank's figures are on: + co-applicant's where the policy adds it (HDFC, Kotak).
-      const salaryBase = (draft.netSalary || 0) + (p.policy?.co_applicant_income ? draft.coApplicantNetSalary || 0 : 0);
+      // Salary the bank's figures are on (same order as the engine): − variable pay where the
+      // policy counts fixed salary only (IndusInd), + co-applicant's where it adds it (HDFC, Kotak).
+      const fixedOnly = p.policy?.exclude_variable_pay ? Math.max(0, draft.variablePayMonthly || 0) : 0;
+      const salaryBase = Math.max(0, (draft.netSalary || 0) - fixedOnly)
+        + (p.policy?.co_applicant_income ? draft.coApplicantNetSalary || 0 : 0);
       const listed = companyFor(p.bank_id);
       const company = isUnlistedFor(p.policy, listed) && listed.incorporationYear == null ? { ...listed, incorporationYear } : listed;
       const missing = [];
@@ -1263,6 +1274,20 @@ function IncomePanel({ draft, patchDraft, payslips }) {
           )}
         </div>
         <div>
+          <label style={S.label}>Variable pay in net salary (₹/month)</label>
+          <input
+            style={inp}
+            type="number"
+            value={draft.variablePayMonthly ?? ''}
+            onChange={(e) => patchDraft({ variablePayMonthly: numOrNull(e.target.value), variablePaySource: null })}
+            placeholder="Performance pay, bonus, incentives"
+          />
+          {draft.variablePaySource === 'payslip' && (
+            <div style={{ ...S.hint, color: 'var(--warning)', fontWeight: 600 }}>From payslip — confirm</div>
+          )}
+          <div style={S.hint}>IndusInd counts fixed salary only — this amount is left out for banks that exclude variable pay.</div>
+        </div>
+        <div>
           <label style={S.label}>Co-applicant net salary (₹/month)</label>
           <input
             style={inp}
@@ -1410,6 +1435,7 @@ const OBL_COLS = [
   ['Paid', 52], ['Left', 52], ['Treatment / Action', 160], ['Counted', 150], ['', 28],
 ];
 const RIGHT_COLS = new Set(['Loan amt / Limit', 'Outstanding', 'EMI', 'Paid', 'Left', 'Counted']);
+const COL_TIPS = { Paid: 'Installments since disbursal (first may be interest-only)' };
 const OBL_MIN_WIDTH = OBL_COLS.reduce((s, [, w]) => s + w, 0);
 const RED = '#dc2626';
 const AMBER = '#d97706';
@@ -1654,7 +1680,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: `${OBL_MIN_WIDTH}px`, tableLayout: 'fixed' }}>
           <colgroup>{OBL_COLS.map(([, w], i) => <col key={i} style={{ width: w + 'px' }} />)}</colgroup>
-          <thead><tr>{OBL_COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: RIGHT_COLS.has(h) ? 'right' : 'left' }}>{h}</th>)}</tr></thead>
+          <thead><tr>{OBL_COLS.map(([h], i) => <th key={i} style={{ ...th, textAlign: RIGHT_COLS.has(h) ? 'right' : 'left' }} title={COL_TIPS[h]}>{h}</th>)}</tr></thead>
           <tbody>
             {activeLoans.length === 0 && activeCards.length === 0 && (
               <tr><td colSpan={OBL_COLS.length} style={{ ...td, fontSize: '12px', color: '#7a8194' }}>No open loans or credit cards.</td></tr>

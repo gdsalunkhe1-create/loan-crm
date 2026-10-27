@@ -103,6 +103,18 @@ export function parseSalaryText(text) {
   }
   const regularMonthly = Math.max(basic + hra + spl, regularFromRows)
 
+  // Variable earning heads paid in this month's earnings table (Underwriting
+  // Desk: IndusInd counts fixed salary only). One alternation, longest names
+  // first, so "Performance Bonus" is counted once, not also as "Bonus".
+  let variablePay = 0
+  if (isPayslip) {
+    const blockMatch = text.match(/Earnings[\s\S]{0,2000}?(?:GROSS\s*PAY|NET\s*PAY|Total\s*Earnings)/i)
+    const block = blockMatch ? blockMatch[0] : ''
+    const varRe = /\b(Performance\s*Pay|Performance\s*Bonus|Variable\s*Pay|Variable\s*Allowance|Incentives?|Bonus|Commission)\b[^0-9]{0,25}([0-9][0-9,]*\.?[0-9]*)/gi
+    let m
+    while ((m = varRe.exec(block))) variablePay += num(m[2])
+  }
+
   // Payslip figures are monthly -> annualise x12. "Annual Bonus" is already annual.
   const mult = isPayslip ? 12 : 1
   return {
@@ -113,6 +125,7 @@ export function parseSalaryText(text) {
     employerNPSAnnual: Math.round(nps * mult),
     bonusAnnual: Math.round(bonus), // annual as-is
     netPayMonthly: Math.round(netPay),
+    variablePayMonthly: Math.round(variablePay),
     ok: regularMonthly > 0,
     isPayslip,
   }

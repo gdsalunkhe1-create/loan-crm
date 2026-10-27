@@ -383,8 +383,12 @@ function btCandidate(policy, loan) {
 
 export function evaluateBank(policy, profileIn) {
   // Applicant + co-applicant: incomes are added and the bank's normal norms apply to the total.
+  // Banks that count fixed salary only drop variable pay (performance pay, bonus, incentives paid in the month).
+  const varPay = policy.exclude_variable_pay ? Math.max(0, profileIn.variablePayMonthly || 0) : 0;
   const coSal = policy.co_applicant_income ? (profileIn.coApplicantNetSalary || 0) : 0;
-  const profile = coSal > 0 ? { ...profileIn, netSalary: (profileIn.netSalary || 0) + coSal, _coApplicantAdded: coSal } : profileIn;
+  let profile = profileIn;
+  if (varPay > 0) profile = { ...profile, netSalary: Math.max(0, (profile.netSalary || 0) - varPay), _variableRemoved: varPay };
+  if (coSal > 0) profile = { ...profile, netSalary: (profile.netSalary || 0) + coSal, _coApplicantAdded: coSal };
   const out = { bank: policy.bank, policyVersion: policy.policy_version, status: 'ELIGIBLE', reasons: [], warnings: [] };
   const rawCat = profile.company?.categoriesByBank?.[policy.bank_id] ?? profile.company?.category;
   const category = rawCat ? norm(rawCat) : null;
@@ -420,6 +424,7 @@ export function evaluateBank(policy, profileIn) {
   out.risk = risk;
   out.notes = risk.notes;   // informational, e.g. card late payment that this bank accepts
   out.notes.push(...oiNotes);
+  if (profile._variableRemoved) out.notes.push(`${policy.bank} counts fixed salary only — variable pay ${fmtINR(profile._variableRemoved)} left out (net used ${fmtINR(profile.netSalary - (profile._coApplicantAdded || 0))})`);
   if (profile._coApplicantAdded) out.notes.push(`Co-applicant income ${fmtINR(profile._coApplicantAdded)} added — eligibility on combined ${fmtINR(profile.netSalary)} (add the co-applicant's loans to the table)`);
 
   // Obligations
@@ -673,7 +678,8 @@ export function evaluateBank(policy, profileIn) {
       const sim = evaluateBank(policy, { ...profile, _noCardPlan: true,
         loans: (profile.loans || []).map((x) => (x.id === l.id ? { ...x, closedBeforeLoginWithProof: true } : x)) });
       const gain = (sim.best?.eligibleAmount ?? 0) - base;
-      if (gain > 0 && sim.status !== 'NOT_ELIGIBLE') {
+      // Suggest only when the customer still has money in hand after paying the loan off.
+      if (gain > 0 && sim.status !== 'NOT_ELIGIBLE' && (sim.best.netInHand - (l.outstanding || 0)) > 0) {
         plan.push({ id: l.id, lender: l.lender, outstanding: l.outstanding, emi: l.emi, newEligible: sim.best.eligibleAmount, gain, mode: closureMode,
           makesEligible: out.status === 'NOT_ELIGIBLE',
           netInHandAfterClosing: sim.best.netInHand - l.outstanding });

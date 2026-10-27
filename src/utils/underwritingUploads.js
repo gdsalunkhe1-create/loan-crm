@@ -82,7 +82,7 @@ async function firstPageLines(file, password) {
   }
 }
 
-// -> { fileName, month, netPay, employerName } (netPay 0 / employerName null when not found)
+// -> { fileName, month, netPay, variablePay, employerName } (netPay 0 / employerName null when not found)
 async function readPayslip(file, password) {
   // TaxCalculator's own pdf.js loader has no error handler, so a failed CDN load
   // would just hang. Load the same pdf.js build through CibilParser's loader
@@ -105,6 +105,7 @@ async function readPayslip(file, password) {
     fileName: file.name,
     month: detectPayslipMonth(text, file.name),
     netPay: parsed.netPayMonthly || 0,
+    variablePay: parsed.variablePayMonthly || 0, // performance pay / bonus / incentive heads in this month
     employerName: extractEmployerName(text, headerLines),
     // Kept so the screen can re-run the extraction once the lead / CIBIL name is known.
     text,
