@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v8-2026-10-23",
+  "policy_version": "v9-2026-10-27",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -97,9 +97,33 @@
         "loan_min_incl": 1000000,
         "loan_max_excl": 1500000,
         "roi_pct": 12.75
+      },
+      {
+        "cibil_min_incl": 775,
+        "cibil_max_excl": null,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.0,
+        "range": "12-13"
+      },
+      {
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 775,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.0,
+        "range": "12-13"
+      },
+      {
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 750,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.0,
+        "range": "12-13"
       }
     ],
-    "roi_note": "No rate given for loans below 10L - engine uses the highest rate of the score band and flags it",
+    "roi_note": "Below 10L: 12-13% (13% used) for all score bands",
     "max_loan": 12500000
   },
   "min_net_salary": {
@@ -108,7 +132,7 @@
   "company": {
     "unlisted_allowed": false,
     "category_source": "ICICI list in Company Category Checker (Open Market, Preferred, Superprime, Elite, Government)",
-    "category_rule_status": "TO CONFIRM: same rules for all ICICI categories?"
+    "category_rule_status": "All 5 categories allowed, same rules (confirmed)"
   },
   "balance_transfer": {
     "min_emis_paid": {
@@ -351,9 +375,8 @@
     "one_pct_note": "Gold 1%, bank overdraft 1%. NBFC flexi/OD obligation TO CONFIRM",
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
-      "pct_of_emi": null,
-      "rule": "Joint HL: 0 if EMI paid by co-applicant; if applicant pays, check co-applicant income/obligations - if co-applicant can't bear it, 100%",
-      "status": "TO CONFIRM: % when applicant pays and co-applicant income is OK"
+      "pct_of_emi": 50,
+      "rule": "As Kotak: 50% if co-applicant earns enough; 0 if co-applicant pays"
     },
     "payment_before_login": "Loan prepayment/closure before login accepted with source-of-funds verification; card payments must reflect in CIBIL (except ICICI cards)"
   },
@@ -363,9 +386,23 @@
     },
     {
       "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
     }
   ],
-  "hard_rejects_status": "TO CONFIRM: ICICI rules for DPD / settlements / own-bank history",
   "enquiries": {
     "max_90d": 6,
     "deviation_possible": true,
@@ -381,5 +418,10 @@
       "Personal Loan"
     ],
     "note": "Own-bank PL enquiry within 30 days -> bank can't do the case (Gauri, 16 Oct 2026)"
-  }
+  },
+  "own_bank_bad_history_min_count": 2,
+  "open_items": [
+    "6 EMIs or 7 for BT ('more than 6')",
+    "NBFC flexi/OD obligation %"
+  ]
 }

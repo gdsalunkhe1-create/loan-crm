@@ -345,15 +345,17 @@ describe('dpdAccounts for per-bank late-payment rules', () => {
     expect(buildProfileDraft(cardsOnly, null, { today }).credit.loanAccountsEver).toBe(0);
   });
 
-  test('HDFC v8: card late payment is an info note, an HDFC PL late payment rejects', () => {
+  test('HDFC v15: card late payment is an info note; one HDFC late payment is a deviation, two reject', () => {
     const hdfc = require('./hdfc_pl_policy.json');
     const company = { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A' }, confirmedByBank: {} };
     const base = { ...buildProfileDraft(row, null), netSalary: 120000, salaryAccountBank: 'ICICI Bank', company };
     const r = evaluateBank(hdfc, base);
     expect(r.risk.band).toBe('better');
     expect(r.notes.join(' ')).toMatch(/AXIS BANK/);
-    const hdfcPlLate = { ...base, credit: { ...base.credit, dpdAccounts: [...base.credit.dpdAccounts, { lender: 'HDFC BANK', productType: 'PL', inLast12m: false }] } };
-    expect(evaluateBank(hdfc, hdfcPlLate).status).toBe('NOT_ELIGIBLE');
+    const withHdfcLate = (n) => ({ ...base, credit: { ...base.credit, dpdAccounts: [...base.credit.dpdAccounts,
+      ...Array.from({ length: n }, () => ({ lender: 'HDFC BANK', productType: 'PL', inLast12m: false }))] } });
+    expect(evaluateBank(hdfc, withHdfcLate(1)).status).toBe('DEVIATION');
+    expect(evaluateBank(hdfc, withHdfcLate(2)).status).toBe('NOT_ELIGIBLE');
   });
 });
 
@@ -598,8 +600,17 @@ test('closure plan is hidden on a permanent decline, kept during a wait', () => 
   expect(visibleClosurePlan({ status: 'DEVIATION', closurePlan: plan })).toBe(plan);
   expect(visibleClosurePlan({ status: 'NOT_ELIGIBLE', closurePlan: plan })).toEqual([]);
   expect(visibleClosurePlan({ status: 'NOT_ELIGIBLE', eligibleAfterWait: true, closurePlan: plan })).toBe(plan);
+  expect(visibleClosurePlan({ status: 'NOT_ELIGIBLE', softFail: true, closurePlan: plan })).toBe(plan);
   expect(visibleClosurePlan({ status: 'ELIGIBLE' })).toEqual([]);
   expect(visibleClosurePlan(null)).toEqual([]);
+});
+
+test('HDFC closure line reads "Close before login (own funds)"', () => {
+  const fmts = { fmtAmount: (n) => `₹${n}`, fmtLakh: (n) => `${n}` };
+  const c = { id: 'kb', lender: 'KRAZYBEE', outstanding: 40000, newEligible: 2000000, gain: 150000, netInHandAfterClosing: 1700000 };
+  expect(closureLineText({ ...c, mode: 'before_login' }, fmts))
+    .toBe('Close before login (own funds): KRAZYBEE (₹40000) → eligible 2000000 (+150000), in hand 1700000 after paying it');
+  expect(closureLineText({ ...c, mode: 'subject_to_closure' }, fmts)).toMatch(/^Subject to closure of KRAZYBEE \(₹40000\) → eligible/);
 });
 
 describe('Company category per bank', () => {

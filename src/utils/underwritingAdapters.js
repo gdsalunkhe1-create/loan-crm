@@ -421,17 +421,22 @@ export function scorecardTone(scorecard, value) {
 // The engine also words each closure item as a note; the card shows its own line instead.
 export const isClosureNote = (note) => /^Subject to closure/.test(note);
 
-// Closure items to show: none when the bank declines for a permanent reason
-// (only a wait, eligibleAfterWait, keeps the figures).
+// Closure items to show: none when the bank declines for a permanent reason.
+// A wait (eligibleAfterWait) or a soft fail (no EMI room / BT more than
+// eligibility — out.softFail) keeps them: closing a loan can fix those.
 export function visibleClosurePlan(result) {
   if (!result || !Array.isArray(result.closurePlan)) return [];
-  if (result.status === 'NOT_ELIGIBLE' && !result.eligibleAfterWait) return [];
+  if (result.status === 'NOT_ELIGIBLE' && !result.eligibleAfterWait && !result.softFail) return [];
   return result.closurePlan;
 }
 
 // "Subject to closure of KRAZYBEE (₹40,000) → eligible ₹22.5L (+₹1.2L), in hand ₹7.1L after paying it"
+// HDFC (mode 'before_login'): "Close before login (own funds): KRAZYBEE (₹40,000) → eligible …"
 export function closureLineText(c, { fmtAmount, fmtLakh }) {
-  return `Subject to closure of ${c.lender} (${fmtAmount(c.outstanding)}) → eligible ${fmtLakh(c.newEligible)} (+${fmtLakh(c.gain)}), in hand ${fmtLakh(c.netInHandAfterClosing)} after paying it`;
+  const head = c.mode === 'before_login'
+    ? `Close before login (own funds): ${c.lender} (${fmtAmount(c.outstanding)})`
+    : `Subject to closure of ${c.lender} (${fmtAmount(c.outstanding)})`;
+  return `${head} → eligible ${fmtLakh(c.newEligible)} (+${fmtLakh(c.gain)}), in hand ${fmtLakh(c.netInHandAfterClosing)} after paying it`;
 }
 
 // ---- Credit card actions ----

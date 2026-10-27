@@ -45,6 +45,7 @@ function roiSlabsFor(policy, score, category, salary, ownHouse) {
   return all.filter((s) => ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl))
     && (!s.categories || (category && s.categories.map(norm).includes(norm(category))))
     && (s.salary_min_incl == null || (salary ?? 0) >= s.salary_min_incl)
+    && (s.salary_max_excl == null || (salary ?? 0) < s.salary_max_excl)
     && (!s.own_house || ownHouse));
 }
 
@@ -70,7 +71,10 @@ function otherIncomeFor(policy, profile) {
     lines.push({ key, label, raw: Math.round(raw), pct, amount: Math.round(amt) });
   };
   const seg = (r) => (r?.high_salary_min != null && base >= r.high_salary_min ? r.pct_high : r?.pct);
-  if (rules.bonus) add('bonus', 'Bonus & quarterly incentives', (oi.bonusAnnualNet || 0) / 12 + (oi.quarterlyIncentiveNet || 0) / 3, seg(rules.bonus), rules.bonus.cap_pct_of_salary);
+  if (rules.bonus && rules.quarterly) {
+    add('bonus', 'Bonus', (oi.bonusAnnualNet || 0) / 12, seg(rules.bonus), rules.bonus.cap_pct_of_salary);
+    add('quarterly', 'Quarterly incentives', (oi.quarterlyIncentiveNet || 0) / 3, seg(rules.quarterly), rules.quarterly.cap_pct_of_salary);
+  } else if (rules.bonus) add('bonus', 'Bonus & quarterly incentives', (oi.bonusAnnualNet || 0) / 12 + (oi.quarterlyIncentiveNet || 0) / 3, seg(rules.bonus), rules.bonus.cap_pct_of_salary);
   if (rules.monthly_incentive) add('incentive', 'Monthly incentives (6-month avg)', oi.monthlyIncentiveAvg6m, rules.monthly_incentive.pct, rules.monthly_incentive.cap_pct_of_salary);
   if (rules.rental && oi.rentVerified) add('rent', 'Rental income', oi.rentMonthly, seg(rules.rental), rules.rental.cap_pct_of_salary);
   if (rules.pension) add('pension', 'Pension', oi.pensionMonthly, rules.pension.pct, rules.pension.cap_pct_of_salary);
@@ -181,8 +185,15 @@ function hardChecks(policy, profile) {
   const excluded = (policy.company?.excluded_categories || []).map(norm);
   const ownSettled = (c.settledLenders || []).some((l) => isOwnBank(policy, l)) || (policy.bank_id === 'hdfc_bank' && c.hdfcSettlementOrWO);
   const badTypes = policy.own_bank_bad_history_types;   // e.g. ['PL'] — only these products count
+  const ownLate = Array.isArray(c.dpdAccounts)
+    ? c.dpdAccounts.filter((a) => isOwnBank(policy, a.lender) && (!badTypes || badTypes.includes(a.productType))) : [];
+  const ownLateCount = ownLate.reduce((n, a) => n + Math.max(1, a.count12m || 0), 0);
+  const minBad = policy.own_bank_bad_history_min_count || 1;   // e.g. 2 = "multiple repayment issues"
+  if (Array.isArray(c.dpdAccounts) && ownLateCount > 0 && ownLateCount < minBad) {
+    deviations.push(`One late payment on ${policy.bank} account (${ownLate.map((a) => a.lender).join(', ')}) — banker's call`);
+  }
   const ownBad = Array.isArray(c.dpdAccounts)
-    ? c.dpdAccounts.some((a) => isOwnBank(policy, a.lender) && (!badTypes || badTypes.includes(a.productType)))
+    ? ownLateCount >= minBad
     : ((c.dpdLenders || []).some((l) => isOwnBank(policy, l)) || (policy.bank_id === 'hdfc_bank' && c.hdfcBadHistory));
 
   if (!cat) reasons.push(policy.company?.manual_category
@@ -190,7 +201,10 @@ function hardChecks(policy, profile) {
     : `Company not in ${policy.bank} category list (unlisted not allowed)`);
   else if (excluded.includes(norm(cat))) reasons.push(`${cat} not considered by ${policy.bank}`);
   if (has('own_bank_settlement_or_writeoff', 'hdfc_own_settlement_or_writeoff') && ownSettled) reasons.push(`Settlement / write-off with ${policy.bank}`);
-  if (has('own_bank_bad_history', 'bad_hdfc_internal_repayment_history') && ownBad) reasons.push(`Late payment on earlier ${policy.bank} ${badTypes ? badTypes.join('/') : 'loan/card'}`);
+  if (has('own_bank_bad_history', 'bad_hdfc_internal_repayment_history') && ownBad) reasons.push(`${minBad > 1 ? 'Multiple late payments' : 'Late payment'} on earlier ${policy.bank} ${badTypes ? badTypes.join('/') : 'accounts'}`);
+  if (has('own_bank_business_loan') && (profile.loans || []).some((l) => isOwnBank(policy, l.lender) && ['BL', 'BL_SECURED'].includes(l.productType) && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0))) {
+    reasons.push(`Customer has a ${policy.bank} business loan — ${policy.bank} can't do the PL`);
+  }
   if (has('heavy_dpd_late_payments_across_all_trades') && c.dpdAcrossAllTrades) reasons.push('DPD / late payments reported across all accounts');
   if (has('recent_dpd_loans_12m') && Array.isArray(c.dpdAccounts)) {
     const late = c.dpdAccounts.filter((a) => a.inLast12m && !CARD_TYPES.includes(a.productType)).map((a) => a.lender);
@@ -367,7 +381,10 @@ function btCandidate(policy, loan) {
   };
 }
 
-export function evaluateBank(policy, profile) {
+export function evaluateBank(policy, profileIn) {
+  // Applicant + co-applicant: incomes are added and the bank's normal norms apply to the total.
+  const coSal = policy.co_applicant_income ? (profileIn.coApplicantNetSalary || 0) : 0;
+  const profile = coSal > 0 ? { ...profileIn, netSalary: (profileIn.netSalary || 0) + coSal, _coApplicantAdded: coSal } : profileIn;
   const out = { bank: policy.bank, policyVersion: policy.policy_version, status: 'ELIGIBLE', reasons: [], warnings: [] };
   const rawCat = profile.company?.categoriesByBank?.[policy.bank_id] ?? profile.company?.category;
   const category = rawCat ? norm(rawCat) : null;
@@ -403,6 +420,7 @@ export function evaluateBank(policy, profile) {
   out.risk = risk;
   out.notes = risk.notes;   // informational, e.g. card late payment that this bank accepts
   out.notes.push(...oiNotes);
+  if (profile._coApplicantAdded) out.notes.push(`Co-applicant income ${fmtINR(profile._coApplicantAdded)} added — eligibility on combined ${fmtINR(profile.netSalary)} (add the co-applicant's loans to the table)`);
 
   // Obligations
   const loanLines = (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l), bt: btCandidate(policy, l) }));
@@ -574,7 +592,7 @@ export function evaluateBank(policy, profile) {
       topUp: picked.filter((l) => l.bt.topUp).map((l) => l.id),   // subset of bt closed via own-bank top-up
       methods,                                  // [{ key, label, tenure, amount, roi, netInHand }]
       eligibleAmount: top.amount,               // highest of the methods (or the lower of FOIR / multiplier when combine = 'lower')
-      eligibleRule: policy.eligibility.combine === 'lower' ? 'lower' : 'highest',
+      eligibleRule: policy.eligibility.combine === 'lower' ? 'lower' : (policy.eligibility.combine === 'both' ? 'both' : 'highest'),
       eligibleBy: top.key,
       conservativeAmount: conservative,         // lower of FOIR 5y and multiplier (for reference)
       netInHand: top.amount - btOutstanding,    // in hand on the highest method
@@ -585,8 +603,8 @@ export function evaluateBank(policy, profile) {
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
-  if (out.best.eligibleAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.reasons.push('No EMI room after obligations'); }
-  else if (out.best.netInHand < 0) { out.status = 'NOT_ELIGIBLE'; out.reasons.push(`BT outstanding ${fmtINR(out.best.btOutstanding)} is more than the highest eligibility ${fmtINR(out.best.eligibleAmount)}`); }
+  if (out.best.eligibleAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push('No EMI room after obligations'); }
+  else if (out.best.netInHand < 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push(`BT outstanding ${fmtINR(out.best.btOutstanding)} is more than the highest eligibility ${fmtINR(out.best.eligibleAmount)}`); }
   else if (out.deviations.length) out.status = 'DEVIATION';
   if (hc.waits.length && out.status !== 'NOT_ELIGIBLE') {
     // Only a temporary block: keep the figures, mark the bank as not yet possible.
@@ -645,7 +663,8 @@ export function evaluateBank(policy, profile) {
     if (need && !pick.length) out.warnings.unshift(`Card outstanding must come down by ${fmtINR(need)} to remove the CC obligation`);
   }
   // Subject-to-closure: which non-BT loans are worth closing (before login, or from the disbursal where allowed).
-  if (policy.subject_to_closure_allowed && !profile._noCardPlan && out.status !== 'NOT_ELIGIBLE' && out.best) {
+  const closureMode = policy.subject_to_closure_allowed ? 'subject_to_closure' : (policy.closure_before_login ? 'before_login' : null);
+  if (closureMode && !profile._noCardPlan && (out.status !== 'NOT_ELIGIBLE' || out.softFail) && out.best) {
     const base = out.best.eligibleAmount;
     const cands = loanLines.filter((l) => l.obligation.amount > 0 && (l.outstanding || 0) > 0
       && !out.best.bt.includes(l.id) && !CARD_TYPES.includes(l.productType)).slice(0, 8);
@@ -654,15 +673,16 @@ export function evaluateBank(policy, profile) {
       const sim = evaluateBank(policy, { ...profile, _noCardPlan: true,
         loans: (profile.loans || []).map((x) => (x.id === l.id ? { ...x, closedBeforeLoginWithProof: true } : x)) });
       const gain = (sim.best?.eligibleAmount ?? 0) - base;
-      if (gain > (l.outstanding || 0)) {
-        plan.push({ id: l.id, lender: l.lender, outstanding: l.outstanding, emi: l.emi, newEligible: sim.best.eligibleAmount, gain,
+      if (gain > 0 && sim.status !== 'NOT_ELIGIBLE') {
+        plan.push({ id: l.id, lender: l.lender, outstanding: l.outstanding, emi: l.emi, newEligible: sim.best.eligibleAmount, gain, mode: closureMode,
+          makesEligible: out.status === 'NOT_ELIGIBLE',
           netInHandAfterClosing: sim.best.netInHand - l.outstanding });
       }
     }
     plan.sort((a, b) => (b.gain - b.outstanding) - (a.gain - a.outstanding));
     out.closurePlan = plan.slice(0, 3);
     for (const c of out.closurePlan) {
-      out.notes.push(`Subject to closure of ${c.lender} (${fmtINR(c.outstanding)}): eligible ${fmtINR(c.newEligible)} (+${fmtINR(c.gain)})`);
+      out.notes.push(`Subject to closure${c.mode === 'before_login' ? ' (close before login, own funds)' : ''} of ${c.lender} (${fmtINR(c.outstanding)}): eligible ${fmtINR(c.newEligible)} (+${fmtINR(c.gain)})`);
     }
   }
   return out;

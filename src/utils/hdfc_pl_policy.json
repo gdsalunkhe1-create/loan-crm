@@ -1,7 +1,7 @@
 {
   "bank": "HDFC Bank",
   "product": "Personal Loan (salaried)",
-  "policy_version": "v14-2026-10-23",
+  "policy_version": "v15-2026-10-27",
   "sources": {
     "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
     "rules": "Gauri's policy notes, 12 Oct 2026"
@@ -61,7 +61,9 @@
     "foir_formula": "max_emi = net_salary * foir_pct - obligations_after_bt; loan = PV(max_emi, roi, tenure)",
     "multiplier_formula": "loan = (net_salary - obligations_after_bt) * multiplier; grid column chosen on net_salary band, category and risk band",
     "bt_loans": "loans selected for BT are excluded from obligations; their outstanding is paid off from the new loan (net in hand = loan - BT outstanding)",
-    "roi_note": "No separate 6-year rate: 72M uses the same loan-amount ROI slabs (confirmed by Gauri)"
+    "roi_note": "No separate 6-year rate: 72M uses the same loan-amount ROI slabs (confirmed by Gauri)",
+    "combine": "both",
+    "method_note": "Gauri: bad banding -> bank applies multiplier, good banding -> FOIR. Show both, don't decide."
   },
   "min_net_salary": {
     "CAT A": 25000,
@@ -986,8 +988,12 @@
       "treatment": "allowed only after 12 EMIs paid on the post-settlement loan (non-HDFC settlements only)"
     },
     {
-      "rule": "bad_hdfc_internal_repayment_history",
-      "status": "decline"
+      "rule": "own_bank_bad_history",
+      "note": "Multiple repayment issues on any HDFC account in CIBIL -> decline; a single one -> banker's call"
+    },
+    {
+      "rule": "own_bank_business_loan",
+      "note": "Customer has an HDFC business loan -> can't do"
     }
   ],
   "enquiries": {
@@ -995,12 +1001,7 @@
     "note": "HDFC has no enquiry bands"
   },
   "subject_to_closure_allowed": false,
-  "not_yet_provided": [
-    "min CIBIL score",
-    "age limits",
-    "job stability",
-    "min/max loan amount"
-  ],
+  "not_yet_provided": [],
   "risk_band": {
     "source": "Not from HDFC system; CRM gives an indication from CIBIL + banking",
     "indicative_rules": [
@@ -1047,9 +1048,6 @@
   "own_bank_match": [
     "HDFC"
   ],
-  "own_bank_bad_history_types": [
-    "PL"
-  ],
   "risk": {
     "ignore_card_dpd": true
   },
@@ -1059,5 +1057,17 @@
       "Personal Loan"
     ],
     "note": "Own-bank PL enquiry within 30 days -> bank can't do the case (Gauri, 16 Oct 2026)"
+  },
+  "own_bank_bad_history_min_count": 2,
+  "co_applicant_income": true,
+  "closure_before_login": true,
+  "checklist": [
+    "Bachelor: PA (permanent address) verification",
+    "Address proof not required"
+  ],
+  "product_info": {
+    "foreclosure": "after 1 EMI: 4% (1–24 months), 3% (24–36), 2% (36+); 0% on ₹15L+ after 12 months with own funds",
+    "part_payment": "25% allowed twice — after 12 months and after 36 months",
+    "enquiries": "no enquiry limit"
   }
 }

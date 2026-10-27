@@ -10,7 +10,7 @@
     "L&TFIN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v2-2026-10-24",
+  "policy_version": "v3-2026-10-27",
   "sources": {
     "rules": "L&T PL policy flyer + Other Income page + Gauri's template, 21 Oct 2026"
   },
@@ -271,13 +271,13 @@
         "roi_pct": 10.5
       },
       {
-        "loan_min_incl": 0,
+        "loan_min_incl": 1500000,
         "loan_max_excl": null,
         "roi_pct": 11.5
       }
     ],
-    "roi_unconfirmed": true,
-    "roi_note": "Only 'starting 11.50%' and the 10.50% special (Super A/A, 1L+ salary, CIBIL 775+, own house, 15L+) given - full rate card pending",
+    "roi_unconfirmed": false,
+    "roi_note": "15L+: 11.5% (10.5% special). Below 15L not given - highest known rate used and flagged",
     "max_loan": 3000000,
     "max_loan_by_salary": [
       {
@@ -296,8 +296,7 @@
         "max_loan": 1000000
       }
     ],
-    "min_cibil": null,
-    "cibil_note": "Flyer says min 720 but FOIR table has <720 columns - lowest score accepted TO CONFIRM"
+    "min_cibil": 720
   },
   "multiplier_by_salary": {
     "apply_on": "salary",
@@ -371,83 +370,7 @@
     ],
     "own_bank_loans": "top_up",
     "top_up_min_emis": 6,
-    "lender_blacklist": [
-      {
-        "name": "Vivifi (FlexSalary)",
-        "match": [
-          "VIVIFIN",
-          "VIVIFI"
-        ]
-      },
-      {
-        "name": "Small fintech / microfinance",
-        "match": [
-          "POCKETLY",
-          "MPOKKET",
-          "FLEXSALARY",
-          "VIVIFI",
-          "FLEXPAY",
-          "KREDITZY",
-          "OLYV",
-          "TRUE BALANCE",
-          "STASHFIN",
-          "AKARA",
-          "CASHE",
-          "TSLC",
-          "KISSHT",
-          "SI CREVA",
-          "FINNABLE",
-          "MONEYTAP",
-          "BRANCH INTERNATIONAL",
-          "PAYRUPIK",
-          "LENDINGPLATE",
-          "LAZYPAY",
-          "FREO",
-          "MONEYVIEW",
-          "MONEY VIEW",
-          "WHIZDM",
-          "FIBE",
-          "EARLYSALARY",
-          "EARLY SALARY",
-          "SOCIAL WORTH",
-          "BUDDY LOAN",
-          "INDIALENDS",
-          "LOANTAP",
-          "FLEXILOANS",
-          "LENDINGKART",
-          "INDIFI",
-          "NEOGROWTH",
-          "KINARA",
-          "UGRO",
-          "OXYZO",
-          "CREDIT SAISON",
-          "DMI FIN",
-          "DMIFIN",
-          "FINCFRIENDS",
-          "PREFR",
-          "LOANFRONT",
-          "RUPEEREDEE",
-          "SMARTCOIN",
-          "RAPIDRUPEE",
-          "ZYPE",
-          "KRAZYBEE",
-          "KREDITBEE",
-          "PAYSENSE",
-          "MONEYONCLICK",
-          "PAYSME",
-          "RING ",
-          "ZESTMONEY",
-          "HOME CREDIT",
-          "MI FINANCE",
-          "CLIX",
-          "NORTHERN ARC",
-          "ARKA FINCAP",
-          "BAJAJ HOUSING",
-          "ADITYA BIRLA HOUSING",
-          "KISETSU"
-        ]
-      }
-    ],
+    "lender_blacklist": [],
     "lender_lock_in": [
       {
         "name": "IndusInd Bank",
@@ -457,7 +380,7 @@
         "months": 12
       }
     ],
-    "blacklist_note": "L&T NBFC lists not given - all NBFCs except small fintech/microfinance (IndusInd list) TO CONFIRM",
+    "blacklist_note": "Any lender that can give a foreclosure letter (Gauri, 27 Oct 2026)",
     "credit_card_bt": false
   },
   "obligations": {
@@ -522,7 +445,8 @@
     "Not an employee of a partnership / proprietorship firm",
     "Bachelor: PA address + PA TVR",
     "Address proof: Aadhaar / DL / passport / rent agreement / WiFi bill",
-    "Fixed salary (without incentives) meets the minimum salary"
+    "Fixed salary (without incentives) meets the minimum salary",
+    "BT: foreclosure letter from the existing lender"
   ],
   "product_info": {
     "processing_fee": "1.5–2% + GST",
@@ -533,12 +457,9 @@
     "loan_amount": "₹1L–30L"
   },
   "open_items": [
-    "Full ROI rate card",
-    "Lowest CIBIL accepted (<720 columns)",
+    "Rate below 15L",
+    "Bonus for salary 1L+",
     "Govt category: in list or manual?",
-    "Unlisted companies",
-    "NBFC BT lists",
-    "Bonus treatment for salary 1L+",
     "Mumbai: include Thane / Navi Mumbai?"
   ]
 }

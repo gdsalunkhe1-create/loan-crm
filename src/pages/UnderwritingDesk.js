@@ -475,18 +475,20 @@ export default function UnderwritingDesk({ userId, orgId }) {
     return policies.map((p) => {
       const label = p.policy?.bank || p.bank_id;
       const scorecard = p.policy?.scorecard || null;
+      // Salary the bank's figures are on: + co-applicant's where the policy adds it (HDFC, Kotak).
+      const salaryBase = (draft.netSalary || 0) + (p.policy?.co_applicant_income ? draft.coApplicantNetSalary || 0 : 0);
       const listed = companyFor(p.bank_id);
       const company = isUnlistedFor(p.policy, listed) && listed.incorporationYear == null ? { ...listed, incorporationYear } : listed;
       const missing = [];
       if (!(draft.netSalary > 0)) missing.push('Enter the net monthly salary');
       if (!company) missing.push('Search the company to get its category');
-      if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
+      if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
       try {
         // One bad policy must never blank the page: errors stay on that bank's card.
         const result = evaluateBank(p.policy, { ...draft, city, company: { ...company, categoriesByBank, confirmedByBank } });
-        return { bankId: p.bank_id, version: p.version, label, scorecard, productInfo: p.policy?.product_info || null, result };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, productInfo: p.policy?.product_info || null, result };
       } catch (e) {
-        return { bankId: p.bank_id, version: p.version, label, scorecard, error: e.message || String(e) };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, error: e.message || String(e) };
       }
     });
   }, [draft, policies, companyFor, incorporationYear, city]);
@@ -621,7 +623,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               entry={r}
               loans={draft.loans}
               cards={draft.cards}
-              netSalary={draft.netSalary}
+              netSalary={r.salaryBase}
               scorecardValue={(draft.scorecardByBank || {})[r.bankId] || null}
               onScorecard={(v) => patchDraft(scorecardPatch(draft.scorecardByBank, r.bankId, v))}
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
@@ -1259,6 +1261,17 @@ function IncomePanel({ draft, patchDraft, payslips }) {
           {draft.netSalarySource === 'bank_statement' && (
             <div style={{ ...S.hint, color: 'var(--warning)', fontWeight: 600 }}>From bank statement — confirm against payslip</div>
           )}
+        </div>
+        <div>
+          <label style={S.label}>Co-applicant net salary (₹/month)</label>
+          <input
+            style={inp}
+            type="number"
+            value={draft.coApplicantNetSalary ?? ''}
+            onChange={(e) => patchDraft({ coApplicantNetSalary: numOrNull(e.target.value) })}
+            placeholder="Optional"
+          />
+          <div style={S.hint}>Added for HDFC and Kotak; add the co-applicant&apos;s loans in the obligations table</div>
         </div>
         <div>
           <label style={S.label}>Salary account bank</label>
@@ -1921,7 +1934,10 @@ function ScorecardSelect({ scorecard, value, onChange }) {
 function ClosurePlan({ plan, onMarkClosed }) {
   return plan.map((c) => (
     <div key={c.id} style={{ marginTop: '6px', padding: '8px 12px', borderRadius: '8px', background: '#f0fdf4', color: '#166534', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-      <span style={{ flex: 1, minWidth: '220px' }}>{closureLineText(c, { fmtAmount: fmtR, fmtLakh: fmtL })}</span>
+      <span style={{ flex: 1, minWidth: '220px' }}>
+        {c.makesEligible && <span style={{ ...tag('#166534', '#fff'), marginRight: '6px' }}>Makes eligible</span>}
+        {closureLineText(c, { fmtAmount: fmtR, fmtLakh: fmtL })}
+      </span>
       <button style={{ ...btnSecSm, padding: '2px 8px', fontSize: '11px' }} title="Set Treatment to Closed before login (proof)" onClick={() => onMarkClosed(c.id)}>Mark closed</button>
     </div>
   ));
@@ -1954,6 +1970,11 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
         </span>
       </div>
       {isLowerRule(best) && <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>Lower of FOIR &amp; multiplier</div>}
+      {isBothRule(best) && (
+        <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>
+          FOIR and multiplier — bank decides (good banding → FOIR, bad banding → multiplier)
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
@@ -1967,6 +1988,8 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
       {/* Not eligible: only the red reasons, plus the card plan when closing cards could change that. */}
       {notEligible && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
       {notEligible && !afterWait && result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
+      {/* Soft fail (no EMI room / BT more than eligibility): closing a loan can fix it. Empty for permanent reasons. */}
+      {notEligible && !afterWait && closurePlan.length > 0 && <ClosurePlan plan={closurePlan} onMarkClosed={onMarkClosed} />}
 
       {/* Temporary block (own-bank enquiry wait): the figures still apply once the wait is over. */}
       {afterWait && (
@@ -2058,6 +2081,8 @@ function OtherIncomeTable({ otherIncome, netSalary }) {
 
 // IndusInd: the bank gives the lower of its best FOIR figure and the multiplier figure.
 const isLowerRule = (scenario) => !!(scenario && scenario.eligibleRule === 'lower');
+// HDFC: FOIR and multiplier both shown; the bank picks by banding, so no row is marked.
+const isBothRule = (scenario) => !!(scenario && scenario.eligibleRule === 'both');
 
 const GREEN = '#166534';
 const MUTED = '#9aa1b2';
@@ -2085,7 +2110,7 @@ function EligibilityTable({ result }) {
           {best.methods.map((m) => {
             const isMult = isMultiplierMethod(m);
             const ind = !!m.indicative;
-            const highest = !ind && m.key === best.eligibleBy && m.amount > 0;
+            const highest = !ind && !isBothRule(best) && m.key === best.eligibleBy && m.amount > 0;
             const rowStyle = ind ? { color: MUTED, fontStyle: 'italic' } : highest ? { background: '#f0fdf4' } : undefined;
             const multText = isMult && multiplierText(m);
             return (

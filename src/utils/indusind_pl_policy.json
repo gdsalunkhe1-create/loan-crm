@@ -5,7 +5,7 @@
     "INDUSIND"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v4-2026-10-24",
+  "policy_version": "v5-2026-10-27",
   "sources": {
     "rules": "Gauri's IndusInd template, 20 Oct 2026"
   },
@@ -58,7 +58,7 @@
           "CAT B",
           "CAT G"
         ],
-        "note": "A+ and CAT G treated like CAT A/B - TO CONFIRM"
+        "note": "A+ and CAT G same as CAT A (confirmed)"
       },
       "C": {
         "categories": [
@@ -79,7 +79,8 @@
           {
             "salary_min_incl": 75000,
             "salary_max_excl": null,
-            "foir_pct": 60
+            "foir_pct": 65,
+            "foir_pct_own_house": 70
           }
         ],
         "tenure_slabs": [
@@ -91,7 +92,7 @@
             ]
           }
         ],
-        "note": "Eligibility on 4 years (tenure can be 5). 75K+ FOIR not given - 60% used, TO CONFIRM"
+        "note": "Eligibility on 4 years (tenure can be 5). 75K+: 65%, own house 70%"
       },
       "UNLISTED": {
         "categories": [
@@ -147,8 +148,7 @@
       {
         "categories": [
           "CAT C1000",
-          "CAT C 1000",
-          "UNLISTED"
+          "CAT C 1000"
         ],
         "loan_min_incl": 1500000,
         "loan_max_excl": null,
@@ -157,8 +157,7 @@
       {
         "categories": [
           "CAT C1000",
-          "CAT C 1000",
-          "UNLISTED"
+          "CAT C 1000"
         ],
         "loan_min_incl": 1000000,
         "loan_max_excl": 1500000,
@@ -167,15 +166,14 @@
       {
         "categories": [
           "CAT C1000",
-          "CAT C 1000",
-          "UNLISTED"
+          "CAT C 1000"
         ],
         "loan_min_incl": 0,
         "loan_max_excl": 1000000,
         "roi_pct": 13.0
       }
     ],
-    "roi_note": "Unlisted uses CAT C1000 rates - TO CONFIRM",
+    "roi_note": "Unlisted: 11% (confirmed)",
     "max_loan": 7500000,
     "min_cibil": 705
   },
@@ -330,29 +328,51 @@
         "match": [
           "NAVI"
         ]
-      }
-    ],
-    "conflict_note": "Tata Capital, Piramal, L&T Finance, IIFL, SMFG/Fullerton in both lists - NOT BT until confirmed. Navi confirmed BT (23 Oct 2026).",
-    "lender_blacklist": [
+      },
       {
-        "name": "Listed as both allowed and never - confirm",
+        "name": "Tata Capital",
         "match": [
           "TATA CAPITAL",
           "TATA CAP",
           "TATACAP",
           "TCL",
-          "TCFSL",
-          "PIRAMAL",
+          "TCFSL"
+        ]
+      },
+      {
+        "name": "Piramal Finance",
+        "match": [
+          "PIRAMAL"
+        ]
+      },
+      {
+        "name": "L&T Finance",
+        "match": [
           "L&T FIN",
+          "L AND T FIN",
           "LT FINANCE",
           "LTFIN",
           "LTFS",
-          "IIFL",
+          "L&TFIN"
+        ]
+      },
+      {
+        "name": "IIFL Finance",
+        "match": [
+          "IIFL"
+        ]
+      },
+      {
+        "name": "SMFG India Credit",
+        "match": [
           "SMFG",
           "SMICC",
           "FULLERTON"
         ]
-      },
+      }
+    ],
+    "conflict_note": "Tata Capital, Piramal, L&T, IIFL, SMFG confirmed BT (27 Oct 2026)",
+    "lender_blacklist": [
       {
         "name": "Small fintech / microfinance",
         "match": [
@@ -495,10 +515,6 @@
     "Net salary only — bonus not counted"
   ],
   "open_items": [
-    "Tata Capital / Piramal / L&T / IIFL / SMFG / Navi: BT allowed or not? (in both lists)",
-    "A+ and CAT G rules",
-    "CAT C1000 FOIR for 75K+",
-    "Unlisted ROI",
-    "Enquiries: hard reject or deviation; own-bank 30-day block?"
+    "Enquiries over 6: hard reject or deviation; own-bank 30-day block?"
   ]
 }

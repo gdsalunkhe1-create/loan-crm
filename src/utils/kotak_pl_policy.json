@@ -5,7 +5,7 @@
     "KOTAK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v8-2026-10-23",
+  "policy_version": "v9-2026-10-27",
   "sources": {
     "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
   },
@@ -107,6 +107,17 @@
         "loan_max_excl": 1000000,
         "roi_pct": 14.0,
         "range": "13-14"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "salary_max_excl": 50000,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": null,
+        "roi_pct": 12.0,
+        "range": "11-12"
       }
     ],
     "roi_unconfirmed": false,
@@ -360,9 +371,7 @@
   },
   "subject_to_closure_allowed": true,
   "open_items": [
-    "Super green/Green with a live home loan: keep 75% rule and 6 years at 75K+?",
-    "Amber with a home loan: also 50%?",
-    "Rate for CAT A/B with salary under 50K and loan 10L+ (11% used, flagged)",
+    "Foreclosure % after 36 months",
     "CC 5% exemption below salary?",
     "card late payment: reject or note?"
   ],
@@ -448,6 +457,31 @@
         "max_loan": 750000
       }
     },
-    "note": "Gauri 19 Oct 2026. Super green/Green WITH a live HL keep the salary-slab FOIR + 75% HL rule (to confirm)."
-  }
+    "note": "Green/Super green with HL: usual case — salary FOIR with 75% at 75K+. Amber with HL: same 50%."
+  },
+  "other_income": {
+    "bonus": {
+      "pct": 50,
+      "note": "Last 2 years' bonus ÷ 48 (= 50% of the yearly bonus as a monthly value)"
+    },
+    "quarterly": {
+      "pct": 70,
+      "note": "4 quarters × 70% ÷ 12"
+    },
+    "monthly_incentive": {
+      "pct": 70,
+      "note": "6-month average × 70%"
+    },
+    "rental": {
+      "pct": 70
+    }
+  },
+  "co_applicant_income": true,
+  "product_info": {
+    "foreclosure": "0% after 1 year on ₹20L+ with own funds (any category); otherwise 4% up to 36 months",
+    "part_payment": "same charges as foreclosure"
+  },
+  "checklist": [
+    "Address proof: KYC document, bank statement, card statement, loan statement or WiFi bill"
+  ]
 }

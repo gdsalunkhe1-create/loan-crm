@@ -139,9 +139,10 @@ test('HDFC: card late payment does not lower band; late payment on HDFC PL rejec
   const card = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'AXIS BANK', productType: 'CC', inLast12m: true }] } });
   expect(card.risk.band).toBe('better');
   expect(card.notes.join()).toMatch(/still does the case/);
+  // 27 Oct: a single late payment on any HDFC account is the banker's call; multiple ones decline
   const ownCard = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK', productType: 'CC', inLast12m: true }] } });
-  expect(ownCard.status).toBe('ELIGIBLE');
-  const ownPl = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK LTD', productType: 'PL', inLast12m: false }] } });
+  expect(ownCard.status).toBe('DEVIATION');
+  const ownPl = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK LTD', productType: 'PL', inLast12m: false, count12m: 3 }] } });
   expect(ownPl.status).toBe('NOT_ELIGIBLE');
   const plLate = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'SBI', productType: 'PL', inLast12m: true }] } });
   expect(plLate.risk.band).toBe('lower');
@@ -369,7 +370,7 @@ test('IndusInd: unlisted company, first-time borrower cap, DPD window, OD 2%, lo
     { id: 'hdb', lender: 'HDB FINANCIAL', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 4 },
   ] }));
   expect(ob.obligations.loans.find((l) => l.id === 'od').obligation.amount).toBe(2000);
-  expect(ob.obligations.loans.find((l) => l.id === 'tcl').bt.ok).toBe(false);
+  expect(ob.obligations.loans.find((l) => l.id === 'tcl').bt.ok).toBe(true);   // confirmed 27 Oct
   expect(ob.obligations.loans.find((l) => l.id === 'hdb').bt.ok).toBe(true);
   const lock = evaluateBank(policy, { ...base, loans: [{ id: 'ib', lender: 'INDUSIND BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 8 }] });
   expect(lock.obligations.loans[0].bt.why).toMatch(/IndusInd Bank lock-in/);
@@ -385,7 +386,7 @@ test('L&T: FOIR by NTH x CIBIL x category, lower of FOIR & multiplier, city mini
   const m = c.best.methods.find((x) => x.key === 'multiplier');
   expect(m.multiplier).toBe(20);
   expect(c.best.eligibleRule).toBe('lower');
-  expect(evaluateBank(lt, p({ netSalary: 120000, cibilScore: 705 })).foirPct).toBe(65);
+  expect(evaluateBank(lt, p({ netSalary: 120000, cibilScore: 705 })).status).toBe('NOT_ELIGIBLE');   // min CIBIL 720
   const top = evaluateBank(lt, p({ netSalary: 120000, company: { categoriesByBank: { lt: 'Super CAT A' } } }));
   expect(top.best.methods.some((x) => x.key === 'multiplier')).toBe(false);   // NA above 50K
   expect(top.best.methods.filter((x) => x.key.startsWith('foir')).map((x) => x.tenure)).toEqual([60, 72]);
@@ -429,7 +430,37 @@ test('No card-closing suggestion when it would not raise eligibility; Kisetsu (C
     cards: [{ id: 'c1', issuer: 'ICICI BANK', outstanding: 11425 }] });
   expect(r.cardPlan).toBeUndefined();
   expect(r.warnings.join()).not.toMatch(/^Close /);
-  const l = evaluateBank(lt, { ...base, netSalary: 87867, cibilScore: 777, company: { categoriesByBank: { lt: 'CAT A' } }, credit: { enquiryList: [] },
+  const l = evaluateBank(indusind, { ...base, netSalary: 87867, cibilScore: 777, company: { categoriesByBank: { indusind: 'CAT A' } }, credit: { enquiryList: [] },
     loans: [{ id: 'k', lender: 'KISETSU', productType: 'PL', outstanding: 104693, emi: 9617, emisPaid: 13, emisRemaining: 11 }] });
   expect(l.obligations.loans[0].bt.ok).toBe(false);
+});
+
+test('27 Oct updates: HDFC both, multiple HDFC lates, HDFC BL, co-applicant, closure before login; ICICI <10L 13%; Kotak other income; IndusInd lenders & C1000; L&T 720', () => {
+  const h = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK', productType: 'CC', inLast12m: false, count12m: 0 }] } });
+  expect(h.status).toBe('DEVIATION');                                           // single HDFC late -> banker's call
+  const h2 = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK', productType: 'CC', count12m: 1 }, { lender: 'HDFC BANK LTD', productType: 'PL', count12m: 2 }] } });
+  expect(h2.status).toBe('NOT_ELIGIBLE');
+  expect(evaluateBank(policy, { ...base, loans: [...base.loans, { id: 'bl', lender: 'HDFC BANK', productType: 'BL', outstanding: 500000, emi: 15000, emisPaid: 10 }] }).reasons.join()).toMatch(/business loan/);
+  expect(evaluateBank(policy, base).best.eligibleRule).toBe('both');
+  const co = evaluateBank(policy, { ...base, coApplicantNetSalary: 50000 });
+  expect(co.foirPct).toBe(70);
+  expect(co.notes.join()).toMatch(/Co-applicant income/);
+  // closure before login suggested at HDFC for a small non-BT loan
+  const cl = evaluateBank(policy, { ...base, loans: [...base.loans, { id: 'kb', lender: 'KREDITBEE', productType: 'PL', outstanding: 30000, emi: 8000, emisPaid: 8, emisRemaining: 5 }] });
+  expect(cl.closurePlan.map((x) => x.id)).toContain('kb');
+  expect(cl.closurePlan[0].mode).toBe('before_login');
+  // ICICI below 10L at 13%
+  const ic = evaluateBank(icici, { ...iBase, netSalary: 42000, cards: [], loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 10000, emisPaid: 20, emisRemaining: 200 }] });
+  expect(ic.best.methods[0].roi).toBe(13);
+  // Kotak other income: bonus 50%, quarterly 70%, incentive 70%, rent 70%
+  const k = evaluateBank(kotak, { ...base, loans: [], company: { categoriesByBank: { kotak: 'CAT A' } }, credit: { enquiryList: [] },
+    otherIncome: { bonusAnnualNet: 120000, quarterlyIncentiveNet: 30000, monthlyIncentiveAvg6m: 10000, rentMonthly: 20000, rentVerified: true } });
+  expect(k.otherIncome.lines.map((x) => [x.key, x.amount])).toEqual([['bonus', 5000], ['quarterly', 7000], ['incentive', 7000], ['rent', 14000]]);
+  // IndusInd: Tata Capital now BT; C1000 75K+ 65% / own house 70%
+  const ind = evaluateBank(indusind, { ...base, netSalary: 90000, cibilScore: 760, company: { categoriesByBank: { indusind: 'CAT C1000' } }, credit: { enquiryList: [] },
+    loans: [{ id: 'tcl', lender: 'TCL', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 10 }] });
+  expect(ind.obligations.loans[0].bt.ok).toBe(true);
+  expect(ind.foirPct).toBe(65);
+  // L&T min CIBIL 720
+  expect(evaluateBank(lt, { ...base, cibilScore: 705, company: { categoriesByBank: { lt: 'CAT A' } }, credit: { enquiryList: [] } }).status).toBe('NOT_ELIGIBLE');
 });
