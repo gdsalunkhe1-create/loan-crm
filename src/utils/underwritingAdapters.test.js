@@ -150,13 +150,18 @@ test('TaxCalculator parseSalaryText reads net pay labels', () => {
 });
 
 test('parseSalaryText sums variable earning heads in the earnings table', () => {
-  const tcs = 'Earnings Amount Deductions Amount Basic Salary 45,000 Provident Fund 5,400 House Rent Allowance 22,500 '
-    + 'Performance Pay 8,250 Professional Tax 200 Special Allowance 30,000 Total Earnings 1,05,750 NET PAY 98,150';
-  expect(parseSalaryText(tcs).variablePayMonthly).toBe(8250);
+  const withBonus = 'Earnings Amount Deductions Amount Basic Salary 45,000 Provident Fund 5,400 House Rent Allowance 22,500 '
+    + 'Bonus 8,250 Professional Tax 200 Special Allowance 30,000 Total Earnings 1,05,750 NET PAY 98,150';
+  expect(parseSalaryText(withBonus).variablePayMonthly).toBe(8250);
   // "Performance Bonus" counted once (not again as "Bonus"); several heads add up.
   const many = 'Earnings Basic 40,000 Performance Bonus 5,000 Incentives 2,000 Commission 1,500 Variable Allowance 500 GROSS PAY 49,000 NET PAY 45,000';
   expect(parseSalaryText(many).variablePayMonthly).toBe(9000);
   expect(parseSalaryText('Earnings Basic 40,000 HRA 20,000 NET PAY 55,000').variablePayMonthly).toBe(0);
+  // TCS: Performance Pay is a regular monthly component, not variable pay.
+  const tcs = 'Tata Consultancy Services Earnings Amount Deductions Amount Basic Salary 60,000 Provident Fund 7,200 '
+    + 'House Rent Allowance 30,000 Professional Tax 200 Performance Pay 30,000 Income Tax 18,000 '
+    + 'Special Allowance 45,000 Total Earnings 1,65,000 NET PAY 1,39,600';
+  expect(parseSalaryText(tcs).variablePayMonthly).toBe(0);
   // Outside the earnings table (e.g. a statutory note after net pay) is ignored.
   expect(parseSalaryText('Earnings Basic 40,000 NET PAY 38,000 Bonus Act eligible 1').variablePayMonthly).toBe(0);
 });

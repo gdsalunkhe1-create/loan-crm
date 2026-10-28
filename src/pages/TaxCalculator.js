@@ -106,11 +106,12 @@ export function parseSalaryText(text) {
   // Variable earning heads paid in this month's earnings table (Underwriting
   // Desk: IndusInd counts fixed salary only). One alternation, longest names
   // first, so "Performance Bonus" is counted once, not also as "Bonus".
+  // "Performance Pay" is not here: it is a regular monthly component (e.g. TCS).
   let variablePay = 0
   if (isPayslip) {
     const blockMatch = text.match(/Earnings[\s\S]{0,2000}?(?:GROSS\s*PAY|NET\s*PAY|Total\s*Earnings)/i)
     const block = blockMatch ? blockMatch[0] : ''
-    const varRe = /\b(Performance\s*Pay|Performance\s*Bonus|Variable\s*Pay|Variable\s*Allowance|Incentives?|Bonus|Commission)\b[^0-9]{0,25}([0-9][0-9,]*\.?[0-9]*)/gi
+    const varRe = /\b(Performance\s*Bonus|Variable\s*Pay|Variable\s*Allowance|Incentives?|Bonus|Commission)\b[^0-9]{0,25}([0-9][0-9,]*\.?[0-9]*)/gi
     let m
     while ((m = varRe.exec(block))) variablePay += num(m[2])
   }

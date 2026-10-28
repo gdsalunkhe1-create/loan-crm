@@ -1280,7 +1280,7 @@ function IncomePanel({ draft, patchDraft, payslips }) {
             type="number"
             value={draft.variablePayMonthly ?? ''}
             onChange={(e) => patchDraft({ variablePayMonthly: numOrNull(e.target.value), variablePaySource: null })}
-            placeholder="Performance pay, bonus, incentives"
+            placeholder="Bonus, incentives, commission"
           />
           {draft.variablePaySource === 'payslip' && (
             <div style={{ ...S.hint, color: 'var(--warning)', fontWeight: 600 }}>From payslip — confirm</div>
