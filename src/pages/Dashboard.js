@@ -25,6 +25,7 @@ import CamCalculator from './CamCalculator'
 import CompanyCategoryChecker from './CompanyCategoryChecker'
 import UnderwritingDesk from './UnderwritingDesk'
 import DateInput from '../components/DateInput'
+import DateRangeFilter from './DateRangeFilter'
 import TimeInput from '../components/TimeInput'
 import SaveBsaToLead from '../components/SaveBsaToLead'
 import ChampionChangeAnimation from '../components/ChampionChangeAnimation'
@@ -345,20 +346,6 @@ const filterClayCity = {
   outline:'none',
   appearance:'none',
   WebkitAppearance:'none',
-  boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
-}
-const filterClayDate = {
-  padding:'8px 12px',
-  borderRadius:8,
-  border:'1.5px solid #d1d5db',
-  background:'white',
-  color:'#374151',
-  fontWeight:500,
-  fontSize:13,
-  cursor:'pointer',
-  outline:'none',
-  colorScheme:'light',
-  minWidth:130,
   boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
 }
 const filterSearchStyle = {
@@ -4093,10 +4080,8 @@ function AgentDashboard({ userId }) {
                 </select>
                 <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',color:'#6b7280',fontSize:9,pointerEvents:'none',fontWeight:700}}>▼</span>
               </div>
-              <DateInput value={agentDateFrom} onChange={e=>setAgentDateFrom(e.target.value)}
-                style={{...filterClayDate,flexShrink:0}}/>
-              <DateInput value={agentDateTo} onChange={e=>setAgentDateTo(e.target.value)}
-                style={{...filterClayDate,flexShrink:0}}/>
+              <DateRangeFilter from={agentDateFrom} to={agentDateTo}
+                onChange={(from,to)=>{ setAgentDateFrom(from); setAgentDateTo(to) }}/>
             </div>
 
             {/* Active stage-filter banner — a stage filter persists across the whole
