@@ -202,6 +202,31 @@ describe('employer from payslip', () => {
     expect(extractEmployerName('Basic 40,000 Net Pay 52,000', ['Payslip - March 2026', 'Emp Code: 1042'])).toBeNull();
   });
 
+  // TCS: company name only in the logo image; the first text line is a table header.
+  const tcsLines = ['Employee Details Payment & Leave Details Location Details', 'Emp. No. 2345678 Name ABHILASH K', 'Base Br. TCS - HYDERABAD', 'Bank Name ICICI Bank'];
+  const tcsText = tcsLines.join('\n') + '\nEarnings Basic Salary 60,000 Performance Pay 30,000 NET PAY 1,39,600';
+
+  test('TCS logo-only payslip: header row and field rows skipped, "TCS" alias used (not the salary bank)', () => {
+    expect(extractEmployerName(tcsText, tcsLines)).toBe('Tata Consultancy Services Limited');
+    expect(extractEmployerName(tcsText, [])).toBe('Tata Consultancy Services Limited');
+  });
+
+  test('a real company line still wins over aliases; bank row alone gives no employer', () => {
+    const lines = ['XYZ Private Limited', ...tcsLines];
+    expect(extractEmployerName(tcsText, lines)).toBe('XYZ Private Limited');
+    const bankOnly = ['Employee Details Payment & Leave Details Location Details', 'Bank Name ICICI Bank', 'Bank A/c No: HDFC Bank 50100123'];
+    expect(extractEmployerName(bankOnly.join('\n'), bankOnly)).toBeNull();
+    // Employer bank itself is still found when it is not in the bank row.
+    expect(extractEmployerName('Bank Name ICICI Bank\nHDFC BANK Payslip for March 2026', [])).toBe('HDFC Bank Limited');
+  });
+
+  test('email domain fallback maps to the same alias', () => {
+    const lines = ['Employee Details Payment & Leave Details Location Details', 'Bank Name SBI'];
+    expect(extractEmployerName('Email ravi.k@infosys.com', lines)).toBe('Infosys Limited');
+    expect(extractEmployerName('Email ravi@tech-mahindra.com', lines)).toBe('Tech Mahindra Limited');
+    expect(extractEmployerName('Email ravi@gmail.com', lines)).toBeNull();
+  });
+
   test('variants expand and shorten company suffixes', () => {
     expect(companyNameVariants('Acme Technologies Pvt. Ltd.')).toEqual([
       'ACME TECHNOLOGIES PVT. LTD',

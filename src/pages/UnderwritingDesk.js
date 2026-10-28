@@ -783,7 +783,9 @@ function UploadPanel({ uploads, employer, docs, saveTarget, onSaveToLead, onCibi
             {uploads.payslips.map((p, i) => (
               <UploadedLine key={`${p.fileName}-${i}`} name={p.month ? `${p.month} — ${p.fileName}` : p.fileName} onRemove={() => onRemove('payslip', i)}>
                 {p.netPay > 0 ? `Net pay ${fmtR(p.netPay)}` : <span style={{ color: 'var(--warning)' }}>Net pay not found — not counted</span>}
-                {p.employerName ? ` · ${p.employerName}` : ''}
+                {p.employerName ? ` · ${p.employerName}` : (
+                  <span style={{ color: 'var(--warning)' }}> · Company not found on the payslip (logo may be an image) — type it</span>
+                )}
               </UploadedLine>
             ))}
             {employer.differs && (

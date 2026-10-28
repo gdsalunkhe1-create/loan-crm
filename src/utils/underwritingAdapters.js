@@ -608,6 +608,64 @@ const ADDRESS_RE = /\b\d{6}\b|\b(?:road|rd|street|floor|nagar|sector|plot|buildi
 
 const tidy = (s) => String(s || '').replace(/\s+/g, ' ').replace(/^[\s:,.\-–]+|[\s:,\-–]+$/g, '').trim();
 
+// Table headers such as "Employee Details Payment & Leave Details Location Details":
+// a line where most words are payslip field words is never the employer.
+const HEADER_WORDS = new Set(['EMPLOYEE', 'EMPLOYER', 'DETAILS', 'PAYMENT', 'LEAVE', 'LOCATION', 'EARNINGS', 'DEDUCTIONS',
+  'PAYSLIP', 'SALARY', 'SLIP', 'STATEMENT', 'MONTH', 'PERIOD', 'BANK', 'NAME', 'PAN', 'UAN', 'GRADE', 'DESIGNATION',
+  'DEPARTMENT', 'ATTENDANCE', 'SUMMARY', 'AMOUNT', 'TOTAL', 'NET', 'PAY', 'INFORMATION', 'ASSOCIATE']);
+function isHeaderLine(l) {
+  const words = normalizeName(l).split(' ').filter((w) => /[A-Z]/.test(w));
+  return words.length > 0 && words.filter((w) => HEADER_WORDS.has(w)).length > words.length / 2;
+}
+// A "<field> <value>" row ("Base Br. TCS - HYDERABAD", "Bank Name ICICI Bank"), not a heading.
+const FIELD_ROW_RE = /^(?:Base\s*Br(?:anch)?\b|Br\.)/i;
+const isFieldRow = (l) => FIELD_ROW_RE.test(l) || (NEXT_FIELD_RE.exec(` ${l}`) || {}).index === 0;
+// The salary bank's row: "Bank Name ICICI Bank", "Bank A/c No: …" (removed before alias search).
+const BANK_ROW_RE = /\bBank[ \t]*(?:Name|A\/?c(?:count)?|Account)(?:[ \t]*(?:No\.?|Number))?[ \t]*[:\-–]?[ \t]*(?:(?:[A-Za-z&.]+[ \t]+){0,3}?Bank\b|[A-Za-z&.]+)/gi;
+
+// Short forms printed on payslips whose company name is only in the logo
+// (e.g. TCS "Base Br. TCS - HYDERABAD") -> the full name to search. Used only
+// when no company line is found.
+const EMPLOYER_ALIASES = [
+  [/\bTCS\b/i, 'Tata Consultancy Services Limited'],
+  [/\bINFOSYS\b/i, 'Infosys Limited'],
+  [/\bWIPRO\b/i, 'Wipro Limited'],
+  [/\bHCL(?:TECH)?\b/i, 'HCL Technologies Limited'],
+  [/\b(?:CTS|COGNIZANT)\b/i, 'Cognizant Technology Solutions India Private Limited'],
+  [/\bACCENTURE\b/i, 'Accenture Solutions Private Limited'],
+  [/\bCAPGEMINI\b/i, 'Capgemini Technology Services India Limited'],
+  [/\bTECH\s*MAHINDRA\b|\bTECHM\b/i, 'Tech Mahindra Limited'],
+  [/\bIBM\b/i, 'IBM India Private Limited'],
+  [/\bLTI\s*MINDTREE\b|\bLTIM\b/i, 'LTIMindtree Limited'],
+  [/\bDELOITTE\b/i, 'Deloitte Shared Services India LLP'],
+  [/\bGENPACT\b/i, 'Genpact India Private Limited'],
+  [/\bAMAZON\b/i, 'Amazon Development Centre (India) Private Limited'],
+  [/\bHDFC\s*BANK\b/i, 'HDFC Bank Limited'],
+  [/\bICICI\s*BANK\b/i, 'ICICI Bank Limited'],
+];
+// name@tcs.com -> the domain's alias (email domain without dots/hyphens, e.g. hcltech, techmahindra).
+const EMAIL_DOMAIN_ALIASES = {
+  tcs: 'TCS', infosys: 'INFOSYS', wipro: 'WIPRO', hcl: 'HCL', hcltech: 'HCLTECH', cognizant: 'COGNIZANT',
+  accenture: 'ACCENTURE', capgemini: 'CAPGEMINI', techmahindra: 'TECH MAHINDRA', ibm: 'IBM', ltimindtree: 'LTIMINDTREE',
+  deloitte: 'DELOITTE', genpact: 'GENPACT', amazon: 'AMAZON', hdfcbank: 'HDFC BANK', icicibank: 'ICICI BANK',
+};
+
+// Earliest known short form in the text (bank rows ignored), then an email domain.
+function employerFromAliases(source) {
+  const s = String(source || '').replace(BANK_ROW_RE, ' ');
+  let best = null;
+  for (const [re, name] of EMPLOYER_ALIASES) {
+    const m = s.match(re);
+    if (m && (!best || m.index < best.index)) best = { index: m.index, name };
+  }
+  if (best) return best.name;
+  for (const m of s.matchAll(/[\w.+-]+@([A-Za-z0-9-]+)(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g)) {
+    const alias = EMAIL_DOMAIN_ALIASES[m[1].toLowerCase().replace(/-/g, '')];
+    if (alias) return EMPLOYER_ALIASES.find(([re]) => re.test(alias))[1];
+  }
+  return null;
+}
+
 // Cut a run-on value after its last company word ("ACME PVT LTD Payslip for …" -> "ACME PVT LTD").
 function trimAfterCompanyWord(s) {
   const matches = [...s.matchAll(COMPANY_WORD_RE)];
@@ -682,17 +740,19 @@ export function extractEmployerName(text, headerLines = [], { knownNames = [] } 
 
   // A top line carrying a company word (PVT / LTD / LLP / …).
   for (const l of top) {
-    if (isEmployee(l) || !l.match(COMPANY_WORD_RE)) continue;
+    if (isEmployee(l) || isHeaderLine(l) || /\bBank\s*(?:Name|A\/?c|Account)\b/i.test(l) || !l.match(COMPANY_WORD_RE)) continue;
     const s = tidy(trimAfterCompanyWord(l));
     if (s.length >= 3 && !NOT_COMPANY_LINE_RE.test(s)) return s;
   }
-  // Otherwise the first heading-like line that isn't a title, address, number or label.
+  // Otherwise the first heading-like line that isn't a title, table header,
+  // field row, address, number or label.
   for (const l of top) {
-    if (NOT_COMPANY_LINE_RE.test(l) || ADDRESS_RE.test(l) || isEmployee(l) || /[:]/.test(l)) continue;
+    if (NOT_COMPANY_LINE_RE.test(l) || isHeaderLine(l) || isFieldRow(l) || ADDRESS_RE.test(l) || isEmployee(l) || /[:]/.test(l)) continue;
     if ((l.match(/\d/g) || []).length > 3 || !/[A-Za-z]{3,}/.test(l)) continue;
     return l;
   }
-  return null;
+  // Logo-only header: a known short form (TCS, CTS, HCL …) or the email domain.
+  return employerFromAliases([...lines, text].join('\n'));
 }
 
 const normalizeName = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
