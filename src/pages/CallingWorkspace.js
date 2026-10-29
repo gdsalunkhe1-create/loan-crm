@@ -1,7 +1,8 @@
 /* eslint-disable */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../supabase'
-import { buildIST, toDbTimestamp, formatIST } from '../utils/timeUtils'
+import { buildIST, formatIST } from '../utils/timeUtils'
+import { istToday, scheduleDueDate, callbackTimeProblem, defaultCallbackSlot, CALLBACK_TIME_MESSAGES } from '../utils/callbackTime'
 import CallState from '../plugins/CallState'
 import TimeInput from '../components/TimeInput'
 import {
@@ -413,7 +414,38 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
     if(disp.label==='Callback') setShowFollowUp(true)
   }
 
+  // A save creates a callback task when the disposition is Callback/Lead, or the
+  // agent moved the stage to Callback/Lead (an unchanged Lead stage alone doesn't
+  // count, so routine saves on Lead-stage leads behave as before). Such a save
+  // is blocked until the date/time is valid and in the future.
+  const needsCallback=disposition==='Callback'||disposition==='Lead'||
+    ((leadStage==='Callback'||leadStage==='Lead')&&leadStage!==lead?.status)
+  const callbackProblem=needsCallback?callbackTimeProblem(followUpDate,followUpTime):null
+  const [,setCallbackRecheck]=useState(0)
+
+  // Pre-fill the next-full-hour slot only once a callback is actually needed —
+  // followUpDate/Time also feed leads.follow_up_date, so filling them up front
+  // would overwrite it on every non-callback save. If the agent switches away
+  // without touching the pre-filled values, clear them again for the same reason.
+  const autoSlotRef=useRef(null)
+  useEffect(()=>{
+    if(needsCallback){
+      if(!followUpDate&&!followUpTime){
+        const slot=defaultCallbackSlot()
+        autoSlotRef.current=slot
+        setFollowUpDate(slot.date)
+        setFollowUpTime(slot.time)
+      }
+    }else if(autoSlotRef.current&&followUpDate===autoSlotRef.current.date&&followUpTime===autoSlotRef.current.time){
+      autoSlotRef.current=null
+      setFollowUpDate('')
+      setFollowUpTime('')
+    }
+  },[needsCallback])
+
   const handleSaveAndNext=async()=>{
+    // Final gate, re-checked at click time; the re-render surfaces the message.
+    if(needsCallback&&callbackTimeProblem(followUpDate,followUpTime)){ setCallbackRecheck(n=>n+1); return }
     setCallJustEnded(false)
     setCallNotConnected(false)
     setSaving(true)
@@ -482,10 +514,11 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
       if(onSave) onSave({lead:updateData, call:savedCall})
 
-      // Create callback task if needed
-      if(disposition==='Callback' && followUpDate && followUpTime){
-        await supabase.from('tasks').insert([{
-          title:       `Callback: ${lead?.full_name||''}`,
+      // Create callback task if needed (date/time validated at the top)
+      if(needsCallback){
+        const isCallback=disposition==='Callback'||(disposition!=='Lead'&&leadStage==='Callback')
+        const {error:taskErr}=await supabase.from('tasks').insert([{
+          title:       `${isCallback?'Callback':'Follow-up'}: ${lead?.full_name||''}`,
           lead_id:     lead?.id,
           assigned_to: userId,
           priority:    'High',
@@ -494,9 +527,10 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
           // tasks.due_date is `timestamptz` — must be written as an explicit
           // UTC instant (toDbTimestamp) or Postgres stores it 5h30m off.
           // See src/utils/timeUtils.js for the full explanation.
-          due_date:    toDbTimestamp(buildIST(followUpDate,followUpTime)),
+          due_date:    scheduleDueDate(followUpDate,followUpTime),
           org_id:      orgId
         }])
+        if(taskErr) alert('Call saved, but the callback was NOT scheduled: '+taskErr.message)
       }
 
       if(onSave) onSave(updateData)
@@ -940,23 +974,25 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
             </div>
 
             {/* CALLBACK SCHEDULER */}
-            {(showFollowUp||disposition==='Callback')&&(
+            {(showFollowUp||needsCallback)&&(
               <div style={{background:'#FFFAF0',border:'1px solid #F6E05E',borderRadius:12,padding:16}}>
                 <div style={{fontSize:14,fontWeight:800,color:'#744210',marginBottom:12,display:'flex',alignItems:'center',gap:8}}><IconCalendar size={16}/>Schedule Callback</div>
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12}}>
                   <div>
                     <label style={{display:'block',fontSize:13,fontWeight:700,color:'#111827',marginBottom:6}}>Date</label>
                     <input type="date" value={followUpDate} onChange={e=>setFollowUpDate(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
+                      min={istToday()}
                       style={{width:'100%',padding:'10px 12px',border:'2px solid #E2E8F0',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box'}}/>
+                    {callbackProblem==='date'&&<div style={{color:'#DC2626',fontSize:12,marginTop:4}}>{CALLBACK_TIME_MESSAGES.date}</div>}
                   </div>
                   <div>
                     <label style={{display:'block',fontSize:13,fontWeight:700,color:'#111827',marginBottom:6}}>Time</label>
                     <TimeInput value={followUpTime} onChange={e=>setFollowUpTime(e.target.value)}
+                      error={callbackProblem==='time'||callbackProblem==='past'?CALLBACK_TIME_MESSAGES[callbackProblem]:null}
                       style={{width:'100%',padding:'10px 12px',border:'2px solid #E2E8F0',borderRadius:8,fontSize:14,outline:'none',boxSizing:'border-box'}}/>
                   </div>
                 </div>
-                {followUpDate&&followUpTime&&(
+                {followUpDate&&followUpTime&&!callbackProblem&&(
                   <div style={{marginTop:10,fontSize:13,color:'#744210',fontWeight:600}}>
                     ✅ Reminder set: {formatIST(buildIST(followUpDate,followUpTime))}
                   </div>
@@ -966,8 +1002,8 @@ export default function CallingWorkspace({ lead, userId, onClose, onNext, onSave
 
             {/* SAVE & NEXT */}
             <div style={{marginTop:'auto',display:'flex',gap:10}}>
-              <button onClick={handleSaveAndNext} disabled={saving}
-                style={{flex:1,padding:'14px 20px',background:saving?'#E5E7EB':'#059669',color:saving?'#9CA3AF':'white',border:'none',borderRadius:12,fontSize:15,fontWeight:700,cursor:saving?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+              <button onClick={handleSaveAndNext} disabled={saving||!!callbackProblem}
+                style={{flex:1,padding:'14px 20px',background:saving||callbackProblem?'#E5E7EB':'#059669',color:saving||callbackProblem?'#9CA3AF':'white',border:'none',borderRadius:12,fontSize:15,fontWeight:700,cursor:saving||callbackProblem?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
                 <IconPlayerSkipForward size={17}/>
                 {saving?'Saving…':totalInQueue>0&&queuePosition>=totalInQueue?'Save & Finish ✓':'Save & Next Lead'}
               </button>

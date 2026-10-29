@@ -27,6 +27,7 @@ import UnderwritingDesk from './UnderwritingDesk'
 import DateInput from '../components/DateInput'
 import DateRangeFilter from './DateRangeFilter'
 import TimeInput from '../components/TimeInput'
+import { scheduleDueDate, callbackTimeProblem, defaultCallbackSlot, CALLBACK_TIME_MESSAGES } from '../utils/callbackTime'
 import SaveBsaToLead from '../components/SaveBsaToLead'
 import ChampionChangeAnimation from '../components/ChampionChangeAnimation'
 import { getChampionGender } from '../constants/championAnimationConfig'
@@ -592,6 +593,7 @@ function AgentDashboard({ userId }) {
   const [callbackLead,setCallbackLead]           = useState(null)
   const [callbackDate,setCallbackDate]           = useState('')
   const [callbackTime,setCallbackTime]           = useState('10:00')
+  const [,setCallbackRecheck]                    = useState(0)
   const [callbackNotes,setCallbackNotes]         = useState('')
   const [callbackModalKind,setCallbackModalKind] = useState('Callback')
   const [callbackTasks,setCallbackTasks]         = useState([])
@@ -643,8 +645,9 @@ function AgentDashboard({ userId }) {
     setCallLogDisposition(draft.disposition||'')
     setCallLogStage(draft.stage||lead.status||'New')
     setCallLogNotes(draft.notes||'')
-    setCallLogCallbackDate(draft.callbackDate||istToday())
-    setCallLogCallbackTime(draft.callbackTime||'10:00')
+    const slot=defaultCallbackSlot()
+    setCallLogCallbackDate(draft.callbackDate||slot.date)
+    setCallLogCallbackTime(draft.callbackTime||slot.time)
     setShowCallLogModal(true)
     showToast('Restored your unsaved call log for '+(lead.full_name||'this lead'))
   },[myLeads])
@@ -1154,27 +1157,23 @@ function AgentDashboard({ userId }) {
     showToast('Marked as Attempted')
   }
 
-  // Combine the date+time pickers into the canonical IST value, then convert
-  // to the absolute instant Postgres needs for the `timestamptz` due_date
-  // column (see timeUtils.js — this conversion is the actual bug fix).
-  const scheduleDueDate=(dateStr,timeStr)=>toDbTimestamp(buildIST(dateStr,timeStr))
-
-  // If the composed datetime is already in the past, roll forward by exactly 1 day
-  // so agents who pick an earlier time slot don't silently create overdue tasks.
-  const safeDueDate=(dateStr,timeStr)=>{
-    const candidate=buildIST(dateStr,timeStr)
-    const safe=compareIST(candidate,nowIST())<=0 ? addMinutes(candidate,24*60) : candidate
-    return toDbTimestamp(safe)
-  }
+  // Callback date/time problems (null | 'date' | 'time' | 'past'), re-evaluated
+  // every render against the current IST time (see utils/callbackTime.js). A
+  // blocked click calls recheckCallbackTimes() so a time that passed while the
+  // form sat open shows its message straight away.
+  const recheckCallbackTimes=()=>setCallbackRecheck(n=>n+1)
+  const callbackProblem=showCallbackModal?callbackTimeProblem(callbackDate,callbackTime):null
+  const rescheduleProblem=rescheduleTaskId?callbackTimeProblem(rescheduleDate,rescheduleTime):null
 
   const rescheduleCallback=async(taskId)=>{
-    if(!rescheduleDate||!rescheduleTime) return
+    // Final gate: never move a callback to a missing, malformed or past time.
+    if(callbackTimeProblem(rescheduleDate,rescheduleTime)){ recheckCallbackTimes(); return }
     const iso=scheduleDueDate(rescheduleDate,rescheduleTime)
     console.log('[Action] rescheduleCallback → DB write task:', taskId, 'due:', iso)
     // Clearing last_snooze_at is what stops the OLD reminder cadence and lets
     // the new due_date start a fresh 5-min-before window.
     const {error}=await supabase.from('tasks').update({due_date:iso,status:'Pending',last_snooze_at:null}).eq('id',taskId)
-    if(error){ console.error('[Action] rescheduleCallback error:', error); return }
+    if(error){ console.error('[Action] rescheduleCallback error:', error); showToast('Could not reschedule: '+error.message,'error'); return }
     delete snoozedTasksRef.current[taskId]
     setMyTasks(prev=>[...prev.map(t=>t.id===taskId?{...t,due_date:iso,status:'Pending',last_snooze_at:null}:t)])
     setRescheduleTaskId(null)
@@ -1183,8 +1182,10 @@ function AgentDashboard({ userId }) {
   }
 
   const scheduleCallback=async()=>{
-    if(!callbackLead||!callbackDate||!callbackTime) return
-    const iso=safeDueDate(callbackDate,callbackTime)
+    if(!callbackLead) return
+    // Final gate: never save a missing, malformed or past callback, whatever called us.
+    if(callbackTimeProblem(callbackDate,callbackTime)){ recheckCallbackTimes(); return }
+    const iso=scheduleDueDate(callbackDate,callbackTime)
     console.log('[Action] scheduleCallback → DB write lead:', callbackLead.id, 'task due:', iso)
     const {data:lData,error:lErr}=await supabase.from('leads').update({status:callbackModalKind}).eq('id',callbackLead.id).select()
     if(lErr){ console.error('[Action] scheduleCallback lead update error:', lErr); showToast('Could not update stage: '+lErr.message,'error') }
@@ -1492,8 +1493,9 @@ function AgentDashboard({ userId }) {
     const isMirrorLead=lead&&Array.isArray(lead.mirror_agents)&&lead.mirror_agents.includes(userId)&&lead.assigned_to!==userId
     if(newStatus==='Callback'||newStatus==='Lead'){
       setCallbackLead(lead)
-      setCallbackDate(istToday())
-      setCallbackTime('10:00')
+      const slot=defaultCallbackSlot()
+      setCallbackDate(slot.date)
+      setCallbackTime(slot.time)
       setCallbackNotes('')
       setCallbackModalKind(newStatus)
       setShowCallbackModal(true)
@@ -2092,15 +2094,28 @@ function AgentDashboard({ userId }) {
     setCallLogDisposition('')
     setCallLogStage(freshLead?.status||'New')
     setCallLogNotes('')
-    setCallLogCallbackDate(istToday())
-    setCallLogCallbackTime('10:00')
+    const slot=defaultCallbackSlot()
+    setCallLogCallbackDate(slot.date)
+    setCallLogCallbackTime(slot.time)
     setShowCallLogModal(true)
   }
 
   const openCallingWorkspace=(lead)=>{ handleCall(lead) }
 
+  // A Callback/Lead save must carry a valid, future callback time — the whole
+  // save is blocked otherwise (modal and localStorage draft stay intact).
+  const callLogNeedsCallback=callLogDisposition==='Callback'||callLogDisposition==='Lead'||callLogStage==='Lead'
+  const callLogProblem=showCallLogModal&&callLogNeedsCallback?callbackTimeProblem(callLogCallbackDate,callLogCallbackTime):null
+
   const saveCallLog=async(disbursedAmountOverride,loginAmountOverride)=>{
     if(!callLogLead) return
+    if(callLogNeedsCallback&&callbackTimeProblem(callLogCallbackDate,callLogCallbackTime)){
+      // The Disbursed/Login amount prompts close this modal before re-calling us,
+      // so reopen it to show the message instead of failing invisibly.
+      setShowCallLogModal(true)
+      recheckCallbackTimes()
+      return
+    }
     if(callLogStage==='Disbursed'&&!callLogLead.disbursed_amount&&disbursedAmountOverride==null){
       setDisbursedAmountLead(callLogLead)
       setDisbursedAmountInput('')
@@ -2181,23 +2196,26 @@ function AgentDashboard({ userId }) {
         created_at: new Date().toISOString()
       },...prev])
 
-      // Handle callback/follow-up task creation if needed
-      if((callLogDisposition==='Callback'||callLogDisposition==='Lead'||callLogStage==='Lead')&&callLogCallbackDate&&callLogCallbackTime){
+      // Handle callback/follow-up task creation if needed (time validated at the top)
+      let taskErr=null
+      if(callLogNeedsCallback){
         const prefix=callLogDisposition==='Callback'?'Callback: ':'Follow-up: '
-        await supabase.from('tasks').insert([{
+        const {error}=await supabase.from('tasks').insert([{
           lead_id:callLogLead.id,
           assigned_to:userId,
           title:prefix+callLogLead.full_name,
-          due_date:safeDueDate(callLogCallbackDate,callLogCallbackTime),
+          due_date:scheduleDueDate(callLogCallbackDate,callLogCallbackTime),
           status:'Pending',
           priority:'High',
           org_id:profile?.org_id
         }])
+        if(error){ console.error('[Action] saveCallLog task insert error:', error); taskErr=error }
         fetchCallbackTasks()
       }
 
       // Show success immediately, don't wait for background refresh
-      showToast('Call logged successfully')
+      if(taskErr) showToast('Call logged, but the callback was NOT scheduled: '+taskErr.message,'error')
+      else showToast('Call logged successfully')
 
       // Close modal and reset fields immediately
       setShowCallLogModal(false)
@@ -2670,11 +2688,13 @@ function AgentDashboard({ userId }) {
                             onChange={e=>setRescheduleDate(e.target.value)}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
                           <TimeInput value={rescheduleTime} onChange={e=>setRescheduleTime(e.target.value)}
+                            error={rescheduleProblem==='time'||rescheduleProblem==='past'?CALLBACK_TIME_MESSAGES[rescheduleProblem]:null}
                             style={{flex:1,padding:'7px 8px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:12,outline:'none'}}/>
                         </div>
+                        {rescheduleProblem==='date'&&<div style={{color:'#DC2626',fontSize:12,marginTop:-4,marginBottom:8}}>{CALLBACK_TIME_MESSAGES.date}</div>}
                         <div style={{display:'flex',gap:6}}>
-                          <button onClick={()=>{ rescheduleCallback(task.id); alreadyBuzzingRef.current=false }} disabled={!rescheduleDate}
-                            style={{flex:1,padding:'7px',background:rescheduleDate?'#185FA5':'#CBD5E0',color:'white',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:rescheduleDate?'pointer':'not-allowed'}}>
+                          <button onClick={()=>{ rescheduleCallback(task.id); alreadyBuzzingRef.current=false }} disabled={!!rescheduleProblem}
+                            style={{flex:1,padding:'7px',background:!rescheduleProblem?'#185FA5':'#CBD5E0',color:'white',border:'none',borderRadius:6,fontSize:12,fontWeight:600,cursor:!rescheduleProblem?'pointer':'not-allowed'}}>
                             Confirm
                           </button>
                           <button onClick={()=>setRescheduleTaskId(null)}
@@ -2691,7 +2711,7 @@ function AgentDashboard({ userId }) {
                         style={{flex:1,padding:'9px 6px',background:'#10B981',color:'white',border:'none',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
                         <IconPhone size={13}/>Call Now
                       </button>
-                      <button onClick={()=>{ setRescheduleTaskId(task.id);setRescheduleDate(istToday());setRescheduleTime('10:00') }}
+                      <button onClick={()=>{ setRescheduleTaskId(task.id);const slot=defaultCallbackSlot();setRescheduleDate(slot.date);setRescheduleTime(slot.time) }}
                         style={{flex:1,padding:'9px 6px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
                         <IconClockHour4 size={13}/>Reschedule
                       </button>
@@ -2860,10 +2880,12 @@ function AgentDashboard({ userId }) {
                     onChange={e=>setCallbackDate(e.target.value)}
                     style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}
                     onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
+                  {callbackProblem==='date'&&<div style={{color:'#DC2626',fontSize:12,marginTop:4}}>{CALLBACK_TIME_MESSAGES.date}</div>}
                 </div>
                 <div>
                   <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:5,textTransform:'uppercase'}}>Time *</label>
                   <TimeInput value={callbackTime} onChange={e=>setCallbackTime(e.target.value)}
+                    error={callbackProblem==='time'||callbackProblem==='past'?CALLBACK_TIME_MESSAGES[callbackProblem]:null}
                     style={{width:'100%',padding:'9px 10px',border:'1.5px solid #E2E8F0',borderRadius:8,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                 </div>
               </div>
@@ -2876,8 +2898,8 @@ function AgentDashboard({ userId }) {
                   onFocus={e=>e.target.style.borderColor='#185FA5'} onBlur={e=>e.target.style.borderColor='#E2E8F0'}/>
               </div>
               <div style={{display:'flex',gap:8}}>
-                <button onClick={scheduleCallback} disabled={!callbackDate}
-                  style={{flex:1,padding:'12px',background:callbackDate?'#185FA5':'#CBD5E0',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:callbackDate?'pointer':'not-allowed',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                <button onClick={scheduleCallback} disabled={!!callbackProblem}
+                  style={{flex:1,padding:'12px',background:!callbackProblem?'#185FA5':'#CBD5E0',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:!callbackProblem?'pointer':'not-allowed',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
                   <IconClockHour4 size={15}/>{callbackModalKind==='Callback'?'Schedule Callback':'Schedule Follow-up'}
                 </button>
                 <button onClick={skipCallback}
@@ -3108,11 +3130,13 @@ function AgentDashboard({ userId }) {
                       <DateInput min={istToday()} value={callLogCallbackDate}
                         onChange={e=>setCallLogCallbackDate(e.target.value)}
                         style={{width:'100%',padding:'8px 10px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
+                      {callLogProblem==='date'&&<div style={{color:'#DC2626',fontSize:12,marginTop:4}}>{CALLBACK_TIME_MESSAGES.date}</div>}
                     </div>
                     <div>
                       <label style={{display:'block',fontSize:11,fontWeight:600,color:'#6B7280',marginBottom:4}}>Time *</label>
                       <TimeInput value={callLogCallbackTime}
                         onChange={e=>setCallLogCallbackTime(e.target.value)}
+                        error={callLogProblem==='time'||callLogProblem==='past'?CALLBACK_TIME_MESSAGES[callLogProblem]:null}
                         style={{width:'100%',padding:'8px 10px',border:'1.5px solid #93C5FD',borderRadius:6,fontSize:13,outline:'none',boxSizing:'border-box',color:'#111827'}}/>
                     </div>
                   </div>
@@ -3129,8 +3153,8 @@ function AgentDashboard({ userId }) {
               </div>
               {/* Buttons */}
               <div style={{display:'flex',gap:8}}>
-                <button onClick={saveCallLog} disabled={savingCallLog}
-                  style={{flex:1,padding:'12px',background:savingCallLog?'#93C5FD':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingCallLog?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                <button onClick={saveCallLog} disabled={savingCallLog||!!callLogProblem}
+                  style={{flex:1,padding:'12px',background:savingCallLog?'#93C5FD':callLogProblem?'#CBD5E0':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingCallLog||callLogProblem?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
                   <IconDeviceFloppy size={15}/>{savingCallLog?'Saving…':'Save Call Log'}
                 </button>
                 <button onClick={()=>{ setShowCallLogModal(false); clearCallLogDraft() }}
