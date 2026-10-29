@@ -3153,7 +3153,7 @@ function AgentDashboard({ userId }) {
               </div>
               {/* Buttons */}
               <div style={{display:'flex',gap:8}}>
-                <button onClick={saveCallLog} disabled={savingCallLog||!!callLogProblem}
+                <button onClick={()=>saveCallLog()} disabled={savingCallLog||!!callLogProblem}
                   style={{flex:1,padding:'12px',background:savingCallLog?'#93C5FD':callLogProblem?'#CBD5E0':'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:14,fontWeight:600,cursor:savingCallLog||callLogProblem?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
                   <IconDeviceFloppy size={15}/>{savingCallLog?'Saving…':'Save Call Log'}
                 </button>
