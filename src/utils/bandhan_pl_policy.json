@@ -1,0 +1,295 @@
+{
+  "bank": "Bandhan Bank",
+  "bank_id": "bandhan",
+  "own_bank_match": [
+    "BANDHAN"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v3-2026-10-28",
+  "sources": {
+    "rules": "Bandhan PL one-pager (Smart Snippets) + Gauri: max loan now ₹40L, 28 Oct 2026"
+  },
+  "eligibility": {
+    "method": "foir_only",
+    "foir_slabs": [
+      {
+        "salary_min_incl": 100000,
+        "salary_max_excl": null,
+        "foir_pct": 70,
+        "foir_pct_own_house_or_hl": 75
+      },
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": 100000,
+        "foir_pct": 70
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "foir_pct": 65
+      },
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 50000,
+        "foir_pct": 50
+      }
+    ],
+    "tenures_months": {
+      "salary_below_75000": [
+        60
+      ],
+      "salary_75000_and_above": [
+        60
+      ]
+    },
+    "tenure_note": "3–60 months (defence / para-military max 36)",
+    "roi_slabs_by_loan_amount": [
+      {
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 9.99
+      },
+      {
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 10.99,
+        "range": "10.75-10.99"
+      }
+    ],
+    "roi_unconfirmed": false,
+    "roi_note": "Below 10L: as per grid (not received) — highest rate used and flagged",
+    "max_loan": 4000000,
+    "max_loan_note": "₹40L for every category (banker). Above ₹15L: PL focus location + credit PD",
+    "min_cibil": 700,
+    "cibil_foir_adjust": [
+      {
+        "cibil_min_incl": 700,
+        "cibil_max_excl": 730,
+        "foir_minus": 10,
+        "min_salary": 30000,
+        "note": "Recommended for CIC 700–729: FOIR −10 points, not for salary below 30K"
+      }
+    ]
+  },
+  "min_salary_basis": "gross",
+  "company": {
+    "unlisted_allowed": false,
+    "excluded_categories": [
+      "Not to be sourced",
+      "NEGATIVE",
+      "Not to be listed"
+    ],
+    "category_source": "Bandhan list in Company Category Checker",
+    "unlisted_note": "Unlisted not allowed — the company can be put up for listing"
+  },
+  "first_time_borrower": {
+    "trigger": "ntc_only",
+    "cap": 300000,
+    "cap_by_category": {
+      "CAT A": 500000
+    },
+    "note": "NTC (-1 to 18): Govt class I/II or CAT A ₹5L, others ₹3L",
+    "ntc_score_max": 18,
+    "cap_flags": [
+      {
+        "flag": "govtClass12",
+        "cap": 500000,
+        "label": "Govt class I/II"
+      }
+    ]
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 12,
+      "nbfc": 12
+    },
+    "nbfc_mode": "all_except",
+    "product_types": [
+      "PL"
+    ],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 1,
+    "lender_blacklist": [
+      {
+        "name": "Small fintech / microfinance",
+        "match": [
+          "POCKETLY",
+          "MPOKKET",
+          "FLEXSALARY",
+          "VIVIFI",
+          "FLEXPAY",
+          "KREDITZY",
+          "OLYV",
+          "TRUE BALANCE",
+          "STASHFIN",
+          "AKARA",
+          "CASHE",
+          "TSLC",
+          "KISSHT",
+          "SI CREVA",
+          "FINNABLE",
+          "MONEYTAP",
+          "BRANCH INTERNATIONAL",
+          "PAYRUPIK",
+          "LENDINGPLATE",
+          "LAZYPAY",
+          "FREO",
+          "MONEYVIEW",
+          "MONEY VIEW",
+          "WHIZDM",
+          "FIBE",
+          "EARLYSALARY",
+          "EARLY SALARY",
+          "SOCIAL WORTH",
+          "BUDDY LOAN",
+          "INDIALENDS",
+          "LOANTAP",
+          "FLEXILOANS",
+          "LENDINGKART",
+          "INDIFI",
+          "NEOGROWTH",
+          "KINARA",
+          "UGRO",
+          "OXYZO",
+          "CREDIT SAISON",
+          "DMI FIN",
+          "DMIFIN",
+          "FINCFRIENDS",
+          "PREFR",
+          "LOANFRONT",
+          "RUPEEREDEE",
+          "SMARTCOIN",
+          "RAPIDRUPEE",
+          "ZYPE",
+          "KRAZYBEE",
+          "KREDITBEE",
+          "PAYSENSE",
+          "MONEYONCLICK",
+          "PAYSME",
+          "RING ",
+          "ZESTMONEY",
+          "HOME CREDIT",
+          "MI FINANCE",
+          "CLIX",
+          "NORTHERN ARC",
+          "ARKA FINCAP",
+          "BAJAJ HOUSING",
+          "ADITYA BIRLA HOUSING",
+          "KISETSU"
+        ]
+      }
+    ],
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ],
+    "credit_card_bt": false,
+    "note": "BT after 12 months; microfinance / fintech (KreditBee etc.) never; Bandhan top-up after 1 month"
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": false,
+      "prelogin_paydown": "all",
+      "rule": "5% of outstanding; card closure accepted (after login)"
+    },
+    "pct_by_type": {
+      "GOLD": {
+        "pct": 1,
+        "exempt_below": 500000
+      },
+      "KCC": 1.5,
+      "OD": 1
+    },
+    "pct_note": "Gold 1%, gold under ₹5L not counted; KCC 1.5% — TO CONFIRM; OD 1% assumed",
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "pct_of_emi": 50,
+      "rule": "0 if co-applicant pays and earns enough; 50% if applicant pays"
+    }
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "excluded_category"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "checklist": [
+    "Age 21–60 (defence / para-military 23–56)",
+    "6 months at current address (not needed for own house)",
+    "1 year in job with at least 1 salary credit in the new company (Govt: 3 months)",
+    "Govt class 4: co-applicant (spouse / immediate relative) mandatory",
+    "Max 1 inward cheque return in last 3 months; at least 1 customer transaction per month",
+    "3 months salary-account statement; latest payslip not older than 30 days",
+    "Loan above ₹15L: PL focus location + credit PD",
+    "Late payments on insurance / mutual fund in banking don't matter"
+  ],
+  "product_info": {
+    "loan_amount": "₹50,000 – ₹40L",
+    "rate": "10.25% – 16.90% (salaried)",
+    "tenure": "3–60 months"
+  },
+  "open_items": [
+    "Rate grid below ₹10L (not attached)",
+    "CAT C: needs ₹75K+ salary, or 70% applies from ₹75K?",
+    "CAT D: same FOIR as A/B?",
+    "KCC 1.5%? Gold under ₹5L not counted?",
+    "Loans with few EMIs left ignored?"
+  ],
+  "min_net_salary": {
+    "_all": 40000,
+    "CAT C": 75000
+  },
+  "min_salary_note": "Minimum gross ₹40K (40–50K gets 50% FOIR). CAT C needs salary ₹75K+ (banker) — TO CONFIRM reading",
+  "other_income": {
+    "rental": {
+      "pct": 100
+    },
+    "quarterly": {
+      "pct": 50,
+      "note": "30K quarterly → 10K/month → 50% = 5K"
+    },
+    "monthly_incentive": {
+      "pct": 50
+    },
+    "bonus": {
+      "pct": 0,
+      "note": "Bonus not added"
+    }
+  },
+  "own_bank_bad_history_min_count": 2,
+  "enquiries": {
+    "max_30d": 3,
+    "max_30d_deviation": 5,
+    "count_types": [
+      "Personal Loan"
+    ],
+    "note": "3 fine, 4–5 deviation, more only if duplicates (manual CIBIL). 60/90 days not checked"
+  },
+  "subject_to_closure_allowed": true
+}

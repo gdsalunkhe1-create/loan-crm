@@ -840,6 +840,12 @@ export function averageNetPay(payslips) {
   return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
 }
 
+// [{ grossPay }] -> average monthly gross of the payslips that have one (null if none).
+export function averageGrossPay(payslips) {
+  const vals = (payslips || []).map((p) => p.grossPay).filter((v) => v > 0);
+  return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+}
+
 // [{ netPay, variablePay }] -> variable pay inside the averaged net pay: averaged
 // over the same payslips (a month without it counts as 0). null if none.
 export function averageVariablePay(payslips) {
@@ -850,7 +856,7 @@ export function averageVariablePay(payslips) {
 
 // Combined pre-fill for the screen. Either row may be null. A payslip net pay,
 // when given, takes priority over the bank-statement salary estimate.
-export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, payslipVariablePay = null, today = new Date() } = {}) {
+export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, payslipVariablePay = null, payslipGrossPay = null, today = new Date() } = {}) {
   const c = cibilToProfile(cibilRow, { today });
   const b = bankStatementToProfile(bsaRow);
   const fromPayslip = payslipNetPay > 0;
@@ -860,6 +866,9 @@ export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, pays
     // Left out by banks that count fixed salary only (policy.exclude_variable_pay).
     variablePayMonthly: fromPayslip && payslipVariablePay > 0 ? payslipVariablePay : null,
     variablePaySource: fromPayslip && payslipVariablePay > 0 ? 'payslip' : null,
+    // Gross monthly salary (total earnings) from the payslip — banks with a gross minimum (Bandhan).
+    grossSalary: payslipGrossPay > 0 ? payslipGrossPay : null,
+    grossSalarySource: payslipGrossPay > 0 ? 'payslip' : null,
     salaryAccountBank: b.salaryAccountBank,
     cibilScore: c.cibilScore,
     riskOverride: null,

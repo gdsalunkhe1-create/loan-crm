@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -147,6 +147,25 @@ test('TaxCalculator parseSalaryText reads net pay labels', () => {
   expect(parseSalaryText('Take Home 61,250').netPayMonthly).toBe(61250);
   expect(parseSalaryText('Net Salary 55,000').netPayMonthly).toBe(55000);
   expect(parseSalaryText('Gross 90,000').netPayMonthly).toBe(0);
+});
+
+test('parseSalaryText reads the monthly gross (total earnings)', () => {
+  const slip = 'Payslip Earnings Basic Salary 45,000 House Rent Allowance 22,500 Special Allowance 30,000 Bonus 8,250 '
+    + 'Total Earnings 1,05,750 Deductions Provident Fund 5,400 NET PAY 98,150';
+  expect(parseSalaryText(slip).grossMonthly).toBe(105750);
+  expect(parseSalaryText('Payslip Earnings Basic 40,000 HRA 20,000 GROSS PAY 60,000 NET PAY 55,000').grossMonthly).toBe(60000);
+  // A YTD / annual gross (far above the month's earnings) is ignored: summed earnings instead.
+  expect(parseSalaryText('Payslip Earnings Basic 40,000 HRA 20,000 NET PAY 55,000 Gross Salary 7,20,000').grossMonthly).toBe(60000);
+  // Not a payslip: no gross.
+  expect(parseSalaryText('Gross Salary 90,000').grossMonthly).toBe(0);
+});
+
+test('averageGrossPay and buildProfileDraft carry the payslip gross', () => {
+  expect(averageGrossPay([{ grossPay: 60000 }, { grossPay: 0 }, { grossPay: 64000 }])).toBe(62000);
+  expect(averageGrossPay([{ grossPay: 0 }])).toBe(null);
+  expect(averageGrossPay(null)).toBe(null);
+  expect(buildProfileDraft(null, null, { payslipNetPay: 55000, payslipGrossPay: 62000 })).toMatchObject({ grossSalary: 62000, grossSalarySource: 'payslip' });
+  expect(buildProfileDraft(null, null, {})).toMatchObject({ grossSalary: null, grossSalarySource: null });
 });
 
 test('parseSalaryText sums variable earning heads in the earnings table', () => {

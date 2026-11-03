@@ -65,7 +65,7 @@ function otherIncomeFor(policy, profile) {
   const lines = [];
   if (!rules) return { total: 0, lines };
   const add = (key, label, raw, pct, capPct) => {
-    if (!(raw > 0) || pct == null) return;
+    if (!(raw > 0) || !(pct > 0)) return;   // pct 0 = not counted (e.g. Bandhan bonus)
     let amt = raw * pct / 100;
     if (capPct != null) amt = Math.min(amt, base * capPct / 100);
     lines.push({ key, label, raw: Math.round(raw), pct, amount: Math.round(amt) });
@@ -99,7 +99,13 @@ function minSalaryFor(policy, category, salaryAccountBank, city) {
   const byCity = policy.min_net_salary_by_city;   // { cities: [{ match: ['MUMBAI'], min: 35000 }], default: 25000 }
   if (byCity) {
     const hit = (byCity.cities || []).find((c) => wordStartMatch(city || '', c.match));
-    return hit ? hit.min : byCity.default;
+    const v = hit ? hit.min : byCity.default;
+    // value can be a number, or per category: { "CAT A": 25000, "CAT D": 40000, "_all": 25000 }
+    if (v != null && typeof v === 'object') {
+      const k = Object.keys(v).find((x) => norm(x) === norm(category || ''));
+      return k ? v[k] : (v._all ?? null);
+    }
+    return v;
   }
   const rule = policy.min_net_salary?.[category] ?? policy.min_net_salary?._all;
   if (rule == null) return null;
@@ -212,7 +218,10 @@ function hardChecks(policy, profile) {
   }
   const minScore = policy.eligibility?.min_cibil;
   const score = profile.cibilScore;
-  if (minScore != null && score != null && score !== -1 && score < minScore) reasons.push(`CIBIL score ${score} below ${policy.bank} minimum ${minScore}`);
+  // NTC: -1, or a low "no history" score up to first_time_borrower.ntc_score_max (Bandhan: 1–18) is not a low score.
+  const ntcMax = policy.first_time_borrower?.ntc_score_max;
+  const isNtcScore = score === -1 || (ntcMax != null && score > 0 && score <= ntcMax);
+  if (minScore != null && score != null && !isNtcScore && score < minScore) reasons.push(`CIBIL score ${score} below ${policy.bank} minimum ${minScore}`);
   const cr = policy.credit_rules || {};
   if (cr.loan_dpd && Array.isArray(c.dpdAccounts)) {
     const loans = c.dpdAccounts.filter((a) => !CARD_TYPES.includes(a.productType) && a.monthsAgo != null);
@@ -249,7 +258,10 @@ function hardChecks(policy, profile) {
   }
   if (cat) {
     const min = minSalaryFor(policy, cat, profile.salaryAccountBank, profile.city);
-    if (min != null && profile.netSalary < min) reasons.push(`Net salary ${fmtINR(profile.netSalary)} below ${cat} minimum ${fmtINR(min)}`);
+    const grossBasis = policy.min_salary_basis === 'gross' && profile.grossSalary > 0;
+    const cmp = grossBasis ? profile.grossSalary : profile.netSalary;
+    if (min != null && cmp < min && grossBasis) reasons.push(`Gross salary ${fmtINR(cmp)} below ${cat} minimum ${fmtINR(min)}${profile.city ? ` (${profile.city})` : ''}`);
+    else if (min != null && cmp < min) reasons.push(`Net salary ${fmtINR(profile.netSalary)} below ${cat} minimum ${fmtINR(min)}`);
   }
   // Own-bank enquiry in the last N days: this bank won't take the case yet.
   // credit.enquiryList: [{ lender, product, date, daysAgo }] from the CIBIL enquiry table.
@@ -268,7 +280,11 @@ function hardChecks(policy, profile) {
     const n30 = c.enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= 30 && (!types || types.some((t) => norm(e.product).includes(norm(t))))).length;
     if (n30 > enq.max_30d) {
       const msg = `${n30} ${types ? types.join('/') + ' ' : ''}enquiries in 30 days (max ${enq.max_30d})`;
-      if (enq.deviation_possible) deviations.push(`${msg} — deviation needed`); else reasons.push(msg);
+      if (enq.max_30d_deviation != null) {
+        // e.g. Bandhan: up to 3 fine, 4–5 deviation, more only if they are duplicate enquiries (manual CIBIL check)
+        if (n30 <= enq.max_30d_deviation) deviations.push(`${msg} — deviation needed`);
+        else deviations.push(`${msg} — above ${enq.max_30d_deviation}: only if they are duplicate enquiries (manual CIBIL check)`);
+      } else if (enq.deviation_possible) deviations.push(`${msg} — deviation needed`); else reasons.push(msg);
     }
   }
   if (enq.max_90d != null) {
@@ -297,7 +313,11 @@ function obligationOf(policy, loan) {
   }
   const byType = policy.obligations?.pct_by_type;   // e.g. { GOLD: 1, OD: 2, KCC: 1 }
   if (byType && byType[loan.productType] != null) {
-    const pct = byType[loan.productType];
+    const r = byType[loan.productType];             // number, or { pct, exempt_below } e.g. gold loans under 5L not counted
+    const pct = typeof r === 'object' ? r.pct : r;
+    if (typeof r === 'object' && r.exempt_below != null && (loan.outstanding || 0) < r.exempt_below) {
+      return { amount: 0, rule: `Below ${fmtINR(r.exempt_below)} — not counted` };
+    }
     return { amount: pct / 100 * (loan.outstanding || 0), rule: `${pct}% of outstanding` };
   }
   if (!byType && (policy.obligations?.one_pct_types || ONE_PCT_TYPES).includes(loan.productType)) {
@@ -449,16 +469,27 @@ export function evaluateBank(policy, profileIn) {
   let cap = policy.eligibility.max_loan ?? null;
   if (group?.max_loan != null) cap = cap != null ? Math.min(cap, group.max_loan) : group.max_loan;
   if (cat === 'UNLISTED' && policy.company?.unlisted_rules?.note) out.notes.push(policy.company.unlisted_rules.note);
+  // Category caps: the most generous matching rule applies, e.g. CAT C 15L, or 20L at salary 75K+.
+  const ccaps = (policy.eligibility.category_caps || []).filter((r) => (r.categories || []).some((x) => norm(x) === norm(cat || ''))
+    && (r.salary_min_incl == null || salary >= r.salary_min_incl)
+    && (r.cibil_min_incl == null || (profile.cibilScore ?? 0) >= r.cibil_min_incl));
+  if (ccaps.length) {
+    const cc = Math.max(...ccaps.map((r) => r.cap));
+    cap = cap != null ? Math.min(cap, cc) : cc;
+    out.notes.push(`${cat}: max ${fmtINR(cc)} at ${policy.bank}`);
+  }
   const capBySal = pickSlab(policy.eligibility.max_loan_by_salary, salary)?.max_loan;
   if (capBySal != null) cap = cap != null ? Math.min(cap, capBySal) : capBySal;
   for (const pc of policy.profile_caps || []) {          // e.g. { flag: 'govtClass3', cap: 700000, label: 'Government class 3' }
     if (profile[pc.flag]) { cap = cap != null ? Math.min(cap, pc.cap) : pc.cap; out.notes.push(`${pc.label}: max ${fmtINR(pc.cap)}`); }
   }
   const ftb = policy.first_time_borrower;
-  const isFtb = ftb && (profile.cibilScore === -1 || (ftb.trigger !== 'ntc_only' && (profile.credit || {}).loanAccountsEver === 0));
+  const ntcScore = profile.cibilScore === -1 || (ftb?.ntc_score_max != null && profile.cibilScore > 0 && profile.cibilScore <= ftb.ntc_score_max);
+  const isFtb = ftb && (ntcScore || (ftb.trigger !== 'ntc_only' && (profile.credit || {}).loanAccountsEver === 0));
   if (isFtb) {
     const catCap = Object.entries(ftb.cap_by_category || {}).find(([k]) => norm(k) === norm(cat || ''))?.[1];
-    const ftbCap = catCap ?? ftb.cap;
+    const flagCap = (ftb.cap_flags || []).filter((f) => profile[f.flag]).map((f) => f.cap);   // e.g. { flag: 'govtClass12', cap: 500000 }
+    const ftbCap = Math.max(catCap ?? ftb.cap, ...flagCap);
     cap = cap != null ? Math.min(cap, ftbCap) : ftbCap;
     out.notes.push(`First-time borrower${profile.cibilScore === -1 ? ' (CIBIL -1)' : ''} — ${policy.bank} gives ${ftb.range && catCap == null ? ftb.range : fmtINR(ftbCap)} max`);
   }
@@ -468,7 +499,20 @@ export function evaluateBank(policy, profileIn) {
   const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore);
   const liveHlAny = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
   let foirPct = foirSlab?.foir_pct;
-  if (profile.ownHouse && liveHlAny && foirSlab?.foir_pct_own_house_hl != null) {
+  const adj = (policy.eligibility.cibil_foir_adjust || []).find((a) => profile.cibilScore != null && profile.cibilScore > (policy.first_time_borrower?.ntc_score_max ?? 0)
+    && inBand(profile.cibilScore, a.cibil_min_incl, a.cibil_max_excl));
+  if (adj && foirPct != null) {
+    if (adj.min_salary != null && salary < adj.min_salary) {
+      out.reasons.push(`CIBIL ${profile.cibilScore}: ${policy.bank} doesn't fund salary below ${fmtINR(adj.min_salary)}`);
+      out.status = 'NOT_ELIGIBLE';
+    }
+    foirPct = foirPct - adj.foir_minus;
+    out.notes.push(`CIBIL ${profile.cibilScore} (below ${adj.cibil_max_excl}): FOIR reduced by ${adj.foir_minus} points to ${foirPct}%`);
+  }
+  if ((profile.ownHouse || liveHlAny) && foirSlab?.foir_pct_own_house_or_hl != null) {
+    foirPct = foirSlab.foir_pct_own_house_or_hl;
+    out.notes.push(`${profile.ownHouse ? 'Own house' : 'Live home loan'} — FOIR ${foirPct}%`);
+  } else if (profile.ownHouse && liveHlAny && foirSlab?.foir_pct_own_house_hl != null) {
     foirPct = foirSlab.foir_pct_own_house_hl;
     out.notes.push(`Own house with live home loan — FOIR ${foirPct}%`);
   } else if (profile.ownHouse && foirSlab?.foir_pct_own_house != null) {
@@ -610,7 +654,7 @@ export function evaluateBank(policy, profileIn) {
   out.best = scenarios[0];
   if (out.best.eligibleAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push('No EMI room after obligations'); }
   else if (out.best.netInHand < 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push(`BT outstanding ${fmtINR(out.best.btOutstanding)} is more than the highest eligibility ${fmtINR(out.best.eligibleAmount)}`); }
-  else if (out.deviations.length) out.status = 'DEVIATION';
+  else if (out.deviations.length && out.status !== 'NOT_ELIGIBLE') out.status = 'DEVIATION';
   if (hc.waits.length && out.status !== 'NOT_ELIGIBLE') {
     // Only a temporary block: keep the figures, mark the bank as not yet possible.
     out.waitDays = Math.max(...hc.waits.map((w) => w.days));

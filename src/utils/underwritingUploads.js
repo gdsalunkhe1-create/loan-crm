@@ -105,6 +105,7 @@ async function readPayslip(file, password) {
     fileName: file.name,
     month: detectPayslipMonth(text, file.name),
     netPay: parsed.netPayMonthly || 0,
+    grossPay: parsed.grossMonthly || 0, // total earnings this month (Bandhan: minimum salary on gross)
     variablePay: parsed.variablePayMonthly || 0, // bonus / incentive / commission heads in this month
     employerName: extractEmployerName(text, headerLines),
     // Kept so the screen can re-run the extraction once the lead / CIBIL name is known.

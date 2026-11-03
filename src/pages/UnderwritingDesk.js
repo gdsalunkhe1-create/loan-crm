@@ -21,7 +21,7 @@ import {
   btnPri, btnSec, btnPriSm, btnSecSm, btnLink, SItem,
 } from '../utils/uiStyles';
 import {
-  buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, summarizeEmployer,
+  buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, averageGrossPay, summarizeEmployer,
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
@@ -83,6 +83,7 @@ function mergeDraft(prev, changed, sources) {
   const fresh = buildProfileDraft(cibil, bsa, {
     payslipNetPay: averageNetPay(sources.uploads.payslips),
     payslipVariablePay: averageVariablePay(sources.uploads.payslips),
+    payslipGrossPay: averageGrossPay(sources.uploads.payslips),
   });
   if (!prev || changed === 'all') return fresh;
   if (changed === 'cibil') {
@@ -104,6 +105,7 @@ function mergeDraft(prev, changed, sources) {
     return {
       ...prev, netSalary: fresh.netSalary, netSalarySource: fresh.netSalarySource,
       variablePayMonthly: fresh.variablePayMonthly, variablePaySource: fresh.variablePaySource,
+      grossSalary: fresh.grossSalary, grossSalarySource: fresh.grossSalarySource,
     };
   }
   return prev;
@@ -1276,6 +1278,20 @@ function IncomePanel({ draft, patchDraft, payslips }) {
           )}
         </div>
         <div>
+          <label style={S.label}>Gross monthly salary (₹)</label>
+          <input
+            style={inp}
+            type="number"
+            value={draft.grossSalary ?? ''}
+            onChange={(e) => patchDraft({ grossSalary: numOrNull(e.target.value), grossSalarySource: null })}
+            placeholder="Total earnings on the payslip"
+          />
+          {draft.grossSalarySource === 'payslip' && (
+            <div style={{ ...S.hint, color: 'var(--warning)', fontWeight: 600 }}>From payslip — confirm</div>
+          )}
+          <div style={S.hint}>Bandhan checks its minimum salary on gross.</div>
+        </div>
+        <div>
           <label style={S.label}>Variable pay in net salary (₹/month)</label>
           <input
             style={inp}
@@ -1349,6 +1365,10 @@ function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, s
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 20 }}>
             <input type="checkbox" checked={!!draft.govtClass3} onChange={(e) => patchDraft({ govtClass3: e.target.checked })} />
             Government class 3 employee
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 6 }}>
+            <input type="checkbox" checked={!!draft.govtClass12} onChange={(e) => patchDraft({ govtClass12: e.target.checked })} />
+            Government class I / II employee
           </label>
           <div style={S.hint}>Some banks cap the loan for class 3 government staff (L&amp;T: ₹7L).</div>
         </div>

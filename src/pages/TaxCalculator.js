@@ -116,6 +116,15 @@ export function parseSalaryText(text) {
     while ((m = varRe.exec(block))) variablePay += num(m[2])
   }
 
+  // Monthly gross (total earnings) as printed (Underwriting Desk: Bandhan checks its
+  // minimum on gross). A printed figure below net pay, or far above the summed
+  // earnings (a YTD / annual column), is not this month's gross: use the sum instead.
+  const printedGross = after('Total\\s*Earnings') || after('Gross\\s*Earnings') || after('Gross\\s*Pay')
+    || after('Gross\\s*Salary')
+  const grossOk = printedGross > 0 && (!(netPay > 0) || printedGross >= netPay)
+    && (!(regularMonthly > 0) || printedGross <= regularMonthly * 3)
+  const grossMonthly = isPayslip ? (grossOk ? printedGross : regularMonthly) : 0
+
   // Payslip figures are monthly -> annualise x12. "Annual Bonus" is already annual.
   const mult = isPayslip ? 12 : 1
   return {
@@ -127,6 +136,7 @@ export function parseSalaryText(text) {
     bonusAnnual: Math.round(bonus), // annual as-is
     netPayMonthly: Math.round(netPay),
     variablePayMonthly: Math.round(variablePay),
+    grossMonthly: Math.round(grossMonthly),
     ok: regularMonthly > 0,
     isPayslip,
   }
