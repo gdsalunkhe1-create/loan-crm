@@ -514,3 +514,12 @@ test('Bandhan NTC: score 1-18 counts as NTC (not a low score); Govt class I/II g
   expect(evaluateBank(b, p({ cibilScore: 5, govtClass12: true })).best.eligibleAmount).toBeGreaterThan(300000);
   expect(evaluateBank(b, p({ cibilScore: 690 })).status).toBe('NOT_ELIGIBLE');
 });
+
+test('Bandhan pricing grid below 10L by category x salary x CIBIL', () => {
+  const run = (cat, salary, score, emi) => evaluateBank(bandhan, { ...base, netSalary: salary, cibilScore: score, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi, emisPaid: 20, emisRemaining: 200 }], cards: [],
+    company: { categoriesByBank: { bandhan: cat } }, credit: { enquiryList: [] } }).best.methods[0].roi;
+  expect(run('CAT A', 60000, 780, 25000)).toBe(12.15);
+  expect(run('CAT B', 45000, 720, 5000)).toBe(14.49);
+  expect(run('CAT D', 45000, 760, 5000)).toBe(15.49);
+  expect(run('CAT B', 60000, -1, 25000)).toBe(14.49);   // NTC priced in the 650-699 / 0 / -1 column
+});
