@@ -353,6 +353,11 @@ function obligationOf(policy, loan) {
   if (loan.productType === 'HL' && loan.isJoint) {
     const j = policy.obligations?.home_loan_joint || {};
     if (j.joint_pct != null) return { amount: j.joint_pct / 100 * (loan.emi || 0), rule: `Joint HL — ${j.joint_pct}% of EMI (whoever pays)` };
+    if (loan.hlEmiPaidBy === 'both') {
+      // EMI shared by applicant and co-applicant
+      const pct = j.both_pct ?? j.pct_of_emi ?? 100;
+      return { amount: pct / 100 * (loan.emi || 0), rule: `Joint HL paid by both — ${pct}% of EMI` };
+    }
     if (j.paid_by_co_applicant_pct != null && loan.hlEmiPaidBy === 'co_applicant') {
       return { amount: j.paid_by_co_applicant_pct / 100 * (loan.emi || 0), rule: `Joint HL paid by co-applicant — ${j.paid_by_co_applicant_pct}% of EMI` };
     }

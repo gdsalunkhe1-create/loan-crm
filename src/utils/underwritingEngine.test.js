@@ -556,3 +556,13 @@ test('Yes Bank: bureau tier FOIR/multiplier grids, HL-only multiplier base, rack
   expect([enq(3), enq(4)]).toEqual(['ELIGIBLE', 'NOT_ELIGIBLE']);
   expect(evaluateBank(yes, p({ company: { categoriesByBank: { yes: 'Delisted' } } })).status).toBe('NOT_ELIGIBLE');
 });
+
+test('Joint home loan paid by both: 50% (IndusInd 100%, Yes 50% whoever pays)', () => {
+  const hl = { id: 'hl', lender: 'AXIS BANK', productType: 'HL', outstanding: 13142198, emi: 118041, emisPaid: 18, emisRemaining: 196, isJoint: true, hlEmiPaidBy: 'both' };
+  const o = (pol, cat) => evaluateBank(pol, { ...base, netSalary: 300000, loans: [hl], cards: [], cibilScore: 780,
+    company: { categoriesByBank: { [pol.bank_id || 'hdfc_bank']: cat } }, credit: { enquiryList: [] } }).obligations.loans[0].obligation.amount;
+  expect(o(policy, 'CAT A')).toBeCloseTo(59020.5);
+  expect(o(icici, 'Elite')).toBeCloseTo(59020.5);
+  expect(o(indusind, 'CAT A')).toBe(118041);
+  expect(o(yes, 'Gold')).toBeCloseTo(59020.5);
+});

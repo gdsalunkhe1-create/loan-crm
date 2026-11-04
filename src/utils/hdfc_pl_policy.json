@@ -950,7 +950,8 @@
       "conditions": [
         "reported as joint in CIBIL",
         "co-applicant income sufficient (manual check)"
-      ]
+      ],
+      "both_pct": 50
     },
     "loan_with_emis_remaining_lte": 2,
     "loan_with_emis_remaining_lte_treatment": "not obligated",

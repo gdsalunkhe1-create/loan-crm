@@ -338,17 +338,24 @@ export function treatmentPatch(choice) {
   return { closedBeforeLoginWithProof: false, treatment: ['bt', 'obligate'].includes(choice) ? choice : 'auto' };
 }
 
-// HL row controls. "Joint · co-applicant income OK" sets both flags; unticking
-// it also clears who pays the EMI, which only applies to a joint loan.
+// HL row controls. "Joint (in CIBIL)" sets isJoint only — co-applicant income stays
+// for the agent to confirm. Unticking it clears the co-applicant income and who pays
+// the EMI back to not set, as both only apply to a joint loan.
 export function hlJointPatch(checked) {
   return checked
-    ? { isJoint: true, coApplicantIncomeOk: true }
-    : { isJoint: false, coApplicantIncomeOk: false, hlEmiPaidBy: null };
+    ? { isJoint: true }
+    : { isJoint: false, coApplicantIncomeOk: null, hlEmiPaidBy: null };
+}
+
+// "Co-applicant income OK" (enabled only on joint loans): ticked = true, unticked = false.
+export function hlIncomeOkPatch(checked) {
+  return { coApplicantIncomeOk: !!checked };
 }
 
 // "EMI paid by" never changes isJoint (the select is only enabled on joint loans).
+const HL_PAYERS = ['applicant', 'co_applicant', 'both'];
 export function hlPayerPatch(value) {
-  return { hlEmiPaidBy: value === 'applicant' || value === 'co_applicant' ? value : null };
+  return { hlEmiPaidBy: HL_PAYERS.includes(value) ? value : null };
 }
 
 // ---- Company category per bank ----

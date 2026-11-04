@@ -470,7 +470,8 @@
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
       "pct_of_emi": null,
-      "rule": "0% only if paid by spouse who has good income and no other obligations; otherwise 100%"
+      "rule": "0% only if paid by spouse who has good income and no other obligations; otherwise 100%",
+      "both_pct": 100
     },
     "loan_with_emis_remaining_lte": 3
   },

@@ -378,7 +378,8 @@
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
       "pct_of_emi": 50,
-      "rule": "As Kotak: 50% if co-applicant earns enough; 0 if co-applicant pays"
+      "rule": "As Kotak: 50% if co-applicant earns enough; 0 if co-applicant pays",
+      "both_pct": 50
     },
     "payment_before_login": "Loan prepayment/closure before login accepted with source-of-funds verification; card payments must reflect in CIBIL (except ICICI cards)"
   },

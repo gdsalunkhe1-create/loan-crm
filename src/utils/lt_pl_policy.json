@@ -398,7 +398,8 @@
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
       "pct_of_emi": 50,
-      "rule": "100% if applicant pays; 50% if applicant transfers funds (shared); 0 if co-applicant pays within co-applicant's own eligibility"
+      "rule": "100% if applicant pays; 50% if applicant transfers funds (shared); 0 if co-applicant pays within co-applicant's own eligibility",
+      "both_pct": 50
     },
     "loan_with_emis_remaining_lte": 3
   },

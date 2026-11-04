@@ -22,7 +22,7 @@ import {
 } from '../utils/uiStyles';
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, averageGrossPay, summarizeEmployer,
-  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
+  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlIncomeOkPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
   isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
@@ -1593,9 +1593,25 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
           {isHL && (
             <div style={{ fontSize: '10px', color: '#555', marginTop: '4px', lineHeight: 1.4 }}>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', cursor: 'pointer' }}>
-                <input type="checkbox" style={{ margin: '1px 0 0' }} checked={!!(l.isJoint && l.coApplicantIncomeOk)} onChange={(e) => setLoanById(l.id, hlJointPatch(e.target.checked))} />
-                Joint · co-applicant income OK
+                <input type="checkbox" style={{ margin: '1px 0 0' }} checked={!!l.isJoint} onChange={(e) => setLoanById(l.id, hlJointPatch(e.target.checked))} />
+                Joint (in CIBIL)
               </label>
+              <label
+                style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', marginTop: '2px', opacity: l.isJoint ? 1 : 0.5, cursor: l.isJoint ? 'pointer' : 'not-allowed' }}
+                title={l.isJoint ? undefined : 'Tick Joint first'}
+              >
+                <input
+                  type="checkbox"
+                  style={{ margin: '1px 0 0' }}
+                  disabled={!l.isJoint}
+                  checked={!!(l.isJoint && l.coApplicantIncomeOk)}
+                  onChange={(e) => setLoanById(l.id, hlIncomeOkPatch(e.target.checked))}
+                />
+                Co-applicant income OK
+              </label>
+              {l.isJoint && l.coApplicantIncomeOk == null && (
+                <div style={{ color: 'var(--warning)', fontWeight: 600, marginTop: '2px' }}>Tick &lsquo;Co-applicant income OK&rsquo; to count 50%</div>
+              )}
               <label style={{ display: 'flex', alignItems: 'center', gap: '3px', marginTop: '2px', opacity: l.isJoint ? 1 : 0.5 }}>
                 EMI paid by
                 <select
@@ -1608,6 +1624,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
                   <option value="">—</option>
                   <option value="applicant">Applicant</option>
                   <option value="co_applicant">Co-applicant</option>
+                  <option value="both">Both</option>
                 </select>
               </label>
             </div>

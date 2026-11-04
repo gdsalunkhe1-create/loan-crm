@@ -630,7 +630,8 @@
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
       "pct_of_emi": 50,
-      "rule": "0 if co-applicant pays and earns enough; 50% if applicant pays"
+      "rule": "0 if co-applicant pays and earns enough; 50% if applicant pays",
+      "both_pct": 50
     }
   },
   "hard_rejects": [

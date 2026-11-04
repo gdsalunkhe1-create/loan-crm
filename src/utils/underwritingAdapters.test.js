@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -384,9 +384,42 @@ describe('HL joint toggle and EMI payer', () => {
     expect(apply(hl, hlPayerPatch('applicant')).isJoint).toBe(false);
   });
 
-  test('unticking Joint clears the payer back to null', () => {
-    const paidByCo = apply(apply(hl, hlJointPatch(true)), hlPayerPatch('co_applicant'));
-    expect(apply(paidByCo, hlJointPatch(false))).toMatchObject({ isJoint: false, coApplicantIncomeOk: false, hlEmiPaidBy: null });
+  test('"Both" is a payer option; unknown values are null', () => {
+    expect(hlPayerPatch('both')).toEqual({ hlEmiPaidBy: 'both' });
+    expect(hlPayerPatch('applicant')).toEqual({ hlEmiPaidBy: 'applicant' });
+    expect(hlPayerPatch('someone')).toEqual({ hlEmiPaidBy: null });
+  });
+
+  test('ticking Joint sets isJoint only; co-applicant income stays not set', () => {
+    expect(hlJointPatch(true)).toEqual({ isJoint: true });
+    // Pre-ticked from CIBIL and then re-ticked: an earlier income answer survives.
+    expect(apply({ ...hl, isJoint: true, coApplicantIncomeOk: true }, hlJointPatch(true)).coApplicantIncomeOk).toBe(true);
+    expect(apply(hl, hlJointPatch(true)).coApplicantIncomeOk).toBeNull();
+  });
+
+  test('Co-applicant income OK is its own tick', () => {
+    const joint = apply(hl, hlJointPatch(true));
+    expect(apply(joint, hlIncomeOkPatch(true))).toMatchObject({ isJoint: true, coApplicantIncomeOk: true });
+    expect(apply(joint, hlIncomeOkPatch(false))).toMatchObject({ isJoint: true, coApplicantIncomeOk: false });
+  });
+
+  test('unticking Joint clears co-applicant income and the payer back to not set', () => {
+    const full = apply(apply(apply(hl, hlJointPatch(true)), hlIncomeOkPatch(true)), hlPayerPatch('both'));
+    expect(apply(full, hlJointPatch(false))).toMatchObject({ isJoint: false, coApplicantIncomeOk: null, hlEmiPaidBy: null });
+  });
+
+  test('HDFC engine: joint HL counted on the co-applicant tick and the "both" payer', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const company = { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A' }, confirmedByBank: {} };
+    const base = { netSalary: 150000, cibilScore: 780, salaryAccountBank: 'ICICI Bank', cards: [], company,
+      credit: { enquiries90d: 0, enquiryList: [], dpdAccounts: [], loanAccountsEver: 2, settlementsOrWO: 0 } };
+    const hlLoan = { ...hl, lender: 'SBI', outstanding: 3000000, emisPaid: 24, emisRemaining: 200, treatment: 'obligate' };
+    const counted = (loan) => evaluateBank(hdfc, { ...base, loans: [loan] }).obligations.loans[0].obligation;
+    expect(counted(hlLoan).amount).toBe(30000);                                                      // not joint: full EMI
+    const joint = apply(hlLoan, hlJointPatch(true));
+    const ok = counted(apply(joint, hlIncomeOkPatch(true)));
+    expect(ok.amount).toBeLessThan(30000);                                                           // co-applicant income counted
+    expect(counted(apply(joint, hlPayerPatch('both'))).rule).toMatch(/paid by both|Joint HL/);
   });
 });
 

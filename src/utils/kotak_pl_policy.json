@@ -325,7 +325,8 @@
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
       "pct_of_emi": 50,
-      "rule": "Joint HL 50% if co-applicant earns enough; 0 if the co-applicant pays the EMI"
+      "rule": "Joint HL 50% if co-applicant earns enough; 0 if the co-applicant pays the EMI",
+      "both_pct": 50
     },
     "loan_with_emis_remaining_lte": 2,
     "payment_before_login": "Loan closure accepted before or after login (subject to closure); not for credit cards"
