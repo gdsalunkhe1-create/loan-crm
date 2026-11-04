@@ -258,6 +258,16 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
     });
   // Non-card accounts ever reported (open or closed) — 0 marks a first-time borrower.
   const loanAccountsEver = accounts.filter((a) => mapProductType(a.loanType) !== 'CARD').length;
+  // Bureau depth (Yes Bank): sanctioned amounts of non-card loans, open or closed, that
+  // ran 6+ months (open date -> closed date, or -> today while open). A closed loan
+  // with no closed date can't be timed and is left out.
+  const servedLoanAmount = accounts.reduce((sum, a) => {
+    if (mapProductType(a.loanType) === 'CARD') return sum;
+    const opened = parseDate(a.openDate);
+    const end = isOpen(a) ? today : parseDate(a.closedDate);
+    if (!opened || !end || wholeMonthsBetween(opened, end) < 6) return sum;
+    return sum + toNum(a.loanAmount);
+  }, 0);
 
   const enquiryList = buildEnquiryList(cibilRow && cibilRow.enquiries, today);
 
@@ -271,6 +281,7 @@ export function cibilToProfile(cibilRow, { today = new Date() } = {}) {
     dpdLenders: lenderNames(accounts.filter(hasDpd)),
     dpdAccounts,
     loanAccountsEver,
+    servedLoanAmount,
     enquiryList,
     enquiries90d: enquiries90 == null || enquiries90 === '' || !Number.isFinite(Number(enquiries90)) ? null : Number(enquiries90),
     // hdfc* kept for back-compat: the engine still reads them for HDFC.
@@ -404,6 +415,14 @@ export function manualCompany(byBank, value) {
 // ---- Bank scorecard (e.g. Kotak Super green / Green / Yellow / Red) ----
 
 // Draft patch for the result-card select; '' (—) clears that bank's value.
+// Bureau depth tiers (policy.bureau_tier, e.g. Yes Bank). '' / null = Auto (engine computes it).
+export const BUREAU_TIERS = [['super_thick', 'Super thick'], ['thick', 'Thick'], ['thin', 'Thin'], ['ntc', 'NTC']];
+export const bureauTierLabel = (tier) => (BUREAU_TIERS.find(([k]) => k === tier) || [null, tier || '—'])[1];
+export function bureauTierPatch(bureauTierByBank, bankId, value) {
+  const v = BUREAU_TIERS.some(([k]) => k === value) ? value : null;
+  return { bureauTierByBank: { ...(bureauTierByBank || {}), [bankId]: v } };
+}
+
 export function scorecardPatch(scorecardByBank, bankId, value) {
   return { scorecardByBank: { ...(scorecardByBank || {}), [bankId]: value || null } };
 }
@@ -879,6 +898,7 @@ export function buildProfileDraft(cibilRow, bsaRow, { payslipNetPay = null, pays
       dpdLenders: c.credit.dpdLenders,
       dpdAccounts: c.credit.dpdAccounts,
       loanAccountsEver: c.credit.loanAccountsEver,
+      servedLoanAmount: c.credit.servedLoanAmount,
       enquiryList: c.credit.enquiryList,
       enquiries90d: c.credit.enquiries90d,
       hdfcSettlementOrWO: c.credit.hdfcSettlementOrWO,

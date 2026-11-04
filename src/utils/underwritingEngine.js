@@ -39,21 +39,48 @@ function pickSlab(slabs, x, minKey = 'salary_min_incl', maxKey = 'salary_max_exc
 
 // ROI slabs may also depend on CIBIL score (cibil_min_incl / cibil_max_excl). Missing score = lowest score band.
 // Slabs may also be limited by CIBIL score, company category (categories) and salary (salary_min_incl).
-function roiSlabsFor(policy, score, category, salary, ownHouse) {
+function roiSlabsFor(policy, score, category, salary, ownHouse, cityT) {
   const all = policy.eligibility.roi_slabs_by_loan_amount || [];
   const sc = Math.max(score ?? 0, 0);   // CIBIL -1 (no history) is priced like the lowest score band
   return all.filter((s) => ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl))
     && (!s.categories || (category && s.categories.map(norm).includes(norm(category))))
     && (s.salary_min_incl == null || (salary ?? 0) >= s.salary_min_incl)
     && (s.salary_max_excl == null || (salary ?? 0) < s.salary_max_excl)
-    && (!s.own_house || ownHouse));
+    && (!s.own_house || ownHouse)
+    && (s.city_tier == null || s.city_tier === cityT));
 }
 
 // FOIR slab: salary band, optionally limited by CIBIL score (cibil_min_incl / cibil_max_excl).
-function pickFoirSlab(slabs, salary, score) {
+function pickFoirSlab(slabs, salary, score, tier) {
   const sc = Math.max(score ?? 0, 0);
   return (slabs || []).find((s) => inBand(salary, s.salary_min_incl, s.salary_max_excl)
-    && ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl)));
+    && ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl))
+    && (!s.tier || s.tier === tier));
+}
+
+// Bureau depth (e.g. Yes Bank): NTC / thin / thick / super_thick from the loan amounts served for 6+ months.
+// profile.credit.servedLoanAmount = sum of sanctioned amounts of non-card loans (open or closed) with 6+ EMIs paid.
+// Agent can override with profile.bureauTierByBank[bank_id].
+function bureauTier(policy, profile) {
+  const bt = policy.bureau_tier;
+  if (!bt) return null;
+  const forced = profile.bureauTierByBank?.[policy.bank_id];
+  if (forced) return forced;
+  const sc = profile.cibilScore;
+  const ntcMax = policy.first_time_borrower?.ntc_score_max ?? 0;
+  if (sc === -1 || (sc > 0 && sc <= ntcMax) || (profile.credit || {}).loanAccountsEver === 0) return 'ntc';
+  const served = (profile.credit || {}).servedLoanAmount;
+  if (served == null) return bt.default || 'thin';
+  if (served >= bt.super_thick_min) return 'super_thick';
+  if (served >= bt.thick_min) return 'thick';
+  return 'thin';
+}
+
+// City tier for pricing: tier 1 if the city matches policy.city_tiers.tier1, else 2 (unknown city = 2, the dearer column).
+function cityTier(policy, city) {
+  const t1 = policy.city_tiers?.tier1;
+  if (!t1) return null;
+  return city && wordStartMatch(city, t1) ? 1 : 2;
 }
 
 // Other income added to net salary for eligibility (bonus, incentives, rent, pension, consulting).
@@ -325,6 +352,7 @@ function obligationOf(policy, loan) {
   }
   if (loan.productType === 'HL' && loan.isJoint) {
     const j = policy.obligations?.home_loan_joint || {};
+    if (j.joint_pct != null) return { amount: j.joint_pct / 100 * (loan.emi || 0), rule: `Joint HL — ${j.joint_pct}% of EMI (whoever pays)` };
     if (j.paid_by_co_applicant_pct != null && loan.hlEmiPaidBy === 'co_applicant') {
       return { amount: j.paid_by_co_applicant_pct / 100 * (loan.emi || 0), rule: `Joint HL paid by co-applicant — ${j.paid_by_co_applicant_pct}% of EMI` };
     }
@@ -459,7 +487,9 @@ export function evaluateBank(policy, profileIn) {
   const score = profile.cibilScore ?? null;
   const usesScore = (policy.eligibility.roi_slabs_by_loan_amount || []).some((x) => x.cibil_min_incl != null || x.cibil_max_excl != null);
   if (usesScore && score == null) out.warnings.push('CIBIL score missing — lowest score band rates used');
-  let roiSlabs = roiSlabsFor(policy, score, cat, salary, profile.ownHouse);
+  const cTier = cityTier(policy, profile.city);
+  if (policy.city_tiers && !profile.city) out.warnings.push('City not entered — Tier 2 rates used');
+  let roiSlabs = roiSlabsFor(policy, score, cat, salary, profile.ownHouse, cTier);
   if (!roiSlabs.length) {
     // No rate defined for this category / salary: use the bank's highest known rate and flag it.
     const hi = Math.max(...(policy.eligibility.roi_slabs_by_loan_amount || []).map((x) => x.roi_pct));
@@ -496,7 +526,9 @@ export function evaluateBank(policy, profileIn) {
   if (policy.checklist?.length) out.checklist = policy.checklist;
 
   // Policy parameters
-  const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore);
+  const bTier = bureauTier(policy, profile);
+  if (bTier) { out.bureauTier = bTier; out.notes.push(`Bureau profile: ${({ super_thick: 'Super thick', thick: 'Thick', thin: 'Thin', ntc: 'NTC / first-time' })[bTier] || bTier}${profile.bureauTierByBank?.[policy.bank_id] ? ' (set by agent)' : ''}`); }
+  const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore, bTier);
   const liveHlAny = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
   let foirPct = foirSlab?.foir_pct;
   const adj = (policy.eligibility.cibil_foir_adjust || []).find((a) => profile.cibilScore != null && profile.cibilScore > (policy.first_time_borrower?.ntc_score_max ?? 0)
@@ -567,6 +599,8 @@ export function evaluateBank(policy, profileIn) {
   for (let mask = 0; mask < 1 << cands.length; mask++) {
     if ((mask & forcedMask) !== forcedMask) continue;
     const picked = cands.filter((_, i) => mask & (1 << i));
+    const btMax = policy.balance_transfer?.max_loans_deviation ?? policy.balance_transfer?.max_loans;
+    if (btMax != null && picked.length > btMax) continue;
     const obl = baseObl - picked.reduce((s, l) => s + l.obligation.amount, 0);
     const btOutstanding = picked.reduce((s, l) => s + (l.outstanding || 0), 0);
     const emiRoom = income * foirPct / 100 - obl;
@@ -614,12 +648,16 @@ export function evaluateBank(policy, profileIn) {
     }
     const mbs = policy.multiplier_by_salary;   // { slabs: [{salary_min_incl, salary_max_excl, multiplier}], bonus: [{salary_min_incl, own_house, live_hl, multiplier}] }
     if (mbs) {
-      let mx = pickSlab(group?.multiplier_slabs || mbs.slabs, salary)?.multiplier ?? null;
+      const mSlabs = (group?.multiplier_slabs || mbs.slabs || []).filter((x) => !x.tier || x.tier === bTier);
+      let mx = pickSlab(mSlabs, salary)?.multiplier ?? null;
       const liveHl = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
       const bonus = (mbs.bonus || []).find((b) => salary >= b.salary_min_incl && (!b.own_house || profile.ownHouse) && (!b.live_hl || liveHl));
       if (bonus) mx = Math.max(mx ?? 0, bonus.multiplier);
       if (mx != null && (!group?.no_multiplier)) {
-        const raw = Math.max(0, (mbs.apply_on === 'salary' ? income : income - obl) * mx);
+        // apply_on: 'salary' (net salary), 'salary_minus_hl' (net salary − home-loan EMIs only), default (salary − all obligations)
+        const hlObl = loanLines.filter((l) => l.productType === 'HL').reduce((a, l) => a + l.obligation.amount, 0);
+        const base = mbs.apply_on === 'salary' ? income : (mbs.apply_on === 'salary_minus_hl' ? income - hlObl : income - obl);
+        const raw = Math.max(0, base * mx);
         const amt = cap != null ? Math.min(raw, cap) : raw;
         methods.push({ key: 'multiplier', label: 'Multiplier', tenure: foirTenures[foirTenures.length - 1], amount: amt, roi: rateFor(amt),
           netInHand: amt - btOutstanding, multiplier: mx, band: bonus ? 'own house + home loan' : null });
@@ -652,6 +690,10 @@ export function evaluateBank(policy, profileIn) {
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
+  const btNorm = policy.balance_transfer?.max_loans;
+  if (btNorm != null && out.best && out.best.bt.length > btNorm) {
+    out.deviations.push(`${out.best.bt.length} loans in BT (normal max ${btNorm}) — deviation, depends on profile`);
+  }
   if (out.best.eligibleAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push('No EMI room after obligations'); }
   else if (out.best.netInHand < 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push(`BT outstanding ${fmtINR(out.best.btOutstanding)} is more than the highest eligibility ${fmtINR(out.best.eligibleAmount)}`); }
   else if (out.deviations.length && out.status !== 'NOT_ELIGIBLE') out.status = 'DEVIATION';

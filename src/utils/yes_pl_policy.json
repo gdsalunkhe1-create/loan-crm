@@ -1,0 +1,1541 @@
+{
+  "bank": "Yes Bank",
+  "bank_id": "yes",
+  "own_bank_match": [
+    "YES BANK",
+    "YESBANK"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v1-2026-11-03",
+  "sources": {
+    "rules": "Gauri's Yes Bank template + FOIR/multiplier annexure + PL pricing Nov'26, 3 Nov 2026"
+  },
+  "eligibility": {
+    "method": "show_both_foir_and_multiplier",
+    "combine": "both",
+    "groups": {
+      "DGP": {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "super_thick",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thick",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thin",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "ntc",
+            "foir_pct": 35
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "super_thick",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thick",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thin",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "ntc",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "super_thick",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thick",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thin",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "ntc",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "super_thick",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thick",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thin",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "ntc",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "super_thick",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thick",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thin",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "ntc",
+            "foir_pct": 50
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "super_thick",
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thick",
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thin",
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "ntc",
+            "multiplier": 12
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "super_thick",
+            "multiplier": 25
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thick",
+            "multiplier": 25
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thin",
+            "multiplier": 25
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "ntc",
+            "multiplier": 14
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "super_thick",
+            "multiplier": 28
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thick",
+            "multiplier": 27
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thin",
+            "multiplier": 27
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "ntc",
+            "multiplier": 15
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "super_thick",
+            "multiplier": 30
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thick",
+            "multiplier": 28
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thin",
+            "multiplier": 28
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "ntc",
+            "multiplier": 17
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "super_thick",
+            "multiplier": 32
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thick",
+            "multiplier": 30
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thin",
+            "multiplier": 30
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "ntc",
+            "multiplier": 25
+          }
+        ]
+      },
+      "S": {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "super_thick",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thick",
+            "foir_pct": 45
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thin",
+            "foir_pct": 45
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "ntc",
+            "foir_pct": 35
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "super_thick",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thick",
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thin",
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "ntc",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "super_thick",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thick",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thin",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "ntc",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "super_thick",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thick",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thin",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "ntc",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "super_thick",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thick",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thin",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "ntc",
+            "foir_pct": 50
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "super_thick",
+            "multiplier": 17
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thick",
+            "multiplier": 17
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "thin",
+            "multiplier": 17
+          },
+          {
+            "salary_min_incl": 25000,
+            "salary_max_excl": 40001,
+            "tier": "ntc",
+            "multiplier": 11
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "super_thick",
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thick",
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "thin",
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": 65000,
+            "tier": "ntc",
+            "multiplier": 13
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "super_thick",
+            "multiplier": 25
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thick",
+            "multiplier": 25
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "thin",
+            "multiplier": 25
+          },
+          {
+            "salary_min_incl": 65000,
+            "salary_max_excl": 100000,
+            "tier": "ntc",
+            "multiplier": 15
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "super_thick",
+            "multiplier": 27
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thick",
+            "multiplier": 27
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "thin",
+            "multiplier": 27
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": 150001,
+            "tier": "ntc",
+            "multiplier": 17
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "super_thick",
+            "multiplier": 29
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thick",
+            "multiplier": 29
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "thin",
+            "multiplier": 29
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": null,
+            "tier": "ntc",
+            "multiplier": 17
+          }
+        ]
+      }
+    },
+    "tenures_months": {
+      "salary_below_75000": [
+        60
+      ],
+      "salary_75000_and_above": [
+        60
+      ]
+    },
+    "tenure_note": "Max tenure 6 years, eligibility on 5 years",
+    "roi_slabs_by_loan_amount": [
+      {
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.85
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.75
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.25
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.5
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 11.75,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.75
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.5
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.7
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.25,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 13.75
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.5
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.5,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 15.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 14.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 13.5,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 17.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 16.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 16.5
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 14.25,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 18.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 17.0
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 17.5
+      },
+      {
+        "categories": [
+          "Diamond",
+          "Gold",
+          "Platinum"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 16.75,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.75
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.7
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 11.75,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 13.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 12.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 75000,
+        "salary_max_excl": 125000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.25,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 13.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 14.0
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.5,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 15.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 15.0
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 35000,
+        "salary_max_excl": 50000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 12.75,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 16.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 15.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 16.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 25000,
+        "salary_max_excl": 35000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 14.25,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 18.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 1,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 17.5
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "city_tier": 2,
+        "loan_min_incl": 0,
+        "loan_max_excl": 1000000,
+        "roi_pct": 18.0
+      },
+      {
+        "categories": [
+          "Silver",
+          "Silver Neo"
+        ],
+        "salary_min_incl": 15000,
+        "salary_max_excl": 25000,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 17.25,
+        "note": "Fresh loan >10L / EBT >7.5L column"
+      }
+    ],
+    "roi_note": "15L+ 10.85%. Below 15L: Nov'26 rack rate by Non-Silver (Diamond/Gold/Platinum) or Silver × income × CIBIL (<730/-1 all tiers; 730+: Tier 1 / Tier 2 city below 10L, 'fresh loan >10L' column for 10–15L). IBT column not used.",
+    "max_loan": 5000000,
+    "min_cibil": 700
+  },
+  "multiplier_by_salary": {
+    "apply_on": "salary_minus_hl",
+    "slabs": [],
+    "note": "Net salary minus home-loan EMI only (other loans not deducted) × multiplier — TO CONFIRM"
+  },
+  "bureau_tier": {
+    "thick_min": 500000,
+    "super_thick_min": 1000000,
+    "default": "thin",
+    "note": "Loans served 6+ EMIs: thin 1–5L, thick 5–10L, super thick 10L+; NTC = -1 / first-time borrower"
+  },
+  "first_time_borrower": {
+    "trigger": "ntc_only",
+    "cap": 5000000,
+    "ntc_score_max": 18
+  },
+  "city_tiers": {
+    "tier1": [
+      "MUMBAI",
+      "NAVI MUMBAI",
+      "THANE",
+      "DELHI",
+      "NEW DELHI",
+      "GURGAON",
+      "GURUGRAM",
+      "NOIDA",
+      "BENGALURU",
+      "BANGALORE",
+      "CHENNAI",
+      "HYDERABAD",
+      "KOLKATA",
+      "PUNE",
+      "AHMEDABAD"
+    ],
+    "note": "Tier 1 list assumed — TO CONFIRM"
+  },
+  "min_net_salary": {
+    "_all": 25000
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "excluded_categories": [
+      "Not Qualified",
+      "Delisted",
+      "Not Categorized"
+    ],
+    "category_source": "Yes Bank list in Company Category Checker (Diamond, Gold, Platinum, Silver, Silver Neo)",
+    "unlisted_note": "Not done — company can be listed if 3+ years old (bank parameters)"
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 3,
+      "nbfc": 3
+    },
+    "nbfc_mode": "whitelist",
+    "nbfc_whitelist": [
+      {
+        "name": "Aditya Birla Finance",
+        "match": [
+          "ADITYA BIRLA",
+          "ADBIRLA",
+          "ABFL",
+          "ABCL"
+        ]
+      },
+      {
+        "name": "Bajaj Finance",
+        "match": [
+          "BAJAJ FIN",
+          "BAJAJFIN"
+        ]
+      },
+      {
+        "name": "L&T Finance",
+        "match": [
+          "L&T FIN",
+          "L AND T FIN",
+          "LT FINANCE",
+          "LTFIN",
+          "LTFS",
+          "L&TFIN"
+        ]
+      },
+      {
+        "name": "Navi Finserv",
+        "match": [
+          "NAVI"
+        ]
+      },
+      {
+        "name": "Cholamandalam",
+        "match": [
+          "CHOLAMANDALAM",
+          "CHOLA"
+        ]
+      },
+      {
+        "name": "Piramal Capital",
+        "match": [
+          "PIRAMAL"
+        ]
+      },
+      {
+        "name": "AU Small Finance Bank",
+        "match": [
+          "AU SMALL FIN",
+          "AUSFB",
+          "AU BANK",
+          "AUBANK"
+        ],
+        "note": "listed as NBFC by Gauri - confirm 4 or 6 EMIs"
+      },
+      {
+        "name": "Tata Capital",
+        "match": [
+          "TATA CAPITAL",
+          "TATA CAP",
+          "TATACAP",
+          "TCL",
+          "TCFSL"
+        ]
+      },
+      {
+        "name": "SMFG India Credit (SMICC, ex-Fullerton)",
+        "match": [
+          "SMFG",
+          "SMICC",
+          "FULLERTON"
+        ]
+      }
+    ],
+    "product_types": [
+      "PL",
+      "OD"
+    ],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 3,
+    "foreclosure_letter_lenders": [
+      {
+        "name": "Hero FinCorp",
+        "match": [
+          "HERO FIN",
+          "HEROFIN"
+        ]
+      }
+    ],
+    "lender_blacklist": [
+      {
+        "name": "Vivifi (FlexSalary)",
+        "match": [
+          "VIVIFIN",
+          "VIVIFI"
+        ]
+      },
+      {
+        "name": "Small fintech / microfinance",
+        "match": [
+          "POCKETLY",
+          "MPOKKET",
+          "FLEXSALARY",
+          "VIVIFI",
+          "FLEXPAY",
+          "KREDITZY",
+          "OLYV",
+          "TRUE BALANCE",
+          "STASHFIN",
+          "AKARA",
+          "CASHE",
+          "TSLC",
+          "KISSHT",
+          "SI CREVA",
+          "FINNABLE",
+          "MONEYTAP",
+          "BRANCH INTERNATIONAL",
+          "PAYRUPIK",
+          "LENDINGPLATE",
+          "LAZYPAY",
+          "FREO",
+          "MONEYVIEW",
+          "MONEY VIEW",
+          "WHIZDM",
+          "FIBE",
+          "EARLYSALARY",
+          "EARLY SALARY",
+          "SOCIAL WORTH",
+          "BUDDY LOAN",
+          "INDIALENDS",
+          "LOANTAP",
+          "FLEXILOANS",
+          "LENDINGKART",
+          "INDIFI",
+          "NEOGROWTH",
+          "KINARA",
+          "UGRO",
+          "OXYZO",
+          "CREDIT SAISON",
+          "DMI FIN",
+          "DMIFIN",
+          "FINCFRIENDS",
+          "PREFR",
+          "LOANFRONT",
+          "RUPEEREDEE",
+          "SMARTCOIN",
+          "RAPIDRUPEE",
+          "ZYPE",
+          "KRAZYBEE",
+          "KREDITBEE",
+          "PAYSENSE",
+          "MONEYONCLICK",
+          "PAYSME",
+          "RING ",
+          "ZESTMONEY",
+          "HOME CREDIT",
+          "MI FINANCE",
+          "CLIX",
+          "NORTHERN ARC",
+          "ARKA FINCAP",
+          "BAJAJ HOUSING",
+          "ADITYA BIRLA HOUSING",
+          "KISETSU"
+        ]
+      }
+    ],
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ],
+    "max_loans": 3,
+    "max_loans_deviation": 5,
+    "credit_card_bt": false,
+    "note": "HDFC NBFC list; any PL or OD after 3 months; 3 loans normally, up to 5 with deviation"
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": true,
+      "prelogin_paydown": "all",
+      "rule": "5% if total above salary; paid before login accepted with proof"
+    },
+    "pct_by_type": {
+      "GOLD": 1,
+      "KCC": 1,
+      "OD": 2.2
+    },
+    "pct_note": "OD: 'EMI as per 1 lakh EMI' — 2.2% of outstanding used (≈ EMI per lakh) — TO CONFIRM",
+    "home_loan_joint": {
+      "joint_pct": 50,
+      "rule": "Joint HL 50% whoever pays"
+    },
+    "loan_with_emis_remaining_lte": 5
+  },
+  "other_income": {
+    "rental": {
+      "pct": 70
+    },
+    "quarterly": {
+      "pct": 50
+    },
+    "monthly_incentive": {
+      "pct": 50
+    },
+    "bonus": {
+      "pct": 0,
+      "note": "Bonus not added"
+    }
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "excluded_category"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "own_bank_bad_history_min_count": 2,
+  "enquiries": {
+    "max_30d": 3,
+    "max_90d": 7,
+    "count_types": [
+      "Personal Loan"
+    ],
+    "deviation_possible": false
+  },
+  "closure_before_login": true,
+  "subject_to_closure_allowed": false,
+  "checklist": [
+    "Age 21+",
+    "Bachelor accommodation: salary ₹50K+, CIBIL 725+, 2 years experience",
+    "Applicant + co-applicant cases not done",
+    "Unlisted company: listing possible if 3+ years old"
+  ],
+  "product_info": {
+    "processing_fee": "1.15%–2.50% by income / CIBIL (Nov'26 rack PF)",
+    "tenure": "max 6 years",
+    "max_loan": "₹50L"
+  },
+  "open_items": [
+    "Multiplier base: net salary, or salary − home-loan EMI only?",
+    "OD obligation 'as per 1 lakh EMI'",
+    "Tier 1 city list",
+    "Bureau depth: loans summed or largest loan?",
+    "IBT column — internal BT / top-up?"
+  ]
+}

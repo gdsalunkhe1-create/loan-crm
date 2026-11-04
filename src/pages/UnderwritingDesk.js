@@ -25,7 +25,7 @@ import {
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
-  isUnlistedFor, searchedIncorporationYear, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
+  isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
   countedObligationsTotal, sameCompany, isExactMatch, uniqueCompanyNames,
 } from '../utils/underwritingAdapters';
 import {
@@ -39,7 +39,7 @@ const AUTOCOMPLETE_DEBOUNCE_MS = 250;
 // own fields so the agent's edits elsewhere survive.
 const CIBIL_CREDIT_KEYS = [
   'hdfcSettlementOrWO', 'hdfcBadHistory', 'dpdAcrossAllTrades', 'settlementsOrWO', 'freshLoanAfterSettlement', 'overdueLast12m',
-  'settledLenders', 'dpdLenders', 'dpdAccounts', 'loanAccountsEver', 'enquiries90d', 'enquiryList',
+  'settledLenders', 'dpdLenders', 'dpdAccounts', 'loanAccountsEver', 'servedLoanAmount', 'enquiries90d', 'enquiryList',
 ];
 const BSA_CREDIT_KEYS = ['bouncesLast12m', 'bouncesOnlyCardOrGold'];
 const EMPTY_UPLOADS = { cibil: null, bsa: null, payslips: [] };
@@ -498,8 +498,19 @@ export default function UnderwritingDesk({ userId, orgId }) {
       if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
       try {
         // One bad policy must never blank the page: errors stay on that bank's card.
-        const result = evaluateBank(p.policy, { ...draft, city, company: { ...company, categoriesByBank, confirmedByBank } });
-        return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, productInfo: p.policy?.product_info || null, result };
+        const profile = { ...draft, city, company: { ...company, categoriesByBank, confirmedByBank } };
+        const result = evaluateBank(p.policy, profile);
+        // Bureau depth (Yes Bank): the agent's pick, and the tier the engine works out on its own
+        // (run once more without the pick so the select can show "Auto (Thick)").
+        let bureauTier = null;
+        if (p.policy?.bureau_tier) {
+          const picked = (draft.bureauTierByBank || {})[p.bank_id] || null;
+          const auto = picked
+            ? evaluateBank(p.policy, { ...profile, bureauTierByBank: { ...draft.bureauTierByBank, [p.bank_id]: null } }).bureauTier
+            : result.bureauTier;
+          bureauTier = { value: picked, auto: auto || null };
+        }
+        return { bankId: p.bank_id, version: p.version, label, scorecard, bureauTier, salaryBase, productInfo: p.policy?.product_info || null, result };
       } catch (e) {
         return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, error: e.message || String(e) };
       }
@@ -639,6 +650,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               netSalary={r.salaryBase}
               scorecardValue={(draft.scorecardByBank || {})[r.bankId] || null}
               onScorecard={(v) => patchDraft(scorecardPatch(draft.scorecardByBank, r.bankId, v))}
+              onBureauTier={(v) => patchDraft(bureauTierPatch(draft.bureauTierByBank, r.bankId, v))}
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
             />
           ))}
@@ -1962,6 +1974,23 @@ const TONES = {
 };
 
 // "<scorecard name>: — / Super green / Green / Yellow / Red" — the bank decides it, the agent records it.
+// Bureau depth for banks with policy.bureau_tier (Yes Bank): Auto = the engine's own tier.
+function BureauTierSelect({ tier, onChange }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#555' }}>
+      Bureau profile:
+      <select
+        style={{ ...cellSel, width: 'auto', padding: '1px 4px', fontSize: '11px', fontWeight: tier.value ? 700 : 400 }}
+        value={tier.value || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">Auto ({bureauTierLabel(tier.auto)})</option>
+        {BUREAU_TIERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function ScorecardSelect({ scorecard, value, onChange }) {
   const tone = TONES[scorecardTone(scorecard, value)];
   return (
@@ -1991,7 +2020,7 @@ function ClosurePlan({ plan, onMarkClosed }) {
   ));
 }
 
-function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecard, onMarkClosed }) {
+function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecard, onBureauTier, onMarkClosed }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const lenderOf = (id) => loans.find((l) => l.id === id);
@@ -2013,6 +2042,7 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
         <h3 style={{ ...cardHeader, margin: 0 }}>{label}</h3>
         {st && <span style={{ ...pill, background: st.background, color: st.color }}>{st.label}</span>}
         {entry.scorecard && <ScorecardSelect scorecard={entry.scorecard} value={scorecardValue} onChange={onScorecard} />}
+        {entry.bureauTier && <BureauTierSelect tier={entry.bureauTier} onChange={onBureauTier} />}
         <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9aa1b2' }}>
           {result && result.policyVersion ? `Policy ${result.policyVersion}` : entry.version ? `Policy ${entry.version}` : ''}
         </span>

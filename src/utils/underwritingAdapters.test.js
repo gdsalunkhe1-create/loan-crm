@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -979,5 +979,51 @@ describe('Merged obligations table helpers', () => {
     expect(termEmiTotal([{ productType: 'PL', emi: 10000 }, { productType: 'GOLD', emi: 3000 }, { productType: 'HL', emi: 20000 }])).toBe(30000);
     expect(countedObligationsTotal(null)).toBe(null);
     expect(countedObligationsTotal({ loans: [{ obligation: { amount: 10000 } }, { obligation: { amount: 500 } }], cards: { amount: 2500 } })).toBe(13000);
+  });
+});
+
+describe('servedLoanAmount (bureau depth)', () => {
+  const today = new Date(2026, 10, 4);
+  const row = (accounts) => ({ report_date: '2026-11-04', cibil_score: 760, enquiries: { last90: 0 }, accounts });
+  test('non-card loans that ran 6+ months, open or closed', () => {
+    const accounts = [
+      acc({ bankName: 'HDFC BANK', loanAmount: '500000', openDate: '01/01/2025' }),                                   // open 22 months
+      acc({ bankName: 'BAJAJ FIN', loanAmount: '200000', status: 'Closed', openDate: '01/01/2022', closedDate: '01/09/2022' }), // closed after 8 months
+      acc({ bankName: 'TATA CAP', loanAmount: '300000', status: 'Closed', openDate: '01/01/2023', closedDate: '01/04/2023' }),   // 3 months: out
+      acc({ bankName: 'ICICI BANK', loanAmount: '400000', openDate: '01/08/2026' }),                                   // open 3 months: out
+      acc({ bankName: 'AXIS BANK', loanType: 'Credit Card', loanAmount: '900000', openDate: '01/01/2020' }),           // card: out
+      acc({ bankName: 'KOTAK', loanAmount: '100000', status: 'Closed', openDate: '01/01/2021', closedDate: '' }),     // closed, no date: out
+    ];
+    expect(cibilToProfile(row(accounts), { today }).credit.servedLoanAmount).toBe(700000);
+    expect(buildProfileDraft(row(accounts), null, { today }).credit.servedLoanAmount).toBe(700000);
+  });
+  test('exactly 6 months counts; no loans is 0', () => {
+    const six = [acc({ loanAmount: '250000', openDate: '04/05/2026' })];
+    expect(cibilToProfile(row(six), { today }).credit.servedLoanAmount).toBe(250000);
+    expect(cibilToProfile(row([]), { today }).credit.servedLoanAmount).toBe(0);
+  });
+});
+
+describe('bureau profile select', () => {
+  test('bureauTierPatch sets one bank; Auto / unknown is null', () => {
+    expect(bureauTierPatch(null, 'yes', 'thick')).toEqual({ bureauTierByBank: { yes: 'thick' } });
+    expect(bureauTierPatch({ yes: 'thick', other: 'thin' }, 'yes', '')).toEqual({ bureauTierByBank: { yes: null, other: 'thin' } });
+    expect(bureauTierPatch({}, 'yes', 'bogus')).toEqual({ bureauTierByBank: { yes: null } });
+  });
+  test('labels', () => {
+    expect(bureauTierLabel('super_thick')).toBe('Super thick');
+    expect(bureauTierLabel('ntc')).toBe('NTC');
+    expect(bureauTierLabel(null)).toBe('—');
+  });
+  test('Yes Bank: the pick reaches the engine; Auto follows servedLoanAmount', () => {
+    const yes = require('./yes_pl_policy.json');
+    const today = new Date(2026, 10, 4);
+    const row = { report_date: '2026-11-04', cibil_score: 770, enquiries: { last90: 0 }, accounts: [
+      acc({ bankName: 'HDFC BANK', loanAmount: '600000', openDate: '01/01/2025', emi: '15000', outstanding: '300000', tenure: '48' }),
+    ] };
+    const d = buildProfileDraft(row, null, { today });
+    const base = { ...d, netSalary: 120000, city: 'Mumbai', company: { name: 'ACME', category: 'Gold', categoryConfirmed: true, categoriesByBank: { yes: 'Gold' }, confirmedByBank: {} } };
+    expect(evaluateBank(yes, base).bureauTier).toBe('thick');
+    expect(evaluateBank(yes, { ...base, ...bureauTierPatch(null, yes.bank_id, 'thin') }).bureauTier).toBe('thin');
   });
 });

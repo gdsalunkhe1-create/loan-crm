@@ -523,3 +523,36 @@ test('Bandhan pricing grid below 10L by category x salary x CIBIL', () => {
   expect(run('CAT D', 45000, 760, 5000)).toBe(15.49);
   expect(run('CAT B', 60000, -1, 25000)).toBe(14.49);   // NTC priced in the 650-699 / 0 / -1 column
 });
+
+import yes from './yes_pl_policy.json';
+
+test('Yes Bank: bureau tier FOIR/multiplier grids, HL-only multiplier base, rack rate by tier city, BT max 3 (5 deviation), enquiries', () => {
+  const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 760, city: 'Pune', company: { categoriesByBank: { yes: 'Gold' } },
+    credit: { enquiryList: [], servedLoanAmount: 1200000 }, ...x });
+  const st = evaluateBank(yes, p({ netSalary: 120000 }));
+  expect(st.bureauTier).toBe('super_thick');
+  expect(st.foirPct).toBe(75);
+  expect(st.best.methods.find((m) => m.key === 'multiplier').multiplier).toBe(30);
+  expect(st.best.eligibleRule).toBe('both');
+  const thin = evaluateBank(yes, p({ netSalary: 120000, credit: { enquiryList: [], servedLoanAmount: 300000 } }));
+  expect(thin.bureauTier).toBe('thin');
+  expect(thin.best.methods.find((m) => m.key === 'multiplier').multiplier).toBe(28);
+  expect(evaluateBank(yes, p({ netSalary: 120000, cibilScore: -1 })).foirPct).toBe(50);
+  const s = evaluateBank(yes, p({ netSalary: 50000, company: { categoriesByBank: { yes: 'Silver Neo' } }, credit: { enquiryList: [], servedLoanAmount: 600000 } }));
+  expect(s.foirPct).toBe(60);
+  // multiplier base: salary minus HL EMI only; PL EMIs not deducted
+  const hl = evaluateBank(yes, p({ netSalary: 120000, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 20000, emisPaid: 30, emisRemaining: 200, isJoint: true }, { id: 'pl', lender: 'XYZ', productType: 'PL', outstanding: 100000, emi: 10000, emisPaid: 2, emisRemaining: 20 }] }));
+  expect(hl.best.methods.find((m) => m.key === 'multiplier').amount).toBe((120000 - 10000) * 30);   // joint HL 50% = 10,000
+  // rates: Pune tier 1, loan under 10L, CIBIL 730+
+  const r = evaluateBank(yes, p({ netSalary: 40000, loans: [{ id: 'x', lender: 'SBI', productType: 'HL', emi: 12000, emisPaid: 30, emisRemaining: 200 }] }));
+  expect(r.best.methods[0].roi).toBe(14.0);
+  expect(evaluateBank(yes, p({ netSalary: 40000, city: 'Nashik', loans: [{ id: 'x', lender: 'SBI', productType: 'HL', emi: 12000, emisPaid: 30, emisRemaining: 200 }] })).best.methods[0].roi).toBe(14.5);
+  // BT count
+  const loans = Array.from({ length: 6 }, (_, i) => ({ id: 'b' + i, lender: 'AXIS BANK', productType: 'PL', outstanding: 100000, emi: 5000, emisPaid: 10, emisRemaining: 20 }));
+  const bt = evaluateBank(yes, p({ netSalary: 150000, loans }));
+  expect(bt.scenarios.every((sc) => sc.bt.length <= 5)).toBe(true);
+  if (bt.best.bt.length > 3) expect(bt.status).toBe('DEVIATION');
+  const enq = (n) => evaluateBank(yes, p({ netSalary: 120000, credit: { servedLoanAmount: 1200000, enquiryList: Array.from({ length: n }, (_, i) => ({ lender: 'X', product: 'Personal Loan', daysAgo: i + 1 })) } })).status;
+  expect([enq(3), enq(4)]).toEqual(['ELIGIBLE', 'NOT_ELIGIBLE']);
+  expect(evaluateBank(yes, p({ company: { categoriesByBank: { yes: 'Delisted' } } })).status).toBe('NOT_ELIGIBLE');
+});
