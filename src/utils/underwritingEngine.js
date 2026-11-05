@@ -453,9 +453,15 @@ export function evaluateBank(policy, profileIn) {
   const group = groupKey ? groups[groupKey] : null;
   const confirmed = profile.company?.confirmedByBank?.[policy.bank_id] ?? profile.company?.categoryConfirmed;
 
+  // Obligations are worked out even when the bank says no, so the table can still show what each bank counts.
+  const obligationsOnly = () => ({
+    loans: (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l), bt: btCandidate(policy, l) })),
+    cards: cardObligation(policy, profile),
+  });
   if (profile.company && confirmed === false) {
     out.status = 'NEEDS_INPUT';
     out.reasons.push('Company listed with two categories — select the banker-confirmed one');
+    out.obligations = obligationsOnly();
     return out;
   }
   const hc = hardChecks(policy, { ...profile, company: { ...profile.company, category: cat } });
@@ -463,6 +469,7 @@ export function evaluateBank(policy, profileIn) {
   out.deviations = hc.deviations;
   if (out.reasons.length) {
     out.reasons.push(...hc.waits.map((w) => w.text));
+    out.obligations = obligationsOnly();
     out.status = 'NOT_ELIGIBLE'; return out;
   }
 

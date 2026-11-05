@@ -566,3 +566,10 @@ test('Joint home loan paid by both: 50% (IndusInd 100%, Yes 50% whoever pays)', 
   expect(o(indusind, 'CAT A')).toBe(118041);
   expect(o(yes, 'Gold')).toBeCloseTo(59020.5);
 });
+
+test('Obligations are still returned when a bank declines (counted column never blank)', () => {
+  const r = evaluateBank(lt, { ...base, cibilScore: 700, company: { categoriesByBank: { lt: 'CAT A' } }, credit: { enquiryList: [] } });
+  expect(r.status).toBe('NOT_ELIGIBLE');
+  expect(r.obligations.loans.find((l) => l.id === 'hl').obligation.amount).toBe(25000);
+  expect(r.obligations.cards).toBeDefined();
+});

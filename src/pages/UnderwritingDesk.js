@@ -1708,12 +1708,19 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
             </button>
           )}
           {results.length > 1 && (
-            <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-              Counted for
-              <select style={{ ...cellSel, width: 'auto' }} value={entry ? entry.bankId : ''} onChange={(e) => setBankId(e.target.value)}>
-                {results.map((r) => <option key={r.bankId} value={r.bankId}>{r.label}</option>)}
-              </select>
-            </label>
+            <div>
+              <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                Counted for
+                <select style={{ ...cellSel, width: 'auto' }} value={entry ? entry.bankId : ''} onChange={(e) => setBankId(e.target.value)}>
+                  {results.map((r) => <option key={r.bankId} value={r.bankId}>{r.label}</option>)}
+                </select>
+              </label>
+              {res && res.status === 'NOT_ELIGIBLE' && (
+                <div style={{ ...smallNote, color: RED, marginTop: '3px', maxWidth: '340px', marginLeft: 'auto' }}>
+                  {entry.label}: Not eligible{res.reasons && res.reasons[0] ? ` — ${res.reasons[0]}` : ''}
+                </div>
+              )}
+            </div>
           )}
           <div style={{ position: 'relative' }}>
             <button style={btnSecSm} onClick={() => setAddOpen(!addOpen)} onBlur={() => setTimeout(() => setAddOpen(false), 150)}>
