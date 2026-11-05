@@ -22,7 +22,7 @@ import {
 } from '../utils/uiStyles';
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, averageGrossPay, summarizeEmployer,
-  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isTopUp, hlJointPatch, hlIncomeOkPatch, hlPayerPatch,
+  extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
   isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
@@ -485,6 +485,9 @@ export default function UnderwritingDesk({ userId, orgId }) {
     return policies.map((p) => {
       const label = p.policy?.bank || p.bank_id;
       const scorecard = p.policy?.scorecard || null;
+      // Risk segment (Poonawalla): bank decides; the select shows the policy default until the agent picks.
+      const rs = p.policy?.risk_segment;
+      const riskSegment = rs ? { name: rs.name, values: rs.values || [], value: (draft.riskSegmentByBank || {})[p.bank_id] || rs.default || null } : null;
       // Salary the bank's figures are on (same order as the engine): − variable pay where the
       // policy counts fixed salary only (IndusInd), + co-applicant's where it adds it (HDFC, Kotak).
       const fixedOnly = p.policy?.exclude_variable_pay ? Math.max(0, draft.variablePayMonthly || 0) : 0;
@@ -495,7 +498,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
       const missing = [];
       if (!(draft.netSalary > 0)) missing.push('Enter the net monthly salary');
       if (!company) missing.push('Search the company to get its category');
-      if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
+      if (missing.length) return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, salaryBase, result: { status: 'NEEDS_INPUT', reasons: missing, warnings: [] } };
       try {
         // One bad policy must never blank the page: errors stay on that bank's card.
         const profile = { ...draft, city, company: { ...company, categoriesByBank, confirmedByBank } };
@@ -510,9 +513,9 @@ export default function UnderwritingDesk({ userId, orgId }) {
             : result.bureauTier;
           bureauTier = { value: picked, auto: auto || null };
         }
-        return { bankId: p.bank_id, version: p.version, label, scorecard, bureauTier, salaryBase, productInfo: p.policy?.product_info || null, result };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null, result };
       } catch (e) {
-        return { bankId: p.bank_id, version: p.version, label, scorecard, salaryBase, error: e.message || String(e) };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, salaryBase, error: e.message || String(e) };
       }
     });
   }, [draft, policies, companyFor, incorporationYear, city]);
@@ -648,9 +651,11 @@ export default function UnderwritingDesk({ userId, orgId }) {
               loans={draft.loans}
               cards={draft.cards}
               netSalary={r.salaryBase}
+              cibilScore={draft.cibilScore}
               scorecardValue={(draft.scorecardByBank || {})[r.bankId] || null}
               onScorecard={(v) => patchDraft(scorecardPatch(draft.scorecardByBank, r.bankId, v))}
               onBureauTier={(v) => patchDraft(bureauTierPatch(draft.bureauTierByBank, r.bankId, v))}
+              onRiskSegment={(v) => patchDraft(riskSegmentPatch(draft.riskSegmentByBank, r.bankId, v, r.riskSegment && r.riskSegment.values))}
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
             />
           ))}
@@ -1663,6 +1668,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const cardRow = (c, muted) => {
     const action = c.action || (c.paidBeforeLoginWithProof > 0 ? 'paid' : 'keep');
     const share = cardCountedShare(cardCalc, c.id);
+    const btCard = isBtCard(best, c.id);   // card BT (Poonawalla): paid off from the loan, nothing counted
     return (
       <tr key={c.id} style={muted ? mutedRow : undefined}>
         <td style={td}><input style={cellInp} value={c.issuer} onChange={(e) => setCard(c.id, { issuer: e.target.value })} placeholder="Card issuer" title={c.issuer} /></td>
@@ -1686,8 +1692,8 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
           {suggested.has(c.id) && <div style={{ marginTop: '4px' }}><span style={tag('#dcfce7', '#166534')}>Suggested: close</span></div>}
         </td>
         <td style={{ ...td, ...num }}>
-          <div style={{ fontWeight: 700, fontSize: '12px' }}>{!cardCalc ? '—' : share == null ? '0' : fmt(share)}</div>
-          <ReasonLine text={cardReason(cardCalc, c)} />
+          <div style={{ fontWeight: 700, fontSize: '12px' }}>{btCard ? '0' : !cardCalc ? '—' : share == null ? '0' : fmt(share)}</div>
+          <ReasonLine text={btCard ? 'BT' : cardReason(cardCalc, c)} />
         </td>
         <td style={td}>
           <button style={btnGhostSm} title="Remove card" onClick={() => removeCard(c.id)}>✕</button>
@@ -1765,7 +1771,10 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
             {showZero && zeroCards.map((c) => cardRow(c, true))}
 
             <tr style={{ background: '#f0f4fa' }}>
-              <td style={{ ...td, fontWeight: 700, fontSize: '12px' }} colSpan={4}>Total</td>
+              <td style={{ ...td, fontWeight: 700, fontSize: '12px' }} colSpan={4}>
+                Total (before BT)
+                {best && entry && <div style={{ fontSize: '11px', fontWeight: 400, color: '#7a8194', marginTop: '2px' }}>After BT for {entry.label}: {fmtINR(best.obligations)}/month</div>}
+              </td>
               <td style={totalCell}>{fmt(totalOutstanding)}</td>
               <td style={totalCell} title="Term loans only — gold / OD / KCC left out">{fmt(termEmiTotal(draft.loans))}</td>
               <td style={td} colSpan={3} />
@@ -2015,6 +2024,22 @@ function BureauTierSelect({ tier, onChange }) {
   );
 }
 
+// "<risk_segment.name>: VL/L / Medium / High" (Poonawalla) — the bank decides, the agent records it.
+function RiskSegmentSelect({ segment, onChange }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#555' }}>
+      {segment.name}:
+      <select
+        style={{ ...cellSel, width: 'auto', padding: '1px 4px', fontSize: '11px', fontWeight: 700 }}
+        value={segment.value || ''}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        {segment.values.map((v) => <option key={v} value={v}>{v}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function ScorecardSelect({ scorecard, value, onChange }) {
   const tone = TONES[scorecardTone(scorecard, value)];
   return (
@@ -2044,10 +2069,10 @@ function ClosurePlan({ plan, onMarkClosed }) {
   ));
 }
 
-function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecard, onBureauTier, onMarkClosed }) {
+function ResultCard({ entry, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
-  const lenderOf = (id) => loans.find((l) => l.id === id);
+  const chipFor = (scenario, id) => btChipText(scenario, id, loans, cards, fmtL);
   const best = result && result.best;
   const needsInput = !!(result && result.status === 'NEEDS_INPUT');
   const notEligible = !!(result && result.status === 'NOT_ELIGIBLE');
@@ -2067,6 +2092,7 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
         {st && <span style={{ ...pill, background: st.background, color: st.color }}>{st.label}</span>}
         {entry.scorecard && <ScorecardSelect scorecard={entry.scorecard} value={scorecardValue} onChange={onScorecard} />}
         {entry.bureauTier && <BureauTierSelect tier={entry.bureauTier} onChange={onBureauTier} />}
+        {entry.riskSegment && <RiskSegmentSelect segment={entry.riskSegment} onChange={onRiskSegment} />}
         <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#9aa1b2' }}>
           {result && result.policyVersion ? `Policy ${result.policyVersion}` : entry.version ? `Policy ${entry.version}` : ''}
         </span>
@@ -2102,7 +2128,7 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
           <div style={{ opacity: 0.55, marginTop: '10px' }} title="Applies once the wait is over">
             <ResultTiles result={result} netSalary={netSalary} />
             {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
-            <BtPlan best={best} lenderOf={lenderOf} />
+            <BtPlan best={best} chipFor={chipFor} addOnLine={rateAddOnLine(best, cibilScore)} />
           </div>
         </>
       )}
@@ -2112,7 +2138,7 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
           <ResultTiles result={result} netSalary={netSalary} />
           {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
           {closurePlan.length > 0 && <ClosurePlan plan={closurePlan} onMarkClosed={onMarkClosed} />}
-          <BtPlan best={best} lenderOf={lenderOf} />
+          <BtPlan best={best} chipFor={chipFor} addOnLine={rateAddOnLine(best, cibilScore)} />
         </div>
       )}
 
@@ -2122,7 +2148,7 @@ function ResultCard({ entry, loans, cards, netSalary, scorecardValue, onScorecar
       {result && !notEligible && !needsInput && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
 
       {result && !notEligible && result.scenarios && result.scenarios.length > 0 && (
-        <OtherOptions scenarios={result.scenarios} best={best} lenderOf={lenderOf} />
+        <OtherOptions scenarios={result.scenarios} best={best} chipFor={chipFor} />
       )}
 
       {result && result.checklist && result.checklist.length > 0 && <Checklist items={result.checklist} />}
@@ -2248,14 +2274,16 @@ function EligibilityTable({ result }) {
 function ResultTiles({ result, netSalary }) {
   const best = result.best;
   const risk = result.risk;
-  const btCount = best.bt.length;
+  const nCards = (best.btCards || []).length;
+  const nLoans = best.bt.length - nCards;
+  const btSub = [`${nLoans} loan${nLoans === 1 ? '' : 's'}`, nCards ? `${nCards} card${nCards === 1 ? '' : 's'}` : null].filter(Boolean).join(', ');
   return (
     <>
       <EligibilityTable result={result} />
       <OtherIncomeTable otherIncome={result.otherIncome} netSalary={netSalary} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginTop: '12px' }}>
         <SItem label="Counted obligations" value={`${fmtINR(best.obligations)}/month`} />
-        <SItem label={hasTopUp(best) ? 'BT + top-up POS' : 'BT POS'} value={fmtINR(best.btOutstanding)} sub={`${btCount} loan${btCount === 1 ? '' : 's'}`} />
+        <SItem label={hasTopUp(best) ? 'BT + top-up POS' : 'BT POS'} value={fmtINR(best.btOutstanding)} sub={btSub} />
         {hasMultiplier(best) && <SItem label="Risk" value={risk.band === 'better' ? 'Better band' : 'Lower band'} sub={risk.reason} />}
       </div>
     </>
@@ -2274,7 +2302,6 @@ function CardPlanLine({ plan, cards }) {
   );
 }
 
-const chipText = (loan, id, topUp = false) => `${(loan && loan.lender) || id} · ${fmtL(loan ? loan.outstanding : 0)}${topUp ? ' (top-up)' : ''}`;
 const hasTopUp = (scenario) => !!(scenario && Array.isArray(scenario.topUp) && scenario.topUp.length > 0);
 
 // Pill for loans the selected bank's best scenario takes over: BT (green) or own-bank Top-up (purple).
@@ -2288,13 +2315,14 @@ function ReasonLine({ text }) {
   return <div style={{ fontSize: '11px', color: '#7a8194', whiteSpace: 'normal', lineHeight: 1.3 }}>{text}</div>;
 }
 
-function BtPlan({ best, lenderOf }) {
+function BtPlan({ best, chipFor, addOnLine }) {
   return (
     <div style={{ marginTop: '14px' }}>
       <div style={{ ...lbl, marginBottom: '4px' }}>{hasTopUp(best) ? 'BT / top-up plan' : 'BT plan'}</div>
       {best.bt.length
-        ? best.bt.map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id, isTopUp(best, id))}</span>)
+        ? best.bt.map((id) => <span key={id} style={chip}>{chipFor(best, id)}</span>)
         : <span style={{ fontSize: '12px', color: '#7a8194' }}>No BT — every loan stays as an obligation.</span>}
+      {addOnLine && <div style={{ fontSize: '11px', color: '#7a8194', marginTop: '4px' }}>{addOnLine}</div>}
     </div>
   );
 }
@@ -2302,7 +2330,7 @@ function BtPlan({ best, lenderOf }) {
 const CHIPS_IN_CELL = 3;
 const TOP_OPTIONS = 5;
 
-function OtherOptions({ scenarios, best, lenderOf }) {
+function OtherOptions({ scenarios, best, chipFor }) {
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const rows = showAll ? scenarios : scenarios.slice(0, TOP_OPTIONS);
@@ -2323,7 +2351,7 @@ function OtherOptions({ scenarios, best, lenderOf }) {
                     <td style={td}>
                       <div style={{ maxWidth: '320px', lineHeight: 1.2 }}>
                         {s.bt.length === 0 && <span style={{ fontSize: '12px', color: '#7a8194' }}>None</span>}
-                        {s.bt.slice(0, CHIPS_IN_CELL).map((id) => <span key={id} style={chip}>{chipText(lenderOf(id), id, isTopUp(s, id))}</span>)}
+                        {s.bt.slice(0, CHIPS_IN_CELL).map((id) => <span key={id} style={chip}>{chipFor(s, id)}</span>)}
                         {s.bt.length > CHIPS_IN_CELL && <span style={{ fontSize: '11px', color: '#7a8194' }}>+{s.bt.length - CHIPS_IN_CELL} more</span>}
                         {s === best && <span style={{ ...pill, background: '#dcfce7', color: '#166534', marginLeft: '4px' }}>Best</span>}
                       </div>

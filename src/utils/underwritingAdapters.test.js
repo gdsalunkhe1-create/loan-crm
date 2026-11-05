@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -1058,5 +1058,52 @@ describe('bureau profile select', () => {
     const base = { ...d, netSalary: 120000, city: 'Mumbai', company: { name: 'ACME', category: 'Gold', categoryConfirmed: true, categoriesByBank: { yes: 'Gold' }, confirmedByBank: {} } };
     expect(evaluateBank(yes, base).bureauTier).toBe('thick');
     expect(evaluateBank(yes, { ...base, ...bureauTierPatch(null, yes.bank_id, 'thin') }).bureauTier).toBe('thin');
+  });
+});
+
+describe('Poonawalla: risk segment, card / app-loan BT chips', () => {
+  const pfl = require('./poonawalla_pl_policy.json');
+  const fmtL = (n) => `₹${(n / 100000).toFixed(2)}L`;
+  const loans = [{ id: 'kb', lender: 'KRAZYBEE', productType: 'PL', outstanding: 40000, emi: 6000, emisPaid: 1, emisRemaining: 6 },
+    { id: 'pl', lender: 'AXIS BANK', productType: 'PL', outstanding: 500000, emi: 15000, emisPaid: 3, emisRemaining: 40 }];
+  const cards = [{ id: 'c1', issuer: 'SBI CARD', limit: 300000, outstanding: 200000 }];
+  const profile = { netSalary: 150000, cibilScore: 760, city: 'Pune', loans, cards, credit: { enquiryList: [] },
+    company: { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { poonawalla_fincorp: 'CAT A' }, confirmedByBank: {} } };
+
+  test('riskSegmentPatch keeps listed values; anything else is null (= policy default)', () => {
+    const vals = pfl.risk_segment.values;
+    expect(riskSegmentPatch(null, 'poonawalla_fincorp', 'High', vals)).toEqual({ riskSegmentByBank: { poonawalla_fincorp: 'High' } });
+    expect(riskSegmentPatch({ x: 'Medium' }, 'poonawalla_fincorp', 'Bogus', vals)).toEqual({ riskSegmentByBank: { x: 'Medium', poonawalla_fincorp: null } });
+  });
+
+  test('High risk segment lowers FOIR through the patch', () => {
+    const p = { ...profile, loans: [], cards: [], netSalary: 120000 };
+    expect(evaluateBank(pfl, p).riskSegment).toBe('VL/L');
+    const high = evaluateBank(pfl, { ...p, ...riskSegmentPatch(null, pfl.bank_id, 'High', pfl.risk_segment.values) });
+    expect(high.riskSegment).toBe('High');
+    expect(high.foirPct).toBeLessThan(evaluateBank(pfl, p).foirPct);
+  });
+
+  test('chips label cards and app loans; BT card is flagged; rate add-on line', () => {
+    const r = evaluateBank(pfl, profile);
+    const s = r.scenarios.find((x) => x.bt.length === 3);
+    expect(isBtCard(s, 'c1')).toBe(true);
+    expect(isBtCard(s, 'pl')).toBe(false);
+    expect(btChipText(s, 'c1', loans, cards, fmtL)).toBe('SBI CARD · ₹2.00L (card)');
+    expect(btChipText(s, 'kb', loans, cards, fmtL)).toBe('KRAZYBEE · ₹0.40L (app)');
+    expect(btChipText(s, 'pl', loans, cards, fmtL)).toBe('AXIS BANK · ₹5.00L');
+    expect(rateAddOnLine(s, 760)).toBe('Rate includes +1.25% for card / app-loan BT');
+    expect(rateAddOnLine({ ...s, rateAddOn: 0 }, 760)).toBeNull();
+    expect(rateAddOnLine({ rateAddOn: 1, btCards: [], btApps: [] }, -1)).toBe('Rate includes +1% for no CIBIL score');
+  });
+
+  test('card chip uses the balance left after a proven pre-login payment', () => {
+    const s = { bt: ['c1'], btCards: ['c1'] };
+    expect(btChipText(s, 'c1', [], [{ id: 'c1', issuer: 'HDFC CARD', outstanding: 150000, paidBeforeLoginWithProof: 50000 }], fmtL)).toBe('HDFC CARD · ₹1.00L (card)');
+  });
+
+  test('FOIR 7 years row label', () => {
+    const r = evaluateBank(pfl, { ...profile, loans: [], cards: [], netSalary: 120000 });
+    expect(r.best.methods.find((m) => m.tenure === 84).label).toBe('FOIR 7 years');
   });
 });

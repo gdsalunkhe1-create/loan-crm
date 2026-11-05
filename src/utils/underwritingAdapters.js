@@ -434,6 +434,13 @@ export function scorecardPatch(scorecardByBank, bankId, value) {
   return { scorecardByBank: { ...(scorecardByBank || {}), [bankId]: value || null } };
 }
 
+// Risk segment (policy.risk_segment, e.g. Poonawalla VL/L / Medium / High). The select shows
+// the policy default until the agent picks; a value outside the list is stored as null (= default).
+export function riskSegmentPatch(riskSegmentByBank, bankId, value, values) {
+  const v = (values || []).includes(value) ? value : null;
+  return { riskSegmentByBank: { ...(riskSegmentByBank || {}), [bankId]: v } };
+}
+
 // Colour for a scorecard value: a rejected value is always red.
 export function scorecardTone(scorecard, value) {
   if (!value) return null;
@@ -540,6 +547,31 @@ export const loanNeedsEmi = (l) => (l.outstanding || 0) > 0 && !(l.emi > 0) && !
 // True when a scenario closes this loan through the bank's own top-up
 // (scenario.topUp is the subset of scenario.bt done that way).
 export const isTopUp = (scenario, loanId) => !!(scenario && Array.isArray(scenario.topUp) && scenario.topUp.includes(loanId));
+
+// Card BT (policy.balance_transfer.card_bt, e.g. Poonawalla): the scenario pays this card off.
+export const isBtCard = (scenario, cardId) => !!(scenario && Array.isArray(scenario.btCards) && scenario.btCards.includes(cardId));
+
+// BT plan chip: "HDFC BANK · ₹3.20L", "SBI CARD · ₹2.00L (card)", "KRAZYBEE · ₹0.40L (app)", "(top-up)".
+// A card's amount is what is left after any proven pre-login payment (same as the engine).
+export function btChipText(scenario, id, loans, cards, fmtLakh) {
+  if (isBtCard(scenario, id)) {
+    const c = (cards || []).find((x) => x.id === id);
+    const left = c ? Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0)) : 0;
+    return `${(c && c.issuer) || id} · ${fmtLakh(left)} (card)`;
+  }
+  const l = (loans || []).find((x) => x.id === id);
+  const tag = isTopUp(scenario, id) ? ' (top-up)' : (scenario && Array.isArray(scenario.btApps) && scenario.btApps.includes(id)) ? ' (app)' : '';
+  return `${(l && l.lender) || id} · ${fmtLakh(l ? l.outstanding : 0)}${tag}`;
+}
+
+// Grey line under the BT chips. rateAddOn covers card / app-loan BT and, for CIBIL 0 / -1, the NTC add-on.
+export function rateAddOnLine(scenario, cibilScore) {
+  if (!scenario || !(scenario.rateAddOn > 0)) return null;
+  const parts = [];
+  if ((scenario.btCards || []).length || (scenario.btApps || []).length) parts.push('card / app-loan BT');
+  if (cibilScore === 0 || cibilScore === -1) parts.push('no CIBIL score');
+  return `Rate includes +${Number(scenario.rateAddOn.toFixed(2))}%${parts.length ? ` for ${parts.join(' and ')}` : ''}`;
+}
 
 // Own-bank loans the scenario closes through a top-up read 'Top-up' instead of 'BT'.
 export function loanReason(loan, line, best) {

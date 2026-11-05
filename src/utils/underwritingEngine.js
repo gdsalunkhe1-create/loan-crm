@@ -51,11 +51,13 @@ function roiSlabsFor(policy, score, category, salary, ownHouse, cityT) {
 }
 
 // FOIR slab: salary band, optionally limited by CIBIL score (cibil_min_incl / cibil_max_excl).
-function pickFoirSlab(slabs, salary, score, tier) {
+function pickFoirSlab(slabs, salary, score, tier, segment) {
   const sc = Math.max(score ?? 0, 0);
   return (slabs || []).find((s) => inBand(salary, s.salary_min_incl, s.salary_max_excl)
     && ((s.cibil_min_incl == null && s.cibil_max_excl == null) || inBand(sc, s.cibil_min_incl, s.cibil_max_excl))
-    && (!s.tier || s.tier === tier));
+    && (!s.tier || s.tier === tier)
+    && (!s.risk_segment || s.risk_segment === segment)
+    && (!s.risk_segments || s.risk_segments.includes(segment)));
 }
 
 // Bureau depth (e.g. Yes Bank): NTC / thin / thick / super_thick from the loan amounts served for 6+ months.
@@ -110,16 +112,18 @@ function otherIncomeFor(policy, profile) {
 }
 
 // ROI depends on the loan amount, which depends on ROI: start at the best rate, step down.
-function foirLoanWithRoi(emi, months, roiSlabs, cap) {
+// adj = { add, min }: extra rate on top of the grid (e.g. 6/7-year tenure, NTC, card/app-loan BT) and a floor.
+function foirLoanWithRoi(emi, months, roiSlabs, cap, adj = {}) {
+  const eff = (r) => Math.max(r + (adj.add || 0), adj.min || 0);
   const ordered = [...roiSlabs].sort((a, b) => a.roi_pct - b.roi_pct);
   const capped = (amt) => (cap != null && amt > cap ? cap : amt);
   for (const s of ordered) {
-    const amt = loanFromEmi(emi, s.roi_pct, months);
-    if (inBand(amt, s.loan_min_incl, s.loan_max_excl)) return { amount: capped(amt), roi: s.roi_pct, capped: cap != null && amt > cap };
+    const amt = loanFromEmi(emi, eff(s.roi_pct), months);
+    if (inBand(amt, s.loan_min_incl, s.loan_max_excl)) return { amount: capped(amt), roi: +eff(s.roi_pct).toFixed(2), capped: cap != null && amt > cap };
   }
   const last = ordered[ordered.length - 1];
-  const amt = loanFromEmi(emi, last.roi_pct, months);
-  return { amount: capped(amt), roi: last.roi_pct, roiAssumed: true, capped: cap != null && amt > cap };
+  const amt = loanFromEmi(emi, eff(last.roi_pct), months);
+  return { amount: capped(amt), roi: +eff(last.roi_pct).toFixed(2), roiAssumed: true, capped: cap != null && amt > cap };
 }
 
 function minSalaryFor(policy, category, salaryAccountBank, city) {
@@ -358,7 +362,7 @@ function obligationOf(policy, loan) {
       const pct = j.both_pct ?? j.pct_of_emi ?? 100;
       return { amount: pct / 100 * (loan.emi || 0), rule: `Joint HL paid by both — ${pct}% of EMI` };
     }
-    if (j.paid_by_co_applicant_pct != null && loan.hlEmiPaidBy === 'co_applicant') {
+    if (j.paid_by_co_applicant_pct != null && loan.hlEmiPaidBy === 'co_applicant' && (!j.co_applicant_needs_ok || loan.coApplicantIncomeOk)) {
       return { amount: j.paid_by_co_applicant_pct / 100 * (loan.emi || 0), rule: `Joint HL paid by co-applicant — ${j.paid_by_co_applicant_pct}% of EMI` };
     }
     if (j.pct_of_emi != null && loan.coApplicantIncomeOk) {
@@ -418,6 +422,12 @@ function btCandidate(policy, loan) {
   }
   const lock = (bt.lender_lock_in || []).find((x) => wordStartMatch(loan.lender, x.match));
   if (lock && (loan.emisPaid || 0) < lock.months) return { ok: false, why: `${lock.name} lock-in: BT only after ${lock.months} months (${loan.emisPaid || 0} paid)` };
+  // App / fintech loans that this lender DOES take in BT (e.g. Poonawalla, after 1 EMI)
+  if (bt.app_loans && wordStartMatch(loan.lender, bt.app_loans.match)) {
+    const needApp = bt.app_loans.min_emis ?? 1;
+    if ((loan.emisPaid || 0) < needApp) return { ok: false, why: `App loan — BT after ${needApp} EMI(s)` };
+    return { ok: true, isApp: true, why: `App loan, ${loan.emisPaid} EMIs paid` };
+  }
   const letterLender = (bt.foreclosure_letter_lenders || []).find((f) => wordStartMatch(loan.lender, f.match));
   if (letterLender && !loan.foreclosureLetter) return { ok: false, why: `Needs foreclosure letter from ${letterLender.name}`, needsLetter: true };
   if (!letterLender && wordStartMatch(loan.lender, (bt.lender_blacklist || []).flatMap((b) => b.match))) return { ok: false, why: 'Lender not taken in BT (microfinance / small fintech)' };
@@ -425,7 +435,13 @@ function btCandidate(policy, loan) {
   const kind = lenderKind(policy, loan);
   if (!letterLender && kind === 'nbfc' && (bt.nbfc_mode || 'whitelist') === 'whitelist' && !matchWhitelist(policy, loan.lender)) return { ok: false, why: 'NBFC not in BT list' };
   const need = bt.min_emis_paid?.[kind] ?? 6;
-  if ((loan.emisPaid || 0) < need) return { ok: false, why: `${loan.emisPaid || 0}/${need} EMIs paid` };
+  if ((loan.emisPaid || 0) < need) {
+    // e.g. Poonawalla: one extra loan with only 3 EMIs can join loans that have 6+
+    if (bt.one_extra_min_emis != null && (loan.emisPaid || 0) >= bt.one_extra_min_emis) {
+      return { ok: true, lowVintage: true, why: `${loan.emisPaid} EMIs paid — allowed as the one extra loan (min ${bt.one_extra_min_emis})` };
+    }
+    return { ok: false, why: `${loan.emisPaid || 0}/${need} EMIs paid` };
+  }
   const odUnconfirmed = needsOdCheck(policy, loan) && !loan.odStatus;
   return {
     ok: true,
@@ -451,6 +467,8 @@ export function evaluateBank(policy, profileIn) {
   const groups = policy.eligibility?.groups || {};
   const groupKey = cat && Object.keys(groups).find((g) => (groups[g].categories || []).some((x) => norm(x) === norm(cat)));
   const group = groupKey ? groups[groupKey] : null;
+  // Bank's own risk segment (e.g. Poonawalla: very-low/low/medium vs high) — chosen by the agent, default from policy.
+  const rseg = policy.risk_segment ? (profile.riskSegmentByBank?.[policy.bank_id] || policy.risk_segment.default) : null;
   const confirmed = profile.company?.confirmedByBank?.[policy.bank_id] ?? profile.company?.categoryConfirmed;
 
   // Obligations are worked out even when the bank says no, so the table can still show what each bank counts.
@@ -514,11 +532,22 @@ export function evaluateBank(policy, profileIn) {
   // Category caps: the most generous matching rule applies, e.g. CAT C 15L, or 20L at salary 75K+.
   const ccaps = (policy.eligibility.category_caps || []).filter((r) => (r.categories || []).some((x) => norm(x) === norm(cat || ''))
     && (r.salary_min_incl == null || salary >= r.salary_min_incl)
-    && (r.cibil_min_incl == null || (profile.cibilScore ?? 0) >= r.cibil_min_incl));
+    && (r.cibil_min_incl == null || (profile.cibilScore ?? 0) >= r.cibil_min_incl)
+    && (!r.risk_segments || r.risk_segments.includes(rseg))
+    && (r.served_min == null || ((profile.credit || {}).servedLoanAmount || 0) >= r.served_min));
   if (ccaps.length) {
     const cc = Math.max(...ccaps.map((r) => r.cap));
     cap = cap != null ? Math.min(cap, cc) : cc;
     out.notes.push(`${cat}: max ${fmtINR(cc)} at ${policy.bank}`);
+  }
+  const cityCaps = policy.city_caps;   // { tiers: [{ label, match, cap }], default_cap, default_label }
+  if (cityCaps) {
+    const hitC = (cityCaps.tiers || []).find((t) => wordStartMatch(profile.city || '', t.match));
+    const cc2 = hitC ? hitC.cap : cityCaps.default_cap;
+    if (cc2 != null) {
+      cap = cap != null ? Math.min(cap, cc2) : cc2;
+      out.notes.push(`${hitC ? hitC.label : (cityCaps.default_label || 'Other city')}: max ${fmtINR(cc2)}${profile.city ? '' : ' (city not entered)'}`);
+    }
   }
   const capBySal = pickSlab(policy.eligibility.max_loan_by_salary, salary)?.max_loan;
   if (capBySal != null) cap = cap != null ? Math.min(cap, capBySal) : capBySal;
@@ -540,7 +569,9 @@ export function evaluateBank(policy, profileIn) {
   // Policy parameters
   const bTier = bureauTier(policy, profile);
   if (bTier) { out.bureauTier = bTier; out.notes.push(`Bureau profile: ${({ super_thick: 'Super thick', thick: 'Thick', thin: 'Thin', ntc: 'NTC / first-time' })[bTier] || bTier}${profile.bureauTierByBank?.[policy.bank_id] ? ' (set by agent)' : ''}`); }
-  const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore, bTier);
+  // Bank's own risk segment (e.g. Poonawalla: very-low/low/medium vs high) — chosen by the agent, default from policy.
+  if (rseg) { out.riskSegment = rseg; out.notes.push(`${policy.risk_segment.name || 'Risk segment'}: ${rseg}${profile.riskSegmentByBank?.[policy.bank_id] ? ' (set by agent)' : ' (default)'}`); }
+  const foirSlab = pickFoirSlab(group?.foir_slabs || policy.eligibility.foir_slabs, salary, profile.cibilScore, bTier, rseg);
   const liveHlAny = loanLines.some((l) => l.productType === 'HL' && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
   let foirPct = foirSlab?.foir_pct;
   const adj = (policy.eligibility.cibil_foir_adjust || []).find((a) => profile.cibilScore != null && profile.cibilScore > (policy.first_time_borrower?.ntc_score_max ?? 0)
@@ -604,20 +635,47 @@ export function evaluateBank(policy, profileIn) {
   for (const l of loanLines) {
     if (l.treatment === 'bt' && !l.bt.ok) out.warnings.push(`${l.lender}: marked BT but not BT-able for ${policy.bank} (${l.bt.why}) — kept as obligation`);
   }
-  const cands = loanLines.filter((l) => l.bt.ok && l.treatment !== 'obligate').slice(0, 10);
+  const btCfg = policy.balance_transfer || {};
+  // Credit-card BT (e.g. Poonawalla): cards with a balance become candidates; their outstanding is paid from the loan.
+  const cardCands = btCfg.card_bt
+    ? (profile.cards || []).map((c, i) => ({ id: c.id ?? `card${i}`, lender: c.issuer, outstanding: Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0)), isCard: true }))
+      .filter((c) => c.outstanding > 0)
+    : [];
+  const cands = [...loanLines.filter((l) => l.bt.ok && l.treatment !== 'obligate'), ...cardCands].slice(0, 12);
   const forcedMask = cands.reduce((m, l, i) => (l.treatment === 'bt' ? m | (1 << i) : m), 0);
-  const baseObl = loanLines.reduce((s, l) => s + l.obligation.amount, 0) + card.amount;
+  const loanObl = loanLines.reduce((s, l) => s + l.obligation.amount, 0);
+  const ntcScoreBT = profile.cibilScore === -1 || profile.cibilScore === 0;
+  const addons = policy.roi_addons || {};
   const scenarios = [];
   for (let mask = 0; mask < 1 << cands.length; mask++) {
     if ((mask & forcedMask) !== forcedMask) continue;
     const picked = cands.filter((_, i) => mask & (1 << i));
-    const btMax = policy.balance_transfer?.max_loans_deviation ?? policy.balance_transfer?.max_loans;
+    const btMax = btCfg.max_loans_deviation ?? btCfg.max_loans;
     if (btMax != null && picked.length > btMax) continue;
-    const obl = baseObl - picked.reduce((s, l) => s + l.obligation.amount, 0);
+    const nCards = picked.filter((x) => x.isCard).length;
+    const nApps = picked.filter((x) => x.bt?.isApp).length;
+    const nLoans = picked.length - nCards - nApps;
+    if ((btCfg.max_cards != null && nCards > btCfg.max_cards) || (btCfg.max_apps != null && nApps > btCfg.max_apps)
+      || (btCfg.max_pl != null && nLoans > btCfg.max_pl) || (btCfg.max_total != null && picked.length > btCfg.max_total)) continue;
+    if (picked.filter((x) => x.bt?.lowVintage).length > 1) continue;
+    const pickedCardIds = new Set(picked.filter((x) => x.isCard).map((x) => x.id));
+    const cardAmt = nCards ? cardObligation(policy, { ...profile, cards: (profile.cards || []).filter((c, i) => !pickedCardIds.has(c.id ?? `card${i}`)) }).amount : card.amount;
+    const obl = loanObl + cardAmt - picked.filter((x) => !x.isCard).reduce((s, l) => s + l.obligation.amount, 0);
+    // Rate add-ons for this plan
+    let add = 0; let floor = 0;
+    if (addons.ntc && ntcScoreBT) { add += addons.ntc.add; floor = Math.max(floor, addons.ntc.min || 0); }
+    const ca = nCards + nApps;
+    if (addons.card_app_bt && ca > 0) {
+      const tierA = addons.card_app_bt.find((t) => ca <= t.max_count);
+      if (tierA) { add += tierA.add; floor = Math.max(floor, tierA.min || 0); }
+    }
     const btOutstanding = picked.reduce((s, l) => s + (l.outstanding || 0), 0);
     const emiRoom = income * foirPct / 100 - obl;
     const foir = {};
-    for (const t of foirTenures) foir[t] = emiRoom > 0 ? foirLoanWithRoi(emiRoom, t, roiSlabs, cap) : { amount: 0, roi: null };
+    for (const t of foirTenures) {
+      const tAdd = policy.eligibility.tenure_roi_add?.[t] || 0;
+      foir[t] = emiRoom > 0 ? foirLoanWithRoi(emiRoom, t, roiSlabs, cap, { add: add + tAdd, min: floor }) : { amount: 0, roi: null };
+    }
     const mult = {};
     if (bands) {
       for (const which of ['better', 'lower']) {
@@ -688,7 +746,8 @@ export function evaluateBank(policy, profileIn) {
       conservativeRoi: roiSlab ? roiSlab.roi_pct : Math.max(...roiSlabs.map((x) => x.roi_pct)),
       roiAssumed: !roiSlab,   // rate for the lower (conservative) amount
       bt: picked.map((l) => l.id), btOutstanding, obligations: obl, emiRoom, foir, multiplier: mult,
-      topUp: picked.filter((l) => l.bt.topUp).map((l) => l.id),   // subset of bt closed via own-bank top-up
+      btCards: picked.filter((x) => x.isCard).map((x) => x.id), btApps: picked.filter((x) => x.bt?.isApp).map((x) => x.id), rateAddOn: add,
+      topUp: picked.filter((l) => l.bt?.topUp).map((l) => l.id),   // subset of bt closed via own-bank top-up
       methods,                                  // [{ key, label, tenure, amount, roi, netInHand }]
       eligibleAmount: top.amount,               // highest of the methods (or the lower of FOIR / multiplier when combine = 'lower')
       eligibleRule: policy.eligibility.combine === 'lower' ? 'lower' : (policy.eligibility.combine === 'both' ? 'both' : 'highest'),

@@ -573,3 +573,28 @@ test('Obligations are still returned when a bank declines (counted column never 
   expect(r.obligations.loans.find((l) => l.id === 'hl').obligation.amount).toBe(25000);
   expect(r.obligations.cards).toBeDefined();
 });
+
+import pfl from './poonawalla_pl_policy.json';
+
+test('Poonawalla: FOIR by income segment x category x risk, 7-year with +0.50%, card & app-loan BT with rate add-on, city cap', () => {
+  const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 760, city: 'Pune', company: { categoriesByBank: { poonawalla_fincorp: 'CAT A' } }, credit: { enquiryList: [] }, ...x });
+  const a = evaluateBank(pfl, p({ netSalary: 120000 }));
+  expect(a.foirPct).toBe(75);                                         // Affluent, CAT A, VL/L
+  expect(a.best.methods.map((m) => m.tenure)).toEqual([60, 72, 84]);
+  const r60 = a.best.methods[0].roi, r84 = a.best.methods[2].roi;
+  expect(+(r84 - r60).toFixed(2)).toBe(0.5);
+  expect(evaluateBank(pfl, p({ netSalary: 120000, riskSegmentByBank: { poonawalla_fincorp: 'High' } })).foirPct).toBe(70);
+  expect(evaluateBank(pfl, p({ netSalary: 60000, company: { categoriesByBank: { poonawalla_fincorp: 'GOVERNMENT' } } })).foirPct).toBe(65);
+  expect(evaluateBank(pfl, p({ netSalary: 300000, company: { categoriesByBank: { poonawalla_fincorp: 'CAT D' } } })).best.eligibleAmount).toBeLessThanOrEqual(1000000);
+  // card + app loan BT
+  const bt = evaluateBank(pfl, p({ netSalary: 150000,
+    loans: [{ id: 'kb', lender: 'KRAZYBEE', productType: 'PL', outstanding: 40000, emi: 6000, emisPaid: 1, emisRemaining: 6 },
+            { id: 'pl', lender: 'AXIS BANK', productType: 'PL', outstanding: 500000, emi: 15000, emisPaid: 3, emisRemaining: 40 }],
+    cards: [{ id: 'c1', issuer: 'SBI CARD', outstanding: 200000 }] }));
+  const ok = Object.fromEntries(bt.obligations.loans.map((l) => [l.id, l.bt.ok]));
+  expect(ok).toEqual({ kb: true, pl: true });                         // app loan after 1 EMI; one loan with 3 EMIs allowed
+  const all = bt.scenarios.find((s) => s.bt.length === 3);
+  expect(all.btCards).toEqual(['c1']);
+  expect(all.rateAddOn).toBe(1.25);                                   // 2 card/app loans
+  expect(evaluateBank(pfl, p({ netSalary: 300000, city: 'Nashik' })).best.eligibleAmount).toBeLessThanOrEqual(4000000);
+});

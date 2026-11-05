@@ -1,0 +1,1790 @@
+{
+  "bank": "Poonawalla Fincorp",
+  "bank_id": "poonawalla_fincorp",
+  "own_bank_match": [
+    "POONAWALLA",
+    "POONAWALA",
+    "POONAFIN",
+    "PFL"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v1-2026-11-05",
+  "sources": {
+    "rules": "Gauri's template + Poonawalla FOIR norms, rate grid, policy norms update (proposed), 5 Nov 2026"
+  },
+  "eligibility": {
+    "method": "foir_only",
+    "groups": {
+      "A": {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "foir_pct": 80,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "foir_pct": 80,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "foir_pct": 75,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "foir_pct": 70,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "foir_pct": 65,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "risk_segment": "High",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "risk_segment": "High",
+            "foir_pct": 75
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "risk_segment": "High",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "risk_segment": "High",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "risk_segment": "High",
+            "foir_pct": 60
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60,
+              72,
+              84
+            ]
+          }
+        ]
+      },
+      "B": {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "foir_pct": 75,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "foir_pct": 70,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "foir_pct": 65,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "foir_pct": 65,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "foir_pct": 60,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "risk_segment": "High",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "risk_segment": "High",
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "risk_segment": "High",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "risk_segment": "High",
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "risk_segment": "High",
+            "foir_pct": 50
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60,
+              72
+            ]
+          }
+        ]
+      },
+      "C": {
+        "categories": [
+          "CAT C"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "foir_pct": 70,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "foir_pct": 65,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "foir_pct": 60,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "foir_pct": 60,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "foir_pct": 55,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "risk_segment": "High",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "risk_segment": "High",
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "risk_segment": "High",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "risk_segment": "High",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "risk_segment": "High",
+            "foir_pct": 50
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60,
+              72
+            ]
+          }
+        ]
+      },
+      "D": {
+        "categories": [
+          "CAT D"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "foir_pct": 70,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "foir_pct": 65,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "foir_pct": 60,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "foir_pct": 60,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "foir_pct": 55,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "risk_segment": "High",
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "risk_segment": "High",
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "risk_segment": "High",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "risk_segment": "High",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "risk_segment": "High",
+            "foir_pct": 50
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "max_loan": 1000000
+      },
+      "E": {
+        "categories": [
+          "CAT E"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "foir_pct": 65,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "foir_pct": 60,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "foir_pct": 55,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "foir_pct": 50,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "foir_pct": 50,
+            "risk_segments": [
+              "VL/L",
+              "Medium"
+            ]
+          },
+          {
+            "salary_min_incl": 250001,
+            "salary_max_excl": null,
+            "risk_segment": "High",
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 150001,
+            "salary_max_excl": 250001,
+            "risk_segment": "High",
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 75001,
+            "salary_max_excl": 150001,
+            "risk_segment": "High",
+            "foir_pct": 50
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75001,
+            "risk_segment": "High",
+            "foir_pct": 0
+          },
+          {
+            "salary_min_incl": 30000,
+            "salary_max_excl": 50000,
+            "risk_segment": "High",
+            "foir_pct": 0
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60
+            ]
+          }
+        ]
+      }
+    },
+    "tenure_note": "CAT A/Super A: eligibility on 7 years; CAT B & C on 6 years; CAT D on 5 years (max ₹10L)",
+    "tenure_roi_add": {
+      "72": 0.25,
+      "84": 0.5
+    },
+    "roi_slabs_by_loan_amount": [
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.0,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.74,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 13.75,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 14.74,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.5,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 13.5,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 14.0
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 780,
+        "roi_pct": 13.5
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 12.5
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 13.75
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 780,
+        "roi_pct": 13.25
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 12.25
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 3500000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 13.0
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 3500000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 780,
+        "roi_pct": 12.5
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 3500000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 11.99
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.5,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.24,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 15.0,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 14.25,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.24,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.0,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.75,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 14.0,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.0
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 14.75
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 13.75
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 14.75
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.25
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 13.5
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 16.0,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.75,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 15.5,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 15.24,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.5,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.25,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 15.0,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 14.5,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.25
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.0
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 14.0
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 14.74
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 14.5
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 14.25
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "salary_min_incl": 100001,
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 14.0
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 17.24,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 16.24,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 15.75,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 15.5,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 16.24,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.75,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 15.5,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 15.24,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 15.75
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 15.24
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 15.0
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 14.74
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 19.75,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 18.74,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 18.5,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 0,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 18.25,
+        "salary_max_excl": 50001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 18.24,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 17.74,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 17.5,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 50001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 17.25,
+        "salary_max_excl": 75001
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 0,
+        "cibil_max_excl": 730,
+        "roi_pct": 17.74
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 730,
+        "cibil_max_excl": 750,
+        "roi_pct": 17.24
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 750,
+        "cibil_max_excl": 780,
+        "roi_pct": 17.0
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "salary_min_incl": 75001,
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "cibil_min_incl": 780,
+        "cibil_max_excl": null,
+        "roi_pct": 16.75
+      }
+    ],
+    "roi_note": "Rate grid by category × NTH × CIBIL TU; +0.25% for 6-year and +0.50% for 7-year eligibility; CIBIL 0/-1 +1% (min 14.50%); card/app-loan BT: ≤2 +1.25% (min 15%), 3–4 +2.25% (min 16.25%), >4 +3.35% (min 17.25%)",
+    "max_loan": 6000000,
+    "min_cibil": 700,
+    "category_caps": [
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "cap": 5000000,
+        "risk_segments": [
+          "VL/L",
+          "Medium"
+        ]
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "cap": 6000000,
+        "risk_segments": [
+          "VL/L"
+        ],
+        "served_min": 2000000,
+        "salary_min_incl": 200001
+      },
+      {
+        "categories": [
+          "Super A",
+          "CAT A",
+          "Govt Ratna"
+        ],
+        "cap": 3000000,
+        "risk_segments": [
+          "High"
+        ]
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "cap": 3000000
+      },
+      {
+        "categories": [
+          "GOVERNMENT",
+          "CAT B",
+          "State Government",
+          "Central Government",
+          "CAT EDU",
+          "CAT DEFENCE"
+        ],
+        "cap": 4000000,
+        "risk_segments": [
+          "VL/L"
+        ],
+        "salary_min_incl": 150001
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "cap": 2000000
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "cap": 3000000,
+        "risk_segments": [
+          "VL/L"
+        ],
+        "salary_min_incl": 150001
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "cap": 1000000
+      },
+      {
+        "categories": [
+          "CAT E"
+        ],
+        "cap": 3000000,
+        "risk_segments": [
+          "High"
+        ]
+      }
+    ]
+  },
+  "risk_segment": {
+    "name": "Poonawalla risk segment",
+    "values": [
+      "VL/L",
+      "Medium",
+      "High"
+    ],
+    "default": "VL/L",
+    "note": "Bank decides the risk segment; High risk = lower FOIR grid and max ₹30L"
+  },
+  "city_caps": {
+    "tiers": [
+      {
+        "label": "Metro",
+        "match": [
+          "MUMBAI",
+          "NAVI MUMBAI",
+          "THANE",
+          "DELHI",
+          "NEW DELHI",
+          "GURGAON",
+          "GURUGRAM",
+          "NOIDA",
+          "BENGALURU",
+          "BANGALORE",
+          "CHENNAI",
+          "HYDERABAD",
+          "KOLKATA",
+          "PUNE"
+        ],
+        "cap": 6000000
+      },
+      {
+        "label": "Tier 1",
+        "match": [
+          "AHMEDABAD",
+          "SURAT",
+          "JAIPUR",
+          "LUCKNOW",
+          "CHANDIGARH",
+          "NAGPUR",
+          "INDORE",
+          "KOCHI",
+          "COIMBATORE",
+          "VADODARA",
+          "BHOPAL",
+          "VISAKHAPATNAM"
+        ],
+        "cap": 5000000
+      }
+    ],
+    "default_cap": 4000000,
+    "default_label": "Tier 2 (assumed)",
+    "note": "Metro 60L, Tier 1 50L, Tier 2 40L, Tier 3 30L, Tier 4 / others 25L — city lists assumed, TO CONFIRM"
+  },
+  "min_net_salary": {
+    "_all": 30000
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "category_source": "Poonawalla list in Company Category Checker (old list — category can be edited)",
+    "unlisted_note": "Not done — suggest listing / check category with the banker"
+  },
+  "first_time_borrower": {
+    "trigger": "ntc_only",
+    "cap": 6000000,
+    "ntc_score_max": 0
+  },
+  "roi_addons": {
+    "ntc": {
+      "add": 1.0,
+      "min": 14.5
+    },
+    "card_app_bt": [
+      {
+        "max_count": 2,
+        "add": 1.25,
+        "min": 15.0
+      },
+      {
+        "max_count": 4,
+        "add": 2.25,
+        "min": 16.25
+      },
+      {
+        "max_count": 99,
+        "add": 3.35,
+        "min": 17.25
+      }
+    ]
+  },
+  "co_applicant_income": true,
+  "other_income": {
+    "rental": {
+      "pct": 70,
+      "cap_pct_of_salary": 100
+    },
+    "quarterly": {
+      "pct": 50
+    },
+    "monthly_incentive": {
+      "pct": 50
+    },
+    "bonus": {
+      "pct": 0,
+      "note": "Bonus not added"
+    }
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 6,
+      "nbfc": 6
+    },
+    "one_extra_min_emis": 3,
+    "nbfc_mode": "all_except",
+    "product_types": [
+      "PL"
+    ],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 6,
+    "lender_blacklist": [],
+    "app_loans": {
+      "match": [
+        "POCKETLY",
+        "MPOKKET",
+        "FLEXSALARY",
+        "VIVIFI",
+        "FLEXPAY",
+        "KREDITZY",
+        "OLYV",
+        "TRUE BALANCE",
+        "STASHFIN",
+        "AKARA",
+        "CASHE",
+        "TSLC",
+        "KISSHT",
+        "SI CREVA",
+        "FINNABLE",
+        "MONEYTAP",
+        "BRANCH INTERNATIONAL",
+        "PAYRUPIK",
+        "LENDINGPLATE",
+        "LAZYPAY",
+        "FREO",
+        "MONEYVIEW",
+        "MONEY VIEW",
+        "WHIZDM",
+        "FIBE",
+        "EARLYSALARY",
+        "EARLY SALARY",
+        "SOCIAL WORTH",
+        "BUDDY LOAN",
+        "INDIALENDS",
+        "LOANTAP",
+        "FLEXILOANS",
+        "LENDINGKART",
+        "INDIFI",
+        "NEOGROWTH",
+        "KINARA",
+        "UGRO",
+        "OXYZO",
+        "CREDIT SAISON",
+        "DMI FIN",
+        "DMIFIN",
+        "FINCFRIENDS",
+        "PREFR",
+        "LOANFRONT",
+        "RUPEEREDEE",
+        "SMARTCOIN",
+        "RAPIDRUPEE",
+        "ZYPE",
+        "KRAZYBEE",
+        "KREDITBEE",
+        "PAYSENSE",
+        "MONEYONCLICK",
+        "PAYSME",
+        "RING ",
+        "ZESTMONEY",
+        "HOME CREDIT",
+        "MI FINANCE",
+        "CLIX",
+        "NORTHERN ARC",
+        "ARKA FINCAP",
+        "BAJAJ HOUSING",
+        "ADITYA BIRLA HOUSING",
+        "KISETSU"
+      ],
+      "min_emis": 1
+    },
+    "card_bt": true,
+    "max_cards": 5,
+    "max_apps": 4,
+    "max_pl": 6,
+    "max_total": 8,
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ],
+    "note": "Up to 8 in total (PL 5–6, cards 4–5, app loans 3–4). PL BT after 6 EMIs (+1 loan with 3 EMIs); app loans after 1 EMI; cards need 2 months' statements"
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": false,
+      "prelogin_paydown": "all",
+      "rule": "5% of outstanding (TO CONFIRM)"
+    },
+    "pct_by_type": {
+      "GOLD": 1,
+      "OD": 1,
+      "KCC": 1
+    },
+    "pct_note": "TO CONFIRM",
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "co_applicant_needs_ok": true,
+      "pct_of_emi": 50,
+      "both_pct": 50,
+      "rule": "0 if co-applicant pays and co-applicant's obligations are under 70%; otherwise 50%"
+    }
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "own_bank_bad_history_min_count": 2,
+  "subject_to_closure_allowed": true,
+  "checklist": [
+    "No PL EMI bounce in last 6 months (one bounce paid same / next day: deviation)",
+    "Card BT: 2 months' card statements; no card rotation; charges on the card not taken; EMI-converted spends taken",
+    "Co-applicant: higher earner is the applicant; both companies must be listed",
+    "Central Govt with NTH > ₹75K is treated as CAT A (pick CAT A)"
+  ],
+  "product_info": {
+    "processing_fee": "0.5% (₹10L+), 0.75% (₹5–10L), 1% (<₹5L / CAT D), 2% CAT E",
+    "insurance": "1.75%–3%",
+    "extra": "+0.25% ROI/PF for 6-year, +0.50% ROI for 7-year eligibility"
+  },
+  "open_items": [
+    "Metro / Tier 1–4 city lists",
+    "Credit card % and gold/OD %",
+    "Enquiry limits",
+    "Credit history rules",
+    "Central vs state govt in the company list"
+  ]
+}
