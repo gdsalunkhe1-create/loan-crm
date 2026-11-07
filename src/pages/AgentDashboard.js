@@ -583,7 +583,7 @@ const [queueIndex, setQueueIndex]       = useState(0)
                       </td>
                       <td>
                         <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
-                          <ExotelCallButton phone={lead.mobile} leadId={lead.id} title="Call" connectingLabel="…" ringingLabel="📞" style={{width:'30px',height:'30px',borderRadius:'8px',background:'#FCEBEB',border:'none',display:'flex',alignItems:'center',justifyContent:'center',textDecoration:'none',color:'#A32D2D'}}><IconPhone size={14}/></ExotelCallButton>
+                          <ExotelCallButton phone={lead.mobile} leadId={lead.id} connectingLabel="…" ringingLabel="📞" style={{width:'30px',height:'30px',borderRadius:'8px',background:'#FCEBEB',border:'none',display:'flex',alignItems:'center',justifyContent:'center',textDecoration:'none',color:'#A32D2D'}}><IconPhone size={14}/></ExotelCallButton>
                           <a href={'https://wa.me/91'+lead.mobile} target="_blank" rel="noreferrer" style={{width:'30px',height:'30px',borderRadius:'8px',background:'#E1F5EE',border:'none',display:'flex',alignItems:'center',justifyContent:'center',textDecoration:'none',color:'#0F6E56'}}><IconBrandWhatsapp size={14}/></a>
                         </div>
                       </td>

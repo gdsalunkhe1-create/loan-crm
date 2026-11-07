@@ -21,7 +21,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 import { exportToExcel, parseSpreadsheet, autoMapHeaders } from '../utils/spreadsheet'
-import { ExotelCallButton } from '../utils/clickToCall'
+import { ExotelCallButton, PhoneLink } from '../utils/clickToCall'
 import {
   IconUsers, IconUserPlus, IconThumbUp, IconCircleCheck,
   IconPhone, IconBrandWhatsapp, IconUpload, IconEdit,
@@ -296,7 +296,7 @@ export default function Leads({ userRole, userId }) {
                     <div style={{background:statusObj?.color||'#E6F1FB',color:statusObj?.textColor||'#185FA5',padding:'6px 10px',borderRadius:20,fontSize:12,fontWeight:700}}>{lead.status||'New'}</div>
                   </div>
                   <div style={{marginBottom:8, display:'flex',alignItems:'center',gap:'10px'}}>
-                    <span style={{textDecoration:'none',color:'#0F172A',fontSize:15,fontWeight:600,display:'flex',alignItems:'center',gap:6}}><IconPhone size={15} color='#185FA5'/>{lead.mobile}</span>
+                    <PhoneLink phone={lead.mobile} style={{textDecoration:'none',color:'#0F172A',fontSize:15,fontWeight:600,display:'flex',alignItems:'center',gap:6}}><IconPhone size={15} color='#185FA5'/>{lead.mobile}</PhoneLink>
                   </div>
                   <div style={{color:'#6B7280',marginBottom:8,fontSize:13}}>
                     {lead.city||'-'} {lead.city&&lead.loan_amount? '•':''} {lead.loan_amount?fmtAmt(lead.loan_amount):'-'}
@@ -357,7 +357,7 @@ export default function Leads({ userRole, userId }) {
                     </td>
                     <td>
                       <div style={{fontSize:'14px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                        <span style={{textDecoration:'none',color:'#0F172A'}}>{lead.mobile}</span>
+                        <PhoneLink phone={lead.mobile} style={{textDecoration:'none',color:'#0F172A'}}>{lead.mobile}</PhoneLink>
                       </div>
                       {lead.email&&<div style={{fontSize:'12px',color:'#A0AEC0'}}>{lead.email}</div>}
                     </td>
@@ -396,7 +396,7 @@ export default function Leads({ userRole, userId }) {
                       <div style={{display:'flex',gap:'5px',alignItems:'center'}}>
                         <button className="btn btn-outline btn-sm"
                           onClick={()=>setSelectedLead(lead)}>View</button>
-                        <ExotelCallButton phone={lead.mobile} leadId={lead.id} title="Call"
+                        <ExotelCallButton phone={lead.mobile} leadId={lead.id}
                           connectingLabel="…" ringingLabel="📞"
                           style={{width:'30px',height:'30px',borderRadius:'8px',
                             background:'#FCEBEB',border:'none',display:'flex',
@@ -846,7 +846,7 @@ export default function Leads({ userRole, userId }) {
                           onMouseLeave={e=>{e.currentTarget.style.background='white';e.currentTarget.style.borderColor='#E2E8F0'}}>
                           View
                         </button>
-                        <ExotelCallButton phone={lead.mobile} leadId={lead.id} title="Call"
+                        <ExotelCallButton phone={lead.mobile} leadId={lead.id}
                           connectingLabel="…" ringingLabel="📞"
                           style={{width:'30px',height:'30px',borderRadius:'50%',
                             background:'transparent',border:'none',display:'flex',

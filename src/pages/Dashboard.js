@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
-import { placeExotelCall, ExotelCallButton } from '../utils/clickToCall'
+import { placeExotelCall, ExotelCallButton, CLICK_TO_CALL_ENABLED, openTelDialer } from '../utils/clickToCall'
 import * as XLSX from 'xlsx'
 import { exportToExcel, parseSpreadsheet, autoMapHeaders } from '../utils/spreadsheet'
 import { IST_TZ, nowIST, parseIST, formatIST, addMinutes, compareIST, buildIST, toDbTimestamp } from '../utils/timeUtils'
@@ -2079,12 +2079,18 @@ function AgentDashboard({ userId }) {
     // scheduling a callback for the same lead), which previously let a stale
     // status slip past the PROTECTED_STAGES guard below.
     const freshLead = myLeads.find(l=>l.id===lead?.id) || lead
-    if(!freshLead||callingLeadId) return
-    // Exotel rings the agent's own phone first, then connects the customer.
-    setCallingLeadId(freshLead.id)
-    const res=await placeExotelCall(freshLead.mobile,freshLead.id)
-    setCallingLeadId(null)
-    if(!res.ok){ alert('Call failed: '+res.error); return }
+    if(!CLICK_TO_CALL_ENABLED){
+      // Flag off: original behaviour — open the device dialer via tel:.
+      openTelDialer(freshLead.mobile)
+    }else{
+      if(!freshLead||callingLeadId) return
+      // Exotel rings the agent's own phone first, then connects the customer.
+      setCallingLeadId(freshLead.id)
+      let res
+      try{ res=await placeExotelCall(freshLead.mobile,freshLead.id) }
+      finally{ setCallingLeadId(null) } // reset "Connecting…" in every outcome
+      if(!res.ok){ alert(res.signedOut?res.error:'Call failed: '+res.error); return }
+    }
     setCallLogLead(freshLead)
     setCallLogDisposition('')
     setCallLogStage(freshLead?.status||'New')
@@ -5744,7 +5750,10 @@ export default function Dashboard({ session }) {
     setAllLeads(lD)
   }
 
-  const handleLogout=async()=>{ await supabase.auth.signOut() }
+  // scope:'local' — end only this device's session. The default ('global') also
+  // revokes the agent's sessions on every other tab/device, leaving them with a
+  // still-unexpired token whose session no longer exists.
+  const handleLogout=async()=>{ await supabase.auth.signOut({ scope: 'local' }) }
   const role=(profile?.role||'').toLowerCase().trim()||'agent'
 
   const getIcon=name=>{
@@ -6737,7 +6746,7 @@ export default function Dashboard({ session }) {
 <td style={{padding:'8px 4px',verticalAlign:'middle',whiteSpace:'nowrap'}}>
   <div style={{display:'flex',alignItems:'center',gap:3}}>
     <button onClick={()=>openLeadView(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
-    <ExotelCallButton phone={l.mobile} leadId={l.id} title='Call' connectingLabel='…' ringingLabel='📞' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></ExotelCallButton>
+    <ExotelCallButton phone={l.mobile||''} leadId={l.id} title='Call' connectingLabel='…' ringingLabel='📞' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></ExotelCallButton>
     <a href={'https://wa.me/91'+(l.mobile||'')} target='_blank' rel='noreferrer' title='WhatsApp' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #BBF7D0',background:'#F0FDF4',textDecoration:'none'}}><IconBrandWhatsapp size={13} color='#25D366'/></a>
     <button onClick={()=>{setReassignTarget(l);setReassignTo('');setReassignType('transfer')}} title='Reassign lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>↩</button>
     <button onClick={()=>handleUnassignLead(l)} title='Unassign agent' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FFF7ED',border:'1px solid #FED7AA',color:'#C2410C',fontSize:13,cursor:'pointer'}}>⊘</button>

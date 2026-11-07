@@ -1,7 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
-import { ExotelCallButton } from '../utils/clickToCall'
+import { ExotelCallButton, PhoneLink, CLICK_TO_CALL_ENABLED } from '../utils/clickToCall'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -403,8 +403,12 @@ export default function Campaigns({ userRole, userId, orgId }) {
     } else {
       setCurrentLeadIndex(nextIndex)
       setCallForm({call_status:'Answered',call_outcome:'',duration:'',notes:''})
-      // Auto mode only advances to the next lead; the agent clicks "Call" each
-      // time (no automatic Exotel calls).
+      // Flag off: original auto-dial via tel:. Flag on: auto mode only advances
+      // to the next lead; the agent clicks "Call" each time (no automatic Exotel calls).
+      if (!CLICK_TO_CALL_ENABLED && dialerType==='auto') {
+        const nextLead = pendingLeads[nextIndex]
+        if (nextLead) setTimeout(()=>{ window.location.href='tel:'+nextLead.mobile }, 1500)
+      }
     }
     setLoading(false)
   }
@@ -447,7 +451,11 @@ export default function Campaigns({ userRole, userId, orgId }) {
               <IconHandClick size={15}/> Manual
             </button>
             <button
-              onClick={()=>setDialerType('auto')}
+              onClick={()=>{
+                setDialerType('auto')
+                // Flag off: original behaviour dials straight away. Flag on: only loads the queue.
+                if (!CLICK_TO_CALL_ENABLED) window.location.href='tel:'+currentLead.mobile
+              }}
               style={{
                 display:'flex',alignItems:'center',gap:'6px',
                 padding:'7px 14px',borderRadius:'7px',border:'none',cursor:'pointer',
@@ -770,7 +778,7 @@ export default function Campaigns({ userRole, userId, orgId }) {
                     </td>
                     <td style={{padding:'0'}}>
                       <div style={{display:'flex',alignItems:'center',gap:'8px',color:'#718096',fontSize:'13px'}}>
-                        <span style={{textDecoration:'none',color:'#718096'}}>{lead.mobile}</span>
+                        <PhoneLink phone={lead.mobile} style={{textDecoration:'none',color:'#718096'}}>{lead.mobile}</PhoneLink>
                       </div>
                     </td>
                     <td style={{color:'#718096',fontSize:'13px'}}>{lead.city||'-'}</td>
