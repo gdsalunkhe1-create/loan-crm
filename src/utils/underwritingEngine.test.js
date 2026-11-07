@@ -598,3 +598,29 @@ test('Poonawalla: FOIR by income segment x category x risk, 7-year with +0.50%, 
   expect(all.rateAddOn).toBe(1.25);                                   // 2 card/app loans
   expect(evaluateBank(pfl, p({ netSalary: 300000, city: 'Nashik' })).best.eligibleAmount).toBeLessThanOrEqual(4000000);
 });
+
+import axis from './axis_pl_policy.json';
+
+test('Axis: FOIR 55/65/70/75, CAT D 40/65/70, 7-year at 70% by CIBIL / salary account, card BT up to 6x salary, card 4%, gold 0', () => {
+  const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 760, company: { categoriesByBank: { axis_bank: 'CATGA' } }, credit: { enquiryList: [] }, ...x });
+  expect(evaluateBank(axis, p({ netSalary: 45000 })).foirPct).toBe(65);
+  const hi = evaluateBank(axis, p({ netSalary: 120000 }));
+  expect(hi.foirPct).toBe(75);
+  expect(hi.best.methods.map((m) => m.key)).toEqual(['foir_60', 'foir_84']);              // 1L+ & 740+
+  expect(evaluateBank(axis, p({ netSalary: 80000 })).best.methods.map((m) => m.key)).toEqual(['foir_60']);   // needs 780
+  expect(evaluateBank(axis, p({ netSalary: 40000, salaryAccountBank: 'AXIS BANK', cibilScore: 745 })).best.methods.map((m) => m.key)).toEqual(['foir_60', 'foir_84']);
+  expect(evaluateBank(axis, p({ netSalary: 60000, company: { categoriesByBank: { axis_bank: 'CATGD' } } })).foirPct).toBe(40);
+  expect(evaluateBank(axis, p({ netSalary: 30000, company: { categoriesByBank: { axis_bank: 'CATGD' } } })).status).toBe('NOT_ELIGIBLE');
+  expect(evaluateBank(axis, p({ netSalary: 20000, salaryAccountBank: 'AXIS BANK' })).status).not.toBe('NOT_ELIGIBLE');
+  const c = evaluateBank(axis, p({ netSalary: 50000, cards: [{ id: 'c1', issuer: 'SBI CARD', outstanding: 400000 }],
+    loans: [{ id: 'g', lender: 'MUTHOOT', productType: 'GOLD', outstanding: 200000 }] }));
+  expect(c.obligations.loans[0].obligation.amount).toBe(0);
+  expect(c.scenarios.some((s) => s.btCards.includes('c1'))).toBe(false);                 // 4L > 6 x 50K? no: 3L cap -> excluded
+  expect(c.obligations.cards.amount).toBe(16000);                                       // 4%
+});
+
+test('Axis festive rates: CAT A 15L+ 10.24%, CAT D / DU 14%', () => {
+  const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 780, company: { categoriesByBank: { axis_bank: 'CATGA' } }, credit: { enquiryList: [] }, ...x });
+  expect(evaluateBank(axis, p({ netSalary: 150000 })).best.methods[0].roi).toBe(10.24);
+  expect(evaluateBank(axis, p({ netSalary: 150000, company: { categoriesByBank: { axis_bank: 'CATDU' } } })).best.methods[0].roi).toBe(14);
+});

@@ -266,6 +266,10 @@ function hardChecks(policy, profile) {
       if (cr.loan_dpd.over_count === 'reject') reasons.push(msg); else deviations.push(msg);
     }
   }
+  if (cr.card_dpd_recent_months != null && Array.isArray(c.dpdAccounts)) {
+    const recentCards = c.dpdAccounts.filter((a) => CARD_TYPES.includes(a.productType) && a.monthsAgo != null && a.monthsAgo <= cr.card_dpd_recent_months);
+    if (recentCards.length) reasons.push(`Recent overdue on credit card (${[...new Set(recentCards.map((a) => a.lender))].join(', ')}) in last ${cr.card_dpd_recent_months} months`);
+  }
   if (cr.card_dpd_12m === 'deviation' && Array.isArray(c.dpdAccounts)) {
     const cards = c.dpdAccounts.filter((a) => CARD_TYPES.includes(a.productType) && a.inLast12m);
     if (cards.length) deviations.push(`Late payment on credit card (${[...new Set(cards.map((a) => a.lender))].join(', ')}) in last 12 months — call to be taken by ${policy.bank}`);
@@ -628,6 +632,15 @@ export function evaluateBank(policy, profileIn) {
     }
   }
   const foirTenures = gridMax && gridMax < 60 ? [gridMax] : tenures;
+  // Extended tenure with its own FOIR (e.g. Axis: 7 years at 70% when salary / CIBIL / salary-account conditions are met)
+  const ext = policy.eligibility.extended_tenure;
+  const ownSal = isOwnBank(policy, profile.salaryAccountBank || '');
+  const extTenure = ext && (ext.conditions || []).some((c) => (c.salary_min == null || salary >= c.salary_min)
+    && (c.salary_max_excl == null || salary < c.salary_max_excl)
+    && (c.cibil_min == null || (profile.cibilScore ?? 0) >= c.cibil_min)
+    && (c.own_salary_account == null || c.own_salary_account === ownSal)) ? ext : null;
+  if (extTenure) out.notes.push(`${extTenure.months / 12}-year eligibility at ${extTenure.foir_pct}% FOIR allowed (${ownSal ? `${policy.bank} salary account, ` : ''}CIBIL ${profile.cibilScore})`);
+  const allTenures = extTenure && !foirTenures.includes(extTenure.months) ? [...foirTenures, extTenure.months] : foirTenures;
   if (gridMax && gridMax < 60) out.warnings.push(`${cat} grid stops at ${gridMax} months — FOIR also calculated at ${gridMax} months`);
 
   // BT scenarios: every subset of BT-able loans (n is small in practice; capped at 10).
@@ -658,6 +671,8 @@ export function evaluateBank(policy, profileIn) {
     if ((btCfg.max_cards != null && nCards > btCfg.max_cards) || (btCfg.max_apps != null && nApps > btCfg.max_apps)
       || (btCfg.max_pl != null && nLoans > btCfg.max_pl) || (btCfg.max_total != null && picked.length > btCfg.max_total)) continue;
     if (picked.filter((x) => x.bt?.lowVintage).length > 1) continue;
+    if (btCfg.max_card_bt_salary_multiple != null
+      && picked.filter((x) => x.isCard).reduce((a, x) => a + x.outstanding, 0) > btCfg.max_card_bt_salary_multiple * salary) continue;
     const pickedCardIds = new Set(picked.filter((x) => x.isCard).map((x) => x.id));
     const cardAmt = nCards ? cardObligation(policy, { ...profile, cards: (profile.cards || []).filter((c, i) => !pickedCardIds.has(c.id ?? `card${i}`)) }).amount : card.amount;
     const obl = loanObl + cardAmt - picked.filter((x) => !x.isCard).reduce((s, l) => s + l.obligation.amount, 0);
@@ -672,9 +687,10 @@ export function evaluateBank(policy, profileIn) {
     const btOutstanding = picked.reduce((s, l) => s + (l.outstanding || 0), 0);
     const emiRoom = income * foirPct / 100 - obl;
     const foir = {};
-    for (const t of foirTenures) {
+    for (const t of allTenures) {
       const tAdd = policy.eligibility.tenure_roi_add?.[t] || 0;
-      foir[t] = emiRoom > 0 ? foirLoanWithRoi(emiRoom, t, roiSlabs, cap, { add: add + tAdd, min: floor }) : { amount: 0, roi: null };
+      const room = extTenure && t === extTenure.months ? income * extTenure.foir_pct / 100 - obl : emiRoom;
+      foir[t] = room > 0 ? foirLoanWithRoi(room, t, roiSlabs, cap, { add: add + tAdd, min: floor }) : { amount: 0, roi: null };
     }
     const mult = {};
     if (bands) {
@@ -690,8 +706,8 @@ export function evaluateBank(policy, profileIn) {
     const roiSlab = roiSlabs.find((x) => inBand(conservative, x.loan_min_incl, x.loan_max_excl));
     // Every method is shown side by side — the bank may sanction on FOIR or on multiplier.
     const rateFor = (amt) => (roiSlabs.find((x) => inBand(amt, x.loan_min_incl, x.loan_max_excl)) || {}).roi_pct ?? Math.max(...roiSlabs.map((x) => x.roi_pct));
-    const methods = foirTenures.map((t) => ({
-      key: `foir_${t}`, label: `FOIR ${t / 12} years`, tenure: t, amount: foir[t].amount, roi: foir[t].roi,
+    const methods = allTenures.map((t) => ({
+      key: `foir_${t}`, label: `FOIR ${t / 12} years${extTenure && t === extTenure.months ? ` (${extTenure.foir_pct}%)` : ''}`, tenure: t, amount: foir[t].amount, roi: foir[t].roi,
       netInHand: foir[t].amount - btOutstanding,
     }));
     if (mult[risk.band]) {

@@ -1,0 +1,536 @@
+{
+  "bank": "Axis Bank",
+  "bank_id": "axis_bank",
+  "own_bank_match": [
+    "AXIS BANK",
+    "AXISBANK"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v2-2026-11-06",
+  "sources": {
+    "rules": "Gauri's Axis template, 6 Nov 2026 (rate grid photo not received)"
+  },
+  "eligibility": {
+    "method": "foir_only",
+    "groups": {
+      "MAIN": {
+        "categories": [
+          "SCATA",
+          "CATGA",
+          "CATGB",
+          "CATGC",
+          "CATC",
+          "GOVT",
+          "CATGEDU",
+          "CATGMED",
+          "DEF",
+          "POL",
+          "PMF",
+          "STF"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40000,
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 40000,
+            "salary_max_excl": 50000,
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 100000,
+            "foir_pct": 70
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": null,
+            "foir_pct": 75
+          }
+        ],
+        "note": "Super A / A / B / C, Govt, EDU, MED, Defence, Police — same grid (TO CONFIRM)"
+      },
+      "D": {
+        "categories": [
+          "CATGD",
+          "CATDU",
+          "CATGX"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 75000,
+            "foir_pct": 40
+          },
+          {
+            "salary_min_incl": 75000,
+            "salary_max_excl": 100000,
+            "foir_pct": 65
+          },
+          {
+            "salary_min_incl": 100000,
+            "salary_max_excl": null,
+            "foir_pct": 70
+          }
+        ],
+        "note": "CAT D grid; CATDU (DU-listed) and CATGX treated as D — TO CONFIRM"
+      }
+    },
+    "tenures_months": {
+      "salary_below_75000": [
+        60
+      ],
+      "salary_75000_and_above": [
+        60
+      ]
+    },
+    "extended_tenure": {
+      "months": 84,
+      "foir_pct": 70,
+      "conditions": [
+        {
+          "salary_min": 100000,
+          "cibil_min": 740
+        },
+        {
+          "salary_min": 50000,
+          "salary_max_excl": 100000,
+          "cibil_min": 780
+        },
+        {
+          "own_salary_account": true,
+          "salary_min": 35000,
+          "cibil_min": 740
+        }
+      ],
+      "note": "7-year eligibility at 70%: salary 1L+ & CIBIL 740+; 50K–1L & CIBIL 780+; Axis salary account 35K+ & CIBIL 740+"
+    },
+    "roi_slabs_by_loan_amount": [
+      {
+        "categories": [
+          "SCATA",
+          "CATGA",
+          "STF"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.24
+      },
+      {
+        "categories": [
+          "SCATA",
+          "CATGA",
+          "STF"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 10.59
+      },
+      {
+        "categories": [
+          "CATGB",
+          "GOVT"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.65
+      },
+      {
+        "categories": [
+          "CATGB",
+          "GOVT"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 10.69
+      },
+      {
+        "categories": [
+          "GOVT"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "salary_min_incl": 50000,
+        "loan_min_incl": 500000,
+        "loan_max_excl": 1000000,
+        "roi_pct": 11.15,
+        "note": "Govt employee offer: ₹5L+, income ₹50K+"
+      },
+      {
+        "categories": [
+          "CATGC",
+          "CATC"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.89
+      },
+      {
+        "categories": [
+          "CATGC",
+          "CATC"
+        ],
+        "cibil_min_incl": 750,
+        "cibil_max_excl": null,
+        "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 11.05
+      },
+      {
+        "categories": [
+          "CATGD",
+          "CATDU",
+          "CATGX"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "roi_pct": 14.0
+      }
+    ],
+    "roi_unconfirmed": false,
+    "roi_note": "Festive offer (logins 6–30 Nov 2026, CIBIL 750+, fresh / external BT, not IBT): SCAT A/CAT A/STF 10.24% (15L+), 10.59% (10–15L); CAT B/Govt 10.65% / 10.69%; Govt employees 11.15% for 5–10L (income 50K+); CAT C 10.89% / 11.05%. CAT D / DU 14%. Below 10L or CIBIL under 750: not given — highest rate used and flagged. RATES EXPIRE 30 NOV 2026.",
+    "min_cibil": 700
+  },
+  "min_net_salary": {
+    "_all": {
+      "own_salary_account": 15000,
+      "other_salary_account": 25000
+    },
+    "CATGD": {
+      "own_salary_account": 15000,
+      "other_salary_account": 40000
+    },
+    "CATDU": {
+      "own_salary_account": 15000,
+      "other_salary_account": 40000
+    },
+    "CATGX": {
+      "own_salary_account": 15000,
+      "other_salary_account": 40000
+    }
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "category_source": "Axis list in Company Category Checker (old — category can be edited)",
+    "unlisted_note": "Unlisted: can be listed in DU if company is 3+ years old"
+  },
+  "other_income": {
+    "bonus": {
+      "pct": 75,
+      "note": "75% of last 2 years' bonus ÷ 24 (or the lower figure)"
+    },
+    "monthly_incentive": {
+      "pct": 50,
+      "note": "3 continuous months averaged, 50%"
+    },
+    "quarterly": {
+      "pct": 50
+    },
+    "rental": {
+      "pct": 70,
+      "note": "Only if shown in ITR"
+    }
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 6,
+      "nbfc": 6
+    },
+    "nbfc_mode": "whitelist",
+    "nbfc_whitelist": [
+      {
+        "name": "Aditya Birla Finance",
+        "match": [
+          "ADITYA BIRLA",
+          "ADBIRLA",
+          "ABFL",
+          "ABCL"
+        ]
+      },
+      {
+        "name": "Bajaj Finance",
+        "match": [
+          "BAJAJ FIN",
+          "BAJAJFIN"
+        ]
+      },
+      {
+        "name": "L&T Finance",
+        "match": [
+          "L&T FIN",
+          "L AND T FIN",
+          "LT FINANCE",
+          "LTFIN",
+          "LTFS",
+          "L&TFIN"
+        ]
+      },
+      {
+        "name": "Navi Finserv",
+        "match": [
+          "NAVI"
+        ]
+      },
+      {
+        "name": "Cholamandalam",
+        "match": [
+          "CHOLAMANDALAM",
+          "CHOLA"
+        ]
+      },
+      {
+        "name": "Piramal Capital",
+        "match": [
+          "PIRAMAL"
+        ]
+      },
+      {
+        "name": "AU Small Finance Bank",
+        "match": [
+          "AU SMALL FIN",
+          "AUSFB",
+          "AU BANK",
+          "AUBANK"
+        ],
+        "note": "listed as NBFC by Gauri - confirm 4 or 6 EMIs"
+      },
+      {
+        "name": "Tata Capital",
+        "match": [
+          "TATA CAPITAL",
+          "TATA CAP",
+          "TATACAP",
+          "TCL",
+          "TCFSL"
+        ]
+      },
+      {
+        "name": "SMFG India Credit (SMICC, ex-Fullerton)",
+        "match": [
+          "SMFG",
+          "SMICC",
+          "FULLERTON"
+        ]
+      }
+    ],
+    "product_types": [
+      "PL"
+    ],
+    "card_bt": true,
+    "max_card_bt_salary_multiple": 6,
+    "od_check": {
+      "all_nbfc": false,
+      "extra_match": [
+        "BAJAJ FIN",
+        "BAJAJFIN",
+        "ADITYA BIRLA",
+        "ADBIRLA",
+        "ABFL",
+        "ABCL",
+        "TATA CAP",
+        "TATACAP",
+        "TCL",
+        "TCFSL",
+        "CHOLA",
+        "POONAWALLA",
+        "POONAWALA",
+        "PFL",
+        "KOTAK",
+        "POONAFIN"
+      ],
+      "note": "Only lenders that give OD/flexi lines are checked (Bajaj, Aditya Birla, Tata Capital, Chola, Poonawalla, Kotak). Navi etc. give term loans only."
+    },
+    "foreclosure_letter_lenders": [
+      {
+        "name": "Hero FinCorp",
+        "match": [
+          "HERO FIN",
+          "HEROFIN"
+        ]
+      }
+    ],
+    "lender_blacklist": [
+      {
+        "name": "Vivifi (FlexSalary)",
+        "match": [
+          "VIVIFIN",
+          "VIVIFI"
+        ]
+      },
+      {
+        "name": "Small fintech / microfinance",
+        "match": [
+          "POCKETLY",
+          "MPOKKET",
+          "FLEXSALARY",
+          "VIVIFI",
+          "FLEXPAY",
+          "KREDITZY",
+          "OLYV",
+          "TRUE BALANCE",
+          "STASHFIN",
+          "AKARA",
+          "CASHE",
+          "TSLC",
+          "KISSHT",
+          "SI CREVA",
+          "FINNABLE",
+          "MONEYTAP",
+          "BRANCH INTERNATIONAL",
+          "PAYRUPIK",
+          "LENDINGPLATE",
+          "LAZYPAY",
+          "FREO",
+          "MONEYVIEW",
+          "MONEY VIEW",
+          "WHIZDM",
+          "FIBE",
+          "EARLYSALARY",
+          "EARLY SALARY",
+          "SOCIAL WORTH",
+          "BUDDY LOAN",
+          "INDIALENDS",
+          "LOANTAP",
+          "FLEXILOANS",
+          "LENDINGKART",
+          "INDIFI",
+          "NEOGROWTH",
+          "KINARA",
+          "UGRO",
+          "OXYZO",
+          "CREDIT SAISON",
+          "DMI FIN",
+          "DMIFIN",
+          "FINCFRIENDS",
+          "PREFR",
+          "LOANFRONT",
+          "RUPEEREDEE",
+          "SMARTCOIN",
+          "RAPIDRUPEE",
+          "ZYPE",
+          "KRAZYBEE",
+          "KREDITBEE",
+          "PAYSENSE",
+          "MONEYONCLICK",
+          "PAYSME",
+          "RING ",
+          "ZESTMONEY",
+          "HOME CREDIT",
+          "MI FINANCE",
+          "CLIX",
+          "NORTHERN ARC",
+          "ARKA FINCAP",
+          "BAJAJ HOUSING",
+          "ADITYA BIRLA HOUSING",
+          "KISETSU"
+        ]
+      }
+    ],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 6,
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ],
+    "note": "PL after 6 EMIs (HDFC NBFC list; Navi the only app lender). OD from Bajaj/Tata/Kotak/ABFL only after EMIs started + 6 paid. Card BT allowed: total ≤ 6× salary, not EMI-converted, not loan on card, no late payment or charges; card BT on 5-year tenure"
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 4,
+      "exempt_if_total_outstanding_lte_net_salary": false,
+      "prelogin_paydown": "all",
+      "rule": "4% of outstanding always; paid before login accepted with proof"
+    },
+    "pct_by_type": {
+      "GOLD": 0,
+      "OD": 1,
+      "KCC": 0
+    },
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "pct_of_emi": 50,
+      "rule": "100% if applicant pays; 50% if applicant transfers funds (shared); 0 if co-applicant pays within co-applicant's own eligibility",
+      "both_pct": 50
+    },
+    "loan_with_emis_remaining_lte": 6
+  },
+  "credit_rules": {
+    "card_dpd_recent_months": 3
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "recent_dpd_loans_12m"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "enquiries": {
+    "max_30d": 4,
+    "max_90d": 5,
+    "count_types": [
+      "Personal Loan"
+    ],
+    "deviation_possible": false,
+    "note": "'4–5' — read as 4 in 30 days, 5 in 90 days (TO CONFIRM)"
+  },
+  "closure_before_login": true,
+  "subject_to_closure_allowed": false,
+  "checklist": [
+    "Age 22+",
+    "Job stability 1 year",
+    "Address proof: Aadhaar / KYC; Axis bank account address accepted",
+    "Rental income only if shown in ITR",
+    "Applicant + co-applicant cases not done",
+    "Card BT: not EMI-converted, not loan on card, no late payments or charges"
+  ],
+  "open_items": [
+    "Max loan",
+    "Multiplier: 'if AP score 17' — what does it mean?",
+    "50K–1L 7-year needs CIBIL 780 — from 50K or 75K?",
+    "Enquiries 4–5: 30 or 90 days?",
+    "Category mapping: GOVT, EDU, MED, DEF, POL, CATDU, CATGX",
+    "Rates below ₹10L and for CIBIL 700–749 (A/B/C)",
+    "Rates after 30 Nov 2026",
+    "EDU / MED / Defence / Police rates"
+  ],
+  "product_info": {
+    "processing_fee": "₹8,999 (15L+) / ₹6,999 (10–15L, and Govt 5L+) under the offer; max 2% + GST",
+    "offer": "Festive rates valid for logins till 30 Nov 2026"
+  }
+}
