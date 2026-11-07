@@ -21,6 +21,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 import { exportToExcel, parseSpreadsheet, autoMapHeaders } from '../utils/spreadsheet'
+import { ExotelCallButton } from '../utils/clickToCall'
 import {
   IconUsers, IconUserPlus, IconThumbUp, IconCircleCheck,
   IconPhone, IconBrandWhatsapp, IconUpload, IconEdit,
@@ -295,14 +296,14 @@ export default function Leads({ userRole, userId }) {
                     <div style={{background:statusObj?.color||'#E6F1FB',color:statusObj?.textColor||'#185FA5',padding:'6px 10px',borderRadius:20,fontSize:12,fontWeight:700}}>{lead.status||'New'}</div>
                   </div>
                   <div style={{marginBottom:8, display:'flex',alignItems:'center',gap:'10px'}}>
-                    <a href={'tel:'+lead.mobile} style={{textDecoration:'none',color:'#0F172A',fontSize:15,fontWeight:600,display:'flex',alignItems:'center',gap:6}}><IconPhone size={15} color='#185FA5'/>{lead.mobile}</a>
+                    <span style={{textDecoration:'none',color:'#0F172A',fontSize:15,fontWeight:600,display:'flex',alignItems:'center',gap:6}}><IconPhone size={15} color='#185FA5'/>{lead.mobile}</span>
                   </div>
                   <div style={{color:'#6B7280',marginBottom:8,fontSize:13}}>
                     {lead.city||'-'} {lead.city&&lead.loan_amount? '•':''} {lead.loan_amount?fmtAmt(lead.loan_amount):'-'}
                   </div>
                   <div style={{color:'#9CA3AF',fontSize:12,marginBottom:12}}>{new Date(lead.created_at).toLocaleDateString('en-IN')}</div>
                   <div style={{display:'flex',gap:8}}>
-                    <a href={'tel:'+lead.mobile} style={{flex:1,background:'#185FA5',color:'white',padding:'10px',borderRadius:8,textDecoration:'none',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,gap:5}}><IconPhone size={15}/>Call</a>
+                    <ExotelCallButton phone={lead.mobile} leadId={lead.id} style={{flex:1,background:'#185FA5',color:'white',padding:'10px',borderRadius:8,textDecoration:'none',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,gap:5}}><IconPhone size={15}/>Call</ExotelCallButton>
                     <a href={'https://wa.me/91'+lead.mobile} target="_blank" rel="noreferrer" style={{flex:1,background:'#25D366',color:'white',padding:'10px',borderRadius:8,textDecoration:'none',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,gap:5}}><IconBrandWhatsapp size={15}/>WhatsApp</a>
                     <button onClick={()=>setSelectedLead(lead)} style={{flex:1,border:'1.5px solid #E2E8F0',background:'transparent',padding:'10px',borderRadius:8,fontWeight:600,cursor:'pointer',fontSize:13}}>View</button>
                   </div>
@@ -356,7 +357,7 @@ export default function Leads({ userRole, userId }) {
                     </td>
                     <td>
                       <div style={{fontSize:'14px', display: 'flex', alignItems: 'center', gap: '8px'}}>
-                        <a href={'tel:'+lead.mobile} style={{textDecoration:'none',color:'#0F172A'}}>{lead.mobile}</a>
+                        <span style={{textDecoration:'none',color:'#0F172A'}}>{lead.mobile}</span>
                       </div>
                       {lead.email&&<div style={{fontSize:'12px',color:'#A0AEC0'}}>{lead.email}</div>}
                     </td>
@@ -395,14 +396,15 @@ export default function Leads({ userRole, userId }) {
                       <div style={{display:'flex',gap:'5px',alignItems:'center'}}>
                         <button className="btn btn-outline btn-sm"
                           onClick={()=>setSelectedLead(lead)}>View</button>
-                        <a href={'tel:'+lead.mobile}
+                        <ExotelCallButton phone={lead.mobile} leadId={lead.id} title="Call"
+                          connectingLabel="…" ringingLabel="📞"
                           style={{width:'30px',height:'30px',borderRadius:'8px',
                             background:'#FCEBEB',border:'none',display:'flex',
                             alignItems:'center',justifyContent:'center',
                             cursor:'pointer',textDecoration:'none',
                             color:'#A32D2D',flexShrink:0}}>
                           <IconPhone size={15}/>
-                        </a>
+                        </ExotelCallButton>
                         <a href={'https://wa.me/91'+lead.mobile}
                           target="_blank" rel="noreferrer"
                           style={{width:'30px',height:'30px',borderRadius:'8px',
@@ -844,7 +846,8 @@ export default function Leads({ userRole, userId }) {
                           onMouseLeave={e=>{e.currentTarget.style.background='white';e.currentTarget.style.borderColor='#E2E8F0'}}>
                           View
                         </button>
-                        <a href={'tel:'+lead.mobile}
+                        <ExotelCallButton phone={lead.mobile} leadId={lead.id} title="Call"
+                          connectingLabel="…" ringingLabel="📞"
                           style={{width:'30px',height:'30px',borderRadius:'50%',
                             background:'transparent',border:'none',display:'flex',
                             alignItems:'center',justifyContent:'center',
@@ -853,7 +856,7 @@ export default function Leads({ userRole, userId }) {
                           onMouseEnter={e=>e.currentTarget.style.background='#FEF2F2'}
                           onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                           <IconPhone size={15}/>
-                        </a>
+                        </ExotelCallButton>
                         <a href={'https://wa.me/91'+lead.mobile}
                           target="_blank" rel="noreferrer"
                           style={{width:'30px',height:'30px',borderRadius:'50%',
@@ -1012,10 +1015,10 @@ export default function Leads({ userRole, userId }) {
 
             {activeTab==='actions' && (
               <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                <a href={'tel:'+selectedLead.mobile}
+                <ExotelCallButton phone={selectedLead.mobile} leadId={selectedLead.id}
                   style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:13,background:'#185FA5',color:'white',borderRadius:8,textDecoration:'none',fontSize:14,fontWeight:600}}>
                   📞 Call {selectedLead.full_name}
-                </a>
+                </ExotelCallButton>
                 <a href={'https://wa.me/91'+selectedLead.mobile}
                   target="_blank" rel="noreferrer"
                   style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:13,background:'#25D366',color:'white',borderRadius:8,textDecoration:'none',fontSize:14,fontWeight:600}}>

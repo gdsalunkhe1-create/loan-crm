@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../supabase'
 import { analyzeBankStatement } from '../utils/bankBehaviour'
 import { downloadBsaWorkbook } from '../utils/bsaExcelExport'
+import { placeExotelCall, ExotelCallButton } from '../utils/clickToCall'
 import * as XLSX from 'xlsx'
 import { exportToExcel, parseSpreadsheet, autoMapHeaders } from '../utils/spreadsheet'
 import { IST_TZ, nowIST, parseIST, formatIST, addMinutes, compareIST, buildIST, toDbTimestamp } from '../utils/timeUtils'
@@ -2067,29 +2068,23 @@ function AgentDashboard({ userId }) {
     fetchPreviousOutcomes()
   },[callLogLead?.id])
 
-  const handleCall=(lead)=>{
+  // Id of the lead whose Exotel click-to-call request is in flight (drives the
+  // "Connecting…" label / disabled state on every Call button that uses handleCall).
+  const [callingLeadId,setCallingLeadId]=useState(null)
+
+  const handleCall=async(lead)=>{
     // Look the lead up fresh from current state by id rather than trusting whatever
     // reference got passed in — closures from a list render can lag a beat behind
     // the very latest optimistic update (e.g. clicking Call again right after
     // scheduling a callback for the same lead), which previously let a stale
     // status slip past the PROTECTED_STAGES guard below.
     const freshLead = myLeads.find(l=>l.id===lead?.id) || lead
-    // Don't assign window.location.href directly for tel: — on a PC with no
-    // registered calling app (or some Android webview states) that's treated
-    // as a real navigation attempt, which can blank/reload the SPA and wipe
-    // all in-memory state (including the stage filter) the moment the agent
-    // comes back. A throwaway <a> click lets the OS handle (or ignore) the
-    // tel: link without ever touching the app's own document location.
-    try{
-      const a=document.createElement('a')
-      a.href=`tel:${freshLead.mobile}`
-      a.style.display='none'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-    }catch(e){
-      window.location.href=`tel:${freshLead.mobile}`
-    }
+    if(!freshLead||callingLeadId) return
+    // Exotel rings the agent's own phone first, then connects the customer.
+    setCallingLeadId(freshLead.id)
+    const res=await placeExotelCall(freshLead.mobile,freshLead.id)
+    setCallingLeadId(null)
+    if(!res.ok){ alert('Call failed: '+res.error); return }
     setCallLogLead(freshLead)
     setCallLogDisposition('')
     setCallLogStage(freshLead?.status||'New')
@@ -2707,9 +2702,9 @@ function AgentDashboard({ userId }) {
 
                     {/* Action buttons */}
                     <div style={{display:'flex',gap:7}}>
-                      <button onClick={()=>{ if(lead){ setShowCallbackReminder(false); alreadyBuzzingRef.current=false; handleCall(lead) } }}
+                      <button disabled={!!callingLeadId} onClick={()=>{ if(lead){ setShowCallbackReminder(false); alreadyBuzzingRef.current=false; handleCall(lead) } }}
                         style={{flex:1,padding:'9px 6px',background:'#10B981',color:'white',border:'none',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
-                        <IconPhone size={13}/>Call Now
+                        <IconPhone size={13}/>{callingLeadId&&callingLeadId===lead?.id?'Connecting…':'Call Now'}
                       </button>
                       <button onClick={()=>{ setRescheduleTaskId(task.id);const slot=defaultCallbackSlot();setRescheduleDate(slot.date);setRescheduleTime(slot.time) }}
                         style={{flex:1,padding:'9px 6px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:12,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:5}}>
@@ -2759,8 +2754,8 @@ function AgentDashboard({ userId }) {
                       <div style={{fontWeight:600,fontSize:12,color:'#92400E',marginBottom:2}}>{task.title.replace('Callback: ','').replace('Follow-up: ','')}</div>
                       <div style={{fontSize:11,color:'#B45309'}}>🕐 {fmtISTDate(task.due_date)} {fmtISTTime(task.due_date)}</div>
                       {task.notes&&<div style={{fontSize:11,color:'#B45309',marginTop:2}}>{task.notes}</div>}
-                      <button onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead){openCallingWorkspace(lead);setShowNotifPanel(false)}}}
-                        style={{marginTop:6,background:'#92400E',color:'white',border:'none',padding:'4px 10px',borderRadius:5,cursor:'pointer',fontSize:11,fontWeight:600}}>Call Now</button>
+                      <button disabled={!!callingLeadId} onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead){openCallingWorkspace(lead);setShowNotifPanel(false)}}}
+                        style={{marginTop:6,background:'#92400E',color:'white',border:'none',padding:'4px 10px',borderRadius:5,cursor:'pointer',fontSize:11,fontWeight:600}}>{callingLeadId&&callingLeadId===task.lead_id?'Connecting…':'Call Now'}</button>
                     </div>
                   ))}
                   {notifications.length>0&&<div style={{fontSize:11,fontWeight:700,color:'#6B7280',textTransform:'uppercase',letterSpacing:'0.5px',margin:'10px 0 6px'}}>Other Reminders</div>}
@@ -3801,9 +3796,9 @@ function AgentDashboard({ userId }) {
                     {task.notes&&` · ${task.notes}`}
                   </div>
                 </div>
-                <button onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead)openCallingWorkspace(lead)}}
+                <button disabled={!!callingLeadId} onClick={()=>{const lead=myLeads.find(l=>l.id===task.lead_id);if(lead)openCallingWorkspace(lead)}}
                   style={{marginLeft:10,background:'#92400E',color:'white',border:'none',padding:'5px 10px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:600,flexShrink:0,display:'flex',alignItems:'center',gap:4}}>
-                  <IconPhone size={12}/>Call Now
+                  <IconPhone size={12}/>{callingLeadId&&callingLeadId===task.lead_id?'Connecting…':'Call Now'}
                 </button>
               </div>
             ))}
@@ -4189,10 +4184,10 @@ function AgentDashboard({ userId }) {
 
                       {/* Action buttons */}
                       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
-                        <button onClick={()=>openCallingWorkspace(lead)}
+                        <button disabled={!!callingLeadId} onClick={()=>openCallingWorkspace(lead)}
                           style={actionBtnLabeledStyles.call}>
                           <IconPhone size={16}/>
-                          <span style={{fontSize:10,fontWeight:600}}>Call</span>
+                          <span style={{fontSize:10,fontWeight:600}}>{callingLeadId===lead.id?'Connecting…':'Call'}</span>
                         </button>
                         <button onClick={(e)=>{e.stopPropagation();setShowWAQuick(prev=>prev===lead.id?null:lead.id)}}
                           style={actionBtnLabeledStyles.whatsapp}>
@@ -4333,10 +4328,10 @@ function AgentDashboard({ userId }) {
                             </td>
                             <td style={{padding:'8px 14px'}}>
                               <div style={{display:'flex',gap:6}}>
-                                <button title="Call" onClick={()=>openCallingWorkspace(lead)}
+                                <button title="Call" disabled={!!callingLeadId} onClick={()=>openCallingWorkspace(lead)}
                                   style={actionBtnSimpleStyles.call}>
                                   <IconPhone size={14}/>
-                                  <span>Call</span>
+                                  <span>{callingLeadId===lead.id?'Connecting…':'Call'}</span>
                                 </button>
                                 <button title="WhatsApp" onClick={(e)=>{
                                     e.stopPropagation()
@@ -6742,7 +6737,7 @@ export default function Dashboard({ session }) {
 <td style={{padding:'8px 4px',verticalAlign:'middle',whiteSpace:'nowrap'}}>
   <div style={{display:'flex',alignItems:'center',gap:3}}>
     <button onClick={()=>openLeadView(l)} title='View lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'white',border:'1px solid #CBD5E1',color:'#185FA5',fontSize:13,cursor:'pointer'}}>👁</button>
-    <a href={'tel:'+(l.mobile||'')} title='Call' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></a>
+    <ExotelCallButton phone={l.mobile} leadId={l.id} title='Call' connectingLabel='…' ringingLabel='📞' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #FECACA',background:'#FEF2F2',textDecoration:'none'}}><IconPhone size={13} color='#DC2626'/></ExotelCallButton>
     <a href={'https://wa.me/91'+(l.mobile||'')} target='_blank' rel='noreferrer' title='WhatsApp' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,border:'1px solid #BBF7D0',background:'#F0FDF4',textDecoration:'none'}}><IconBrandWhatsapp size={13} color='#25D366'/></a>
     <button onClick={()=>{setReassignTarget(l);setReassignTo('');setReassignType('transfer')}} title='Reassign lead' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#EFF6FF',border:'1px solid #BFDBFE',color:'#1D4ED8',fontSize:13,cursor:'pointer'}}>↩</button>
     <button onClick={()=>handleUnassignLead(l)} title='Unassign agent' style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:26,height:26,borderRadius:6,background:'#FFF7ED',border:'1px solid #FED7AA',color:'#C2410C',fontSize:13,cursor:'pointer'}}>⊘</button>

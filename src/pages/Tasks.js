@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { ExotelCallButton } from '../utils/clickToCall'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -290,8 +291,8 @@ export default function Tasks({ userRole, userId, orgId }) {
                         onClick={()=>updateStatus(task.id,'In Progress')}>Start</button>
                     )}
                     {lead && (
-                      <a href={'tel:'+lead.mobile} className="btn btn-outline btn-sm"
-                        style={{textDecoration:'none'}}>Call</a>
+                      <ExotelCallButton phone={lead.mobile} leadId={lead.id} className="btn btn-outline btn-sm"
+                        style={{textDecoration:'none'}}>Call</ExotelCallButton>
                     )}
                     <button
                       onClick={()=>deleteTask(task.id)}

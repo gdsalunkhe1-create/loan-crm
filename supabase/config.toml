@@ -1,0 +1,11 @@
+
+[functions.click-to-call]
+enabled = true
+verify_jwt = false
+import_map = "./functions/click-to-call/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/click-to-call/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/click-to-call/*.html" ]

@@ -1,6 +1,7 @@
 /* eslint-disable */
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabase'
+import { ExotelCallButton } from '../utils/clickToCall'
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
@@ -402,10 +403,8 @@ export default function Campaigns({ userRole, userId, orgId }) {
     } else {
       setCurrentLeadIndex(nextIndex)
       setCallForm({call_status:'Answered',call_outcome:'',duration:'',notes:''})
-      if (dialerType==='auto') {
-        const nextLead = pendingLeads[nextIndex]
-        if (nextLead) setTimeout(()=>{ window.location.href='tel:'+nextLead.mobile }, 1500)
-      }
+      // Auto mode only advances to the next lead; the agent clicks "Call" each
+      // time (no automatic Exotel calls).
     }
     setLoading(false)
   }
@@ -448,10 +447,7 @@ export default function Campaigns({ userRole, userId, orgId }) {
               <IconHandClick size={15}/> Manual
             </button>
             <button
-              onClick={()=>{
-                setDialerType('auto')
-                window.location.href='tel:'+currentLead.mobile
-              }}
+              onClick={()=>setDialerType('auto')}
               style={{
                 display:'flex',alignItems:'center',gap:'6px',
                 padding:'7px 14px',borderRadius:'7px',border:'none',cursor:'pointer',
@@ -532,12 +528,14 @@ export default function Campaigns({ userRole, userId, orgId }) {
             )}
 
             <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
-              <a
-                href={'tel:'+currentLead.mobile}
+              <ExotelCallButton
+                key={currentLead.id}
+                phone={currentLead.mobile}
+                leadId={currentLead.id}
                 style={{display:'flex',alignItems:'center',gap:'8px',background:'#185FA5',color:'white',padding:'12px 24px',borderRadius:'8px',textDecoration:'none',fontSize:'15px',fontWeight:'700'}}
               >
                 <IconPhone size={20} /> Call {currentLead.mobile}
-              </a>
+              </ExotelCallButton>
             </div>
             {dialerType==='auto' && (
               <p style={{textAlign:'center',fontSize:'12px',color:'#9CA3AF',margin:'8px 0 0'}}>
@@ -772,7 +770,7 @@ export default function Campaigns({ userRole, userId, orgId }) {
                     </td>
                     <td style={{padding:'0'}}>
                       <div style={{display:'flex',alignItems:'center',gap:'8px',color:'#718096',fontSize:'13px'}}>
-                        <a href={'tel:'+lead.mobile} style={{textDecoration:'none',color:'#718096'}}>{lead.mobile}</a>
+                        <span style={{textDecoration:'none',color:'#718096'}}>{lead.mobile}</span>
                       </div>
                     </td>
                     <td style={{color:'#718096',fontSize:'13px'}}>{lead.city||'-'}</td>
