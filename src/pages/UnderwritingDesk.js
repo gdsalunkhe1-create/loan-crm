@@ -24,7 +24,7 @@ import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, averageGrossPay, summarizeEmployer,
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
-  scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
+  scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, rankResults, pickedFirst, closeLoansPatch, closeAllSuggestion, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
   isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
   countedObligationsTotal, sameCompany, isExactMatch, uniqueCompanyNames,
 } from '../utils/underwritingAdapters';
@@ -513,12 +513,22 @@ export default function UnderwritingDesk({ userId, orgId }) {
             : result.bureauTier;
           bureauTier = { value: picked, auto: auto || null };
         }
-        return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null, result };
+        // Closing every suggested loan together (each plan line is worked out on its own):
+        // one more run with all of them closed gives the eligible amount and the in-hand figure.
+        const plan = visibleClosurePlan(result);
+        const closeAll = plan.length
+          ? closeAllSuggestion(plan, evaluateBank(p.policy, { ...profile, ...closeLoansPatch(profile.loans, plan.map((c) => c.id)) }).best)
+          : null;
+        return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null, closeAll, result };
       } catch (e) {
         return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, salaryBase, error: e.message || String(e) };
       }
     });
   }, [draft, policies, companyFor, incorporationYear, city]);
+
+  // Best bank first; the agent's "Counted for" pick (if any) moves its card to the top.
+  const ranked = useMemo(() => rankResults(results), [results]);
+  const shownResults = useMemo(() => pickedFirst(ranked, tableBankId), [ranked, tableBankId]);
 
   const customerName = lead?.full_name || newLeadForm.full_name || sources.uploads.cibil?.parsed.customerName || '';
   const canUpload = mode === 'new' || !!lead;
@@ -639,15 +649,16 @@ export default function UnderwritingDesk({ userId, orgId }) {
 
       {draft && !loadingLead && (
         <>
-          <ObligationsPanel draft={draft} patchDraft={patchDraft} results={results} bankId={tableBankId} setBankId={setTableBankId} />
+          <ObligationsPanel draft={draft} patchDraft={patchDraft} results={ranked} bankId={tableBankId} setBankId={setTableBankId} />
           <CreditPanel draft={draft} patchCredit={patchCredit} patchDraft={patchDraft} policies={policies} />
           {policies.length === 0 && !policyError && (
             <div className="info-box info-box-yellow">No active bank policies found.</div>
           )}
-          {results.map((r) => (
+          {shownResults.map((r) => (
             <ResultCard
               key={r.bankId}
               entry={r}
+              rank={ranked.indexOf(r) + 1}
               loans={draft.loans}
               cards={draft.cards}
               netSalary={r.salaryBase}
@@ -1539,6 +1550,11 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
     const c = draft.cards.find((x) => x.id === id);
     return c && c.action !== 'close';
   });
+  // Loans the selected bank's closure plan says are worth closing (same idea as the card plan).
+  const loanPlan = visibleClosurePlan(res);
+  const closeLoan = new Map(loanPlan.map((c) => [c.id, c]));
+  const closeAll = entry && entry.closeAll;
+  const applyLoanSuggestion = () => patchDraft(closeLoansPatch(draft.loans, closeAll.ids));
   const applySuggestion = () => patchDraft({
     cards: draft.cards.map((c) => (suggested.has(c.id) ? { ...c, ...cardActionPatch(c, 'close') } : c)),
   });
@@ -1595,6 +1611,11 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
           <select style={cellSel} value={treatmentChoice(l)} onChange={(e) => setLoanById(l.id, treatmentPatch(e.target.value))}>
             {TREATMENTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
+          {closeLoan.has(l.id) && (
+            <div style={{ marginTop: '4px' }} title={`closing raises eligibility by ${fmtINR(closeLoan.get(l.id).gain)}`}>
+              <span style={tag('#dcfce7', '#166534')}>Suggested: close</span>
+            </div>
+          )}
           {isHL && (
             <div style={{ fontSize: '10px', color: '#555', marginTop: '4px', lineHeight: 1.4 }}>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '3px', cursor: 'pointer' }}>
@@ -1707,6 +1728,12 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
         <h3 style={{ ...cardHeader, margin: 0 }}>Obligations</h3>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {closeAll && (
+            <button style={{ ...btnSecSm, color: '#166534', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={applyLoanSuggestion}>
+              Apply suggestion — close {closeAll.ids.length} loan{closeAll.ids.length === 1 ? '' : 's'} ({fmtINR(closeAll.amount)})
+              {closeAll.newEligible != null ? ` → eligible ${fmtINR(closeAll.newEligible)}` : ''}, in hand {fmtINR(closeAll.inHand)}
+            </button>
+          )}
           {pendingSuggestion && (
             <button style={{ ...btnSecSm, color: '#166534', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={applySuggestion}>
               Apply suggestion — close {cardPlan.closeCards.length} card{cardPlan.closeCards.length === 1 ? '' : 's'} ({fmtINR(cardPlan.closeAmount)})
@@ -1717,7 +1744,8 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
             <div>
               <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
                 Counted for
-                <select style={{ ...cellSel, width: 'auto' }} value={entry ? entry.bankId : ''} onChange={(e) => setBankId(e.target.value)}>
+                <select style={{ ...cellSel, width: 'auto' }} value={bankId && results.some((r) => r.bankId === bankId) ? bankId : ''} onChange={(e) => setBankId(e.target.value || null)}>
+                  <option value="">Auto (best bank) — {results[0].label}</option>
                   {results.map((r) => <option key={r.bankId} value={r.bankId}>{r.label}</option>)}
                 </select>
               </label>
@@ -2069,7 +2097,7 @@ function ClosurePlan({ plan, onMarkClosed }) {
   ));
 }
 
-function ResultCard({ entry, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed }) {
+function ResultCard({ entry, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const chipFor = (scenario, id) => btChipText(scenario, id, loans, cards, fmtL);
@@ -2088,6 +2116,7 @@ function ResultCard({ entry, loans, cards, netSalary, cibilScore, scorecardValue
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        {rank > 0 && <span style={{ fontSize: '12px', fontWeight: 700, color: '#7a8194' }}>#{rank}</span>}
         <h3 style={{ ...cardHeader, margin: 0 }}>{label}</h3>
         {st && <span style={{ ...pill, background: st.background, color: st.color }}>{st.label}</span>}
         {entry.scorecard && <ScorecardSelect scorecard={entry.scorecard} value={scorecardValue} onChange={onScorecard} />}

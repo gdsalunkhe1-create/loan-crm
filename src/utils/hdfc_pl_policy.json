@@ -925,7 +925,9 @@
         ],
         "months": 12
       }
-    ]
+    ],
+    "od_interest_only_after_months": 6,
+    "od_note": "HDFC takes any OD (Bajaj Flexi etc.) in BT after 6 months, even if only interest is being paid (Gauri, 7 Nov 2026)"
   },
   "obligations": {
     "credit_card": {

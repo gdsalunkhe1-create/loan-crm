@@ -459,6 +459,49 @@ export const isClosureNote = (note) => /^Subject to closure/.test(note);
 // Closure items to show: none when the bank declines for a permanent reason.
 // A wait (eligibleAfterWait) or a soft fail (no EMI room / BT more than
 // eligibility — out.softFail) keeps them: closing a loan can fix those.
+// Bank results order: Eligible, Deviation, Needs input, Not eligible (errors last);
+// inside a group the highest eligible amount first, then the highest in hand.
+const STATUS_RANK = { ELIGIBLE: 0, DEVIATION: 1, NEEDS_INPUT: 2, NOT_ELIGIBLE: 3 };
+export function rankResults(results) {
+  const key = (r) => {
+    const res = r.result;
+    const best = res && res.best;
+    return [
+      r.error || !res ? 4 : (STATUS_RANK[res.status] ?? 4),
+      best && best.eligibleAmount != null ? best.eligibleAmount : -Infinity,
+      best && best.netInHand != null ? best.netInHand : -Infinity,
+    ];
+  };
+  const cmp = (x, y) => (x === y ? 0 : x > y ? 1 : -1);
+  return (results || []).map((r, i) => ({ r, i, k: key(r) }))
+    .sort((a, b) => cmp(a.k[0], b.k[0]) || cmp(b.k[1], a.k[1]) || cmp(b.k[2], a.k[2]) || a.i - b.i)
+    .map((x) => x.r);
+}
+
+// Cards in display order: the agent's "Counted for" bank first, the rest by rank.
+export function pickedFirst(ranked, bankId) {
+  const picked = bankId && ranked.find((r) => r.bankId === bankId);
+  return picked ? [picked, ...ranked.filter((r) => r !== picked)] : ranked;
+}
+
+// Loans in the selected bank's closure plan get Treatment "Closed before login (proof)" —
+// the flag the engine itself uses to work out the plan, in both closure modes.
+export function closeLoansPatch(loans, ids) {
+  const set = new Set(ids || []);
+  return { loans: (loans || []).map((l) => (set.has(l.id) ? { ...l, ...treatmentPatch('closed') } : l)) };
+}
+
+// "Apply suggestion — close N loan(s)": simBest is the bank's best scenario with every
+// suggested loan closed. In hand = its net in hand less what paying those loans off costs.
+// null (no button) when nothing would be left in hand.
+export function closeAllSuggestion(plan, simBest) {
+  if (!plan || !plan.length || !simBest) return null;
+  const amount = plan.reduce((t, c) => t + (c.outstanding || 0), 0);
+  const inHand = (simBest.netInHand || 0) - amount;
+  if (!(inHand > 0)) return null;
+  return { ids: plan.map((c) => c.id), amount, newEligible: simBest.eligibleAmount ?? null, inHand };
+}
+
 export function visibleClosurePlan(result) {
   if (!result || !Array.isArray(result.closurePlan)) return [];
   if (result.status === 'NOT_ELIGIBLE' && !result.eligibleAfterWait && !result.softFail) return [];

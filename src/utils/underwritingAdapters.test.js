@@ -1,4 +1,4 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, rankResults, pickedFirst, closeLoansPatch, closeAllSuggestion, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
 import { parseSalaryText } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
@@ -1105,5 +1105,53 @@ describe('Poonawalla: risk segment, card / app-loan BT chips', () => {
   test('FOIR 7 years row label', () => {
     const r = evaluateBank(pfl, { ...profile, loans: [], cards: [], netSalary: 120000 });
     expect(r.best.methods.find((m) => m.tenure === 84).label).toBe('FOIR 7 years');
+  });
+});
+
+describe('Bank order and loan close suggestions', () => {
+  const r = (bankId, status, eligibleAmount, netInHand) => ({ bankId, result: { status, best: eligibleAmount == null ? undefined : { eligibleAmount, netInHand } } });
+
+  test('rankResults: Eligible, Deviation, Needs input, Not eligible, errors; amount then in-hand inside a group', () => {
+    const list = [
+      r('ne', 'NOT_ELIGIBLE', 900000, 100), r('ni', 'NEEDS_INPUT'), { bankId: 'err', error: 'boom' },
+      r('dev', 'DEVIATION', 2000000, 5), r('e1', 'ELIGIBLE', 1000000, 10), r('e2', 'ELIGIBLE', 1500000, 1), r('e3', 'ELIGIBLE', 1000000, 50),
+    ];
+    expect(rankResults(list).map((x) => x.bankId)).toEqual(['e2', 'e3', 'e1', 'dev', 'ni', 'ne', 'err']);
+    expect(list[0].bankId).toBe('ne');   // input untouched
+  });
+
+  test('rankResults keeps the original order on a full tie', () => {
+    expect(rankResults([r('a', 'NEEDS_INPUT'), r('b', 'NEEDS_INPUT')]).map((x) => x.bankId)).toEqual(['a', 'b']);
+  });
+
+  test('pickedFirst moves the chosen bank to the top; none / unknown keeps the ranking', () => {
+    const ranked = [r('a', 'ELIGIBLE', 3, 0), r('b', 'ELIGIBLE', 2, 0), r('c', 'ELIGIBLE', 1, 0)];
+    expect(pickedFirst(ranked, 'c').map((x) => x.bankId)).toEqual(['c', 'a', 'b']);
+    expect(pickedFirst(ranked, null)).toBe(ranked);
+    expect(pickedFirst(ranked, 'zzz')).toBe(ranked);
+  });
+
+  test('closeLoansPatch sets only the listed loans to Closed before login (proof)', () => {
+    const loans = [{ id: 'a', treatment: 'bt' }, { id: 'b', treatment: 'auto' }];
+    const { loans: out } = closeLoansPatch(loans, ['a']);
+    expect(out[0]).toMatchObject({ id: 'a', closedBeforeLoginWithProof: true, treatment: 'auto' });
+    expect(treatmentChoice(out[0])).toBe('closed');
+    expect(out[1]).toBe(loans[1]);
+  });
+});
+
+describe('closeAllSuggestion (Apply suggestion — close N loans)', () => {
+  const plan = [{ id: 'a', outstanding: 200000 }, { id: 'b', outstanding: 100000 }];
+
+  test('in hand = net in hand with all closed − their total outstanding', () => {
+    expect(closeAllSuggestion(plan, { eligibleAmount: 1500000, netInHand: 1200000 }))
+      .toEqual({ ids: ['a', 'b'], amount: 300000, newEligible: 1500000, inHand: 900000 });
+  });
+
+  test('no button when nothing is left in hand (zero or below), or no plan / no result', () => {
+    expect(closeAllSuggestion(plan, { eligibleAmount: 800000, netInHand: 300000 })).toBeNull();
+    expect(closeAllSuggestion(plan, { eligibleAmount: 800000, netInHand: 250000 })).toBeNull();
+    expect(closeAllSuggestion([], { eligibleAmount: 1, netInHand: 1 })).toBeNull();
+    expect(closeAllSuggestion(plan, undefined)).toBeNull();
   });
 });

@@ -358,7 +358,7 @@ function obligationOf(policy, loan) {
   if (!byType && (policy.obligations?.one_pct_types || ONE_PCT_TYPES).includes(loan.productType)) {
     return { amount: 0.01 * (loan.outstanding || 0), rule: '1% of outstanding' };
   }
-  if (loan.productType === 'HL' && loan.isJoint) {
+  if (loan.productType === 'HL' && (loan.isJoint || loan.hlEmiPaidBy === 'both' || loan.hlEmiPaidBy === 'co_applicant')) {
     const j = policy.obligations?.home_loan_joint || {};
     if (j.joint_pct != null) return { amount: j.joint_pct / 100 * (loan.emi || 0), rule: `Joint HL — ${j.joint_pct}% of EMI (whoever pays)` };
     if (loan.hlEmiPaidBy === 'both') {
@@ -412,7 +412,12 @@ function needsOdCheck(policy, loan) {
 // loan.foreclosureLetter: true when the lender has issued a foreclosure letter
 function btCandidate(policy, loan) {
   const bt = policy.balance_transfer || {};
-  if (!(bt.product_types || UNSECURED_BT_TYPES).includes(loan.productType)) return { ok: false, why: `${loan.productType} not taken in BT` };
+  // An OD the agent has confirmed as a term loan / EMI-started is treated like a personal loan for BT.
+  const odAsPl = loan.productType === 'OD' && ['term', 'od_emi'].includes(loan.odStatus);
+  // Some banks (HDFC) take any OD after N months even if only interest is being paid.
+  const odIntOnly = bt.od_interest_only_after_months != null && (loan.productType === 'OD' || loan.odStatus === 'od_no_emi');
+  const btType = odAsPl ? 'PL' : loan.productType;
+  if (!(bt.product_types || UNSECURED_BT_TYPES).includes(btType) && !(odIntOnly && loan.productType === 'OD')) return { ok: false, why: `${loan.productType} not taken in BT` };
   if (loan.closedBeforeLoginWithProof) return { ok: false, why: 'Already closed' };
   if (!(loan.outstanding > 0)) return { ok: false, why: 'No outstanding to transfer' };
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
@@ -435,7 +440,10 @@ function btCandidate(policy, loan) {
   const letterLender = (bt.foreclosure_letter_lenders || []).find((f) => wordStartMatch(loan.lender, f.match));
   if (letterLender && !loan.foreclosureLetter) return { ok: false, why: `Needs foreclosure letter from ${letterLender.name}`, needsLetter: true };
   if (!letterLender && wordStartMatch(loan.lender, (bt.lender_blacklist || []).flatMap((b) => b.match))) return { ok: false, why: 'Lender not taken in BT (microfinance / small fintech)' };
-  if (loan.odStatus === 'od_no_emi') return { ok: false, why: 'OD / flexi with no EMI started — not taken in BT' };
+  if (odIntOnly && (loan.emisPaid || 0) < bt.od_interest_only_after_months) {
+    return { ok: false, why: `OD — taken in BT after ${bt.od_interest_only_after_months} months (${loan.emisPaid || 0} so far)` };
+  }
+  if (loan.odStatus === 'od_no_emi' && !odIntOnly) return { ok: false, why: 'OD / flexi with no EMI started — not taken in BT' };
   const kind = lenderKind(policy, loan);
   if (!letterLender && kind === 'nbfc' && (bt.nbfc_mode || 'whitelist') === 'whitelist' && !matchWhitelist(policy, loan.lender)) return { ok: false, why: 'NBFC not in BT list' };
   const need = bt.min_emis_paid?.[kind] ?? 6;

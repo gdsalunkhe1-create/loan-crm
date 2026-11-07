@@ -563,7 +563,7 @@ test('Joint home loan paid by both: 50% (IndusInd 100%, Yes 50% whoever pays)', 
     company: { categoriesByBank: { [pol.bank_id || 'hdfc_bank']: cat } }, credit: { enquiryList: [] } }).obligations.loans[0].obligation.amount;
   expect(o(policy, 'CAT A')).toBeCloseTo(59020.5);
   expect(o(icici, 'Elite')).toBeCloseTo(59020.5);
-  expect(o(indusind, 'CAT A')).toBe(118041);
+  expect(o(indusind, 'CAT A')).toBeCloseTo(59020.5);   // 7 Nov: 50% when paid by both
   expect(o(yes, 'Gold')).toBeCloseTo(59020.5);
 });
 
@@ -623,4 +623,16 @@ test('Axis festive rates: CAT A 15L+ 10.24%, CAT D / DU 14%', () => {
   const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 780, company: { categoriesByBank: { axis_bank: 'CATGA' } }, credit: { enquiryList: [] }, ...x });
   expect(evaluateBank(axis, p({ netSalary: 150000 })).best.methods[0].roi).toBe(10.24);
   expect(evaluateBank(axis, p({ netSalary: 150000, company: { categoriesByBank: { axis_bank: 'CATDU' } } })).best.methods[0].roi).toBe(14);
+});
+
+test('OD BT: confirmed term / EMI-started OD treated as PL; HDFC takes any OD after 6 months even interest-only', () => {
+  const od = (x) => ({ id: 'od', lender: 'BAJAJ FIN LTD', productType: 'OD', outstanding: 300000, emi: 3000, emisPaid: 7, emisRemaining: null, ...x });
+  const ok = (pol, loan, cat) => evaluateBank(pol, { ...base, netSalary: 120000, loans: [loan], cards: [], cibilScore: 780,
+    company: { categoriesByBank: { [pol.bank_id]: cat } }, credit: { enquiryList: [] } }).obligations.loans[0].bt.ok;
+  expect(ok(policy, od({}), 'CAT A')).toBe(true);                                   // HDFC: OD after 6 months
+  expect(ok(policy, od({ odStatus: 'od_no_emi' }), 'CAT A')).toBe(true);
+  expect(ok(policy, od({ emisPaid: 4 }), 'CAT A')).toBe(false);
+  expect(ok(icici, od({ odStatus: 'term' }), 'Elite')).toBe(true);                  // ICICI: OD confirmed as term loan
+  expect(ok(icici, od({}), 'Elite')).toBe(false);
+  expect(ok(icici, od({ productType: 'PL', odStatus: 'od_no_emi' }), 'Elite')).toBe(false);
 });
