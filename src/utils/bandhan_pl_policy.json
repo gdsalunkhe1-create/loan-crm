@@ -5,9 +5,9 @@
     "BANDHAN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v4-2026-11-03",
+  "policy_version": "v5-2026-11-16",
   "sources": {
-    "rules": "Bandhan PL one-pager (Smart Snippets) + Gauri: max loan now ₹40L, 28 Oct 2026"
+    "rules": "Bandhan salaried policy one-pager (Nov 2026) + banker answers 28 Oct + pricing grid 1 Oct 2026"
   },
   "eligibility": {
     "method": "foir_only",
@@ -29,8 +29,13 @@
         "foir_pct": 65
       },
       {
-        "salary_min_incl": 0,
+        "salary_min_incl": 30000,
         "salary_max_excl": 50000,
+        "foir_pct": 60
+      },
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 30000,
         "foir_pct": 50
       }
     ],
@@ -480,18 +485,8 @@
     "roi_note": "15L+: 9.99%; 10–15L: 10.99% (10.75–10.99); below 10L: pricing grid effective 1 Oct 2026 by category × salary (>50K / 25–50K / <25K) × CIC (750+ / 700–749 / 650–699, 0, -1). Government employees priced as CAT A (manual).",
     "max_loan": 4000000,
     "max_loan_note": "₹40L for every category (banker). Above ₹15L: PL focus location + credit PD",
-    "min_cibil": 700,
-    "cibil_foir_adjust": [
-      {
-        "cibil_min_incl": 700,
-        "cibil_max_excl": 730,
-        "foir_minus": 10,
-        "min_salary": 30000,
-        "note": "Recommended for CIC 700–729: FOIR −10 points, not for salary below 30K"
-      }
-    ]
+    "min_cibil": 730
   },
-  "min_salary_basis": "gross",
   "company": {
     "unlisted_allowed": false,
     "excluded_categories": [
@@ -632,7 +627,8 @@
       "pct_of_emi": 50,
       "rule": "0 if co-applicant pays and earns enough; 50% if applicant pays",
       "both_pct": 50
-    }
+    },
+    "loan_with_emis_remaining_lte": 6
   },
   "hard_rejects": [
     {
@@ -661,45 +657,52 @@
     }
   ],
   "checklist": [
-    "Age 21–60 (defence / para-military 23–56)",
-    "6 months at current address (not needed for own house)",
-    "1 year in job with at least 1 salary credit in the new company (Govt: 3 months)",
-    "Govt class 4: co-applicant (spouse / immediate relative) mandatory",
-    "Max 1 inward cheque return in last 3 months; at least 1 customer transaction per month",
-    "3 months salary-account statement; latest payslip not older than 30 days",
-    "Loan above ₹15L: PL focus location + credit PD",
-    "Late payments on insurance / mutual fund in banking don't matter"
+    "Age 21–60",
+    "Residence 6 months (address proof / notarised rent agreement / company accommodation)",
+    "Bachelor: permanent-address FI with owned-house proof mandatory",
+    "Job: 1 year (multiple employers) with 1 salary credit in present company; Govt 3 months",
+    "Office and residence FI compulsory",
+    "Banking: max 1 inward cheque return in 3 months, 2 ECS bounces in 6 months, 1 transaction every month",
+    "Average bank balance (3 months) ≥ 1 EMI of the new loan",
+    "Repayment and disbursal through a Bandhan account (open one after sanction)",
+    "Work from home: CAT C / D min ₹30K, CIBIL 730, no bachelor accommodation; rented: PA verification with OHP or 6-month CIBIL track",
+    "Cat A/B with restricted entry / defence: official mail ID or Form 16 / 26AS / PF statement",
+    "Latest payslip not older than 30 days"
   ],
   "product_info": {
-    "loan_amount": "₹50,000 – ₹40L",
-    "rate": "10.25% – 16.90% (salaried)",
-    "tenure": "3–60 months"
+    "loan_amount": "₹1L – ₹40L",
+    "rate": "9.99% – 15.99%; special 9.99% / 10.50% / 10.99%",
+    "processing_fee": "₹8,999 above ₹20L",
+    "bt": "12 EMIs paid"
   },
   "open_items": [
-    "CAT C: needs ₹75K+ salary, or 70% applies from ₹75K?",
-    "CAT D: same FOIR as A/B?",
-    "KCC 1.5%? Gold under ₹5L not counted?",
-    "Loans with few EMIs left ignored?"
+    "Max 3 unsecured loans — does it include the new Bandhan loan?",
+    "Rates above 15.99% on the 1 Oct grid (CAT C/D low CIBIL) vs one-pager max 15.99%",
+    "KCC 1.5%?"
   ],
   "min_net_salary": {
-    "_all": 40000,
-    "CAT C": 75000
+    "_all": 30000
   },
-  "min_salary_note": "Minimum gross ₹40K (40–50K gets 50% FOIR). CAT C needs salary ₹75K+ (banker) — TO CONFIRM reading",
   "other_income": {
     "rental": {
-      "pct": 100
+      "pct": 100,
+      "cap_pct_of_salary": 33.33,
+      "note": "Needs bank transfer + notarised agreement; salary must stay above 75% of total income"
     },
     "quarterly": {
-      "pct": 50,
-      "note": "30K quarterly → 10K/month → 50% = 5K"
+      "pct": 50
     },
     "monthly_incentive": {
-      "pct": 50
+      "pct": 50,
+      "note": "50% of last 3 months' average; regular components only"
     },
     "bonus": {
       "pct": 0,
-      "note": "Bonus not added"
+      "note": "One-time components not counted"
+    },
+    "pension": {
+      "pct": 100,
+      "note": "When credited in banking with pension order"
     }
   },
   "own_bank_bad_history_min_count": 2,
@@ -711,5 +714,17 @@
     ],
     "note": "3 fine, 4–5 deviation, more only if duplicates (manual CIBIL). 60/90 days not checked"
   },
-  "subject_to_closure_allowed": true
+  "subject_to_closure_allowed": true,
+  "max_unsecured_loans": {
+    "normal": 3,
+    "waiver": 5,
+    "types": [
+      "PL",
+      "BL",
+      "CD",
+      "OD"
+    ],
+    "include_new_loan": true,
+    "note": "Max 3 unsecured loans incl. Bandhan retail loans; waiver up to 5 (new loan counted — TO CONFIRM)"
+  }
 }

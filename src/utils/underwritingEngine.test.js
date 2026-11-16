@@ -481,15 +481,23 @@ test('Abhilash case at IndusInd: POONAFIN = Poonawalla (BT after 3 installments)
 
 import bandhan from './bandhan_pl_policy.json';
 
-test('Bandhan (banker answers): FOIR 50/65/70, 75% at 1L+ with own house or home loan, CAT C needs 75K, 40L max, BT after 12, enquiries', () => {
+test('Bandhan (one-pager Nov 2026): FOIR 50/60/65/70, 75% at 1L+ with own house or home loan, min 30K all categories, 40L max, BT after 12, enquiries', () => {
   const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 760, company: { categoriesByBank: { bandhan: 'CAT B' } }, credit: { enquiryList: [] }, ...x });
-  expect(evaluateBank(bandhan, p({ netSalary: 45000 })).foirPct).toBe(50);
+  expect(evaluateBank(bandhan, p({ netSalary: 45000 })).foirPct).toBe(60);
   expect(evaluateBank(bandhan, p({ netSalary: 60000 })).foirPct).toBe(65);
   expect(evaluateBank(bandhan, p({ netSalary: 90000 })).foirPct).toBe(70);
   expect(evaluateBank(bandhan, p({ netSalary: 120000, ownHouse: true })).foirPct).toBe(75);
   expect(evaluateBank(bandhan, p({ netSalary: 120000, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', outstanding: 2000000, emi: 20000 }] })).foirPct).toBe(75);
-  expect(evaluateBank(bandhan, p({ netSalary: 35000 })).status).toBe('NOT_ELIGIBLE');
-  expect(evaluateBank(bandhan, p({ netSalary: 60000, company: { categoriesByBank: { bandhan: 'CAT C' } } })).status).toBe('NOT_ELIGIBLE');
+  expect(evaluateBank(bandhan, p({ netSalary: 28000 })).status).toBe('NOT_ELIGIBLE');                    // min 30K
+  expect(evaluateBank(bandhan, p({ netSalary: 54000, company: { categoriesByBank: { bandhan: 'CAT C' } } })).status).not.toBe('NOT_ELIGIBLE');   // CAT C 30K, not 75K
+  expect(evaluateBank(bandhan, p({ netSalary: 60000, cibilScore: 720 })).status).toBe('NOT_ELIGIBLE');    // min CIBIL 730
+  // max 3 unsecured loans (new loan counted), waiver up to 5
+  const pls = (n) => Array.from({ length: n }, (_, i) => ({ id: 'u' + i, lender: 'SBI', productType: 'PL', outstanding: 100000, emi: 3000, emisPaid: 5, emisRemaining: 30 }));
+  expect(evaluateBank(bandhan, p({ netSalary: 150000, loans: pls(2) })).status).toBe('ELIGIBLE');
+  expect(evaluateBank(bandhan, p({ netSalary: 150000, loans: pls(3) })).status).toBe('DEVIATION');
+  expect(evaluateBank(bandhan, p({ netSalary: 150000, loans: pls(5) })).status).toBe('NOT_ELIGIBLE');
+  // rent capped so salary stays above 75% of total income (rent <= salary / 3)
+  expect(evaluateBank(bandhan, p({ netSalary: 60000, otherIncome: { rentMonthly: 40000, rentVerified: true } })).otherIncome.total).toBe(19998);
   expect(evaluateBank(bandhan, p({ netSalary: 500000 })).best.eligibleAmount).toBeLessThanOrEqual(4000000);
   const bt = evaluateBank(bandhan, p({ netSalary: 120000, loans: [
     { id: 'a', lender: 'AXIS BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 11 },
@@ -519,8 +527,8 @@ test('Bandhan pricing grid below 10L by category x salary x CIBIL', () => {
   const run = (cat, salary, score, emi) => evaluateBank(bandhan, { ...base, netSalary: salary, cibilScore: score, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi, emisPaid: 20, emisRemaining: 200 }], cards: [],
     company: { categoriesByBank: { bandhan: cat } }, credit: { enquiryList: [] } }).best.methods[0].roi;
   expect(run('CAT A', 60000, 780, 25000)).toBe(12.15);
-  expect(run('CAT B', 45000, 720, 5000)).toBe(14.49);
-  expect(run('CAT D', 45000, 760, 5000)).toBe(15.49);
+  expect(run('CAT B', 45000, 740, 12000)).toBe(14.49);
+  expect(run('CAT D', 45000, 760, 12000)).toBe(15.49);
   expect(run('CAT B', 60000, -1, 25000)).toBe(14.49);   // NTC priced in the 650-699 / 0 / -1 column
 });
 

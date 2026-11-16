@@ -785,10 +785,19 @@ export function evaluateBank(policy, profileIn) {
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
+  // Max live unsecured loans after this loan (e.g. Bandhan: 3, waiver up to 5) — counts loans left after BT / closure + the new loan.
+  const mu = policy.max_unsecured_loans;
+  if (mu && out.best) {
+    const live = loanLines.filter((l) => (mu.types || ['PL', 'BL', 'CD', 'OD']).includes(l.productType) && (l.outstanding || 0) > 0
+      && !l.closedBeforeLoginWithProof && !out.best.bt.includes(l.id)).length + (mu.include_new_loan ? 1 : 0);
+    if (live > mu.waiver) out.reasons.push(`${live} unsecured loans after this loan (max ${mu.normal}, waiver up to ${mu.waiver})`);
+    else if (live > mu.normal) out.deviations.push(`${live} unsecured loans after this loan — waiver needed (normal max ${mu.normal}, up to ${mu.waiver})`);
+  }
   const btNorm = policy.balance_transfer?.max_loans;
   if (btNorm != null && out.best && out.best.bt.length > btNorm) {
     out.deviations.push(`${out.best.bt.length} loans in BT (normal max ${btNorm}) — deviation, depends on profile`);
   }
+  if (out.reasons.length && out.status !== 'NOT_ELIGIBLE') out.status = 'NOT_ELIGIBLE';
   if (out.best.eligibleAmount <= 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push('No EMI room after obligations'); }
   else if (out.best.netInHand < 0) { out.status = 'NOT_ELIGIBLE'; out.softFail = true; out.reasons.push(`BT outstanding ${fmtINR(out.best.btOutstanding)} is more than the highest eligibility ${fmtINR(out.best.eligibleAmount)}`); }
   else if (out.deviations.length && out.status !== 'NOT_ELIGIBLE') out.status = 'DEVIATION';
