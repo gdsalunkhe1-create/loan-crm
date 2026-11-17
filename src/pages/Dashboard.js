@@ -25,6 +25,7 @@ import TaxCalculator from './TaxCalculator'
 import CamCalculator from './CamCalculator'
 import CompanyCategoryChecker from './CompanyCategoryChecker'
 import UnderwritingDesk from './UnderwritingDesk'
+import BankRates from './BankRates'
 import DateInput from '../components/DateInput'
 import DateRangeFilter from './DateRangeFilter'
 import TimeInput from '../components/TimeInput'
@@ -5759,7 +5760,7 @@ export default function Dashboard({ session }) {
   const getIcon=name=>{
     const p={size:18,strokeWidth:1.6}
     const m={dashboard:<IconLayoutDashboard {...p}/>,users:<IconUsers {...p}/>,'phone-call':<IconPhoneCall {...p}/>,checkbox:<IconCheckbox {...p}/>,'chart-bar':<IconChartBar {...p}/>,settings:<IconSettings {...p}/>,adjustments:<IconAdjustments {...p}/>,campaigns:<IconBuildingStore {...p}/>,headset:<IconHeadset {...p}/>,
-      gauge:<Gauge {...p}/>,'file-search':<FileSearch {...p}/>,landmark:<Landmark {...p}/>,calculator:<Calculator {...p}/>,receipt:<Receipt {...p}/>,'clipboard-list':<ClipboardList {...p}/>,building:<Building2 {...p}/>,'shield-check':<ShieldCheck {...p}/>}
+      gauge:<Gauge {...p}/>,'file-search':<FileSearch {...p}/>,landmark:<Landmark {...p}/>,calculator:<Calculator {...p}/>,receipt:<Receipt {...p}/>,'clipboard-list':<ClipboardList {...p}/>,building:<Building2 {...p}/>,'shield-check':<ShieldCheck {...p}/>,'bank-rates':<span style={{fontSize:16,lineHeight:1}}>🏦</span>}
     return m[name]||<IconSettings {...p}/>
   }
 
@@ -5784,6 +5785,7 @@ export default function Dashboard({ session }) {
       {id:'cam',               label:'CAM Builder',             icon:'clipboard-list', group:'Calculators',       roles:['agent','team_leader','manager','admin']},
       {id:'company-category',  label:'Company Category',        icon:'building',       group:'Lookup & Decision', roles:['agent','team_leader','manager','admin']},
       {id:'underwriting',      label:'Underwriting Desk',       icon:'shield-check',   group:'Lookup & Decision', roles:['agent','team_leader','manager','admin']},
+      {id:'bank-rates',        label:'Bank Rates',              icon:'bank-rates',     group:'Lookup & Decision', roles:['agent','team_leader','manager','admin']},
     ]},
     {section:'MANAGE',items:[
       {id:'admin',    label:'Admin Panel', icon:'settings',    roles:['admin']},
@@ -8142,6 +8144,7 @@ export default function Dashboard({ session }) {
         {activePage==='cam'               &&<ErrorBoundary><CamCalculator userRole={role} userId={profile?.id} setActivePage={setActivePage}/></ErrorBoundary>}
         {activePage==='company-category'  &&<ErrorBoundary><CompanyCategoryChecker currentUserRole={role}/></ErrorBoundary>}
         {activePage==='underwriting'      &&<ErrorBoundary><UnderwritingDesk userId={profile?.id} orgId={profile?.org_id}/></ErrorBoundary>}
+        {activePage==='bank-rates'        &&<ErrorBoundary><BankRates supabase={supabase}/></ErrorBoundary>}
         {activePage==='reports'  &&<ErrorBoundary><Reports   userRole={role} userId={profile?.id}/></ErrorBoundary>}
       </main>
     </div>
