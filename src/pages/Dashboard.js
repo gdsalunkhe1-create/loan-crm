@@ -42,7 +42,7 @@ import {
   IconDownload, IconSearch, IconMail, IconNotes,
   IconBolt, IconDeviceFloppy, IconMenu2, IconEye, IconHeadset
 } from '@tabler/icons-react'
-import { Gauge, FileSearch, Landmark, Calculator, Receipt, ClipboardList, Building2, ShieldCheck } from 'lucide-react'
+import { Gauge, FileSearch, Landmark, Calculator, Receipt, ClipboardList, Building2, ShieldCheck, BadgePercent } from 'lucide-react'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -5760,7 +5760,7 @@ export default function Dashboard({ session }) {
   const getIcon=name=>{
     const p={size:18,strokeWidth:1.6}
     const m={dashboard:<IconLayoutDashboard {...p}/>,users:<IconUsers {...p}/>,'phone-call':<IconPhoneCall {...p}/>,checkbox:<IconCheckbox {...p}/>,'chart-bar':<IconChartBar {...p}/>,settings:<IconSettings {...p}/>,adjustments:<IconAdjustments {...p}/>,campaigns:<IconBuildingStore {...p}/>,headset:<IconHeadset {...p}/>,
-      gauge:<Gauge {...p}/>,'file-search':<FileSearch {...p}/>,landmark:<Landmark {...p}/>,calculator:<Calculator {...p}/>,receipt:<Receipt {...p}/>,'clipboard-list':<ClipboardList {...p}/>,building:<Building2 {...p}/>,'shield-check':<ShieldCheck {...p}/>,'bank-rates':<span style={{fontSize:16,lineHeight:1}}>🏦</span>}
+      gauge:<Gauge {...p}/>,'file-search':<FileSearch {...p}/>,landmark:<Landmark {...p}/>,calculator:<Calculator {...p}/>,receipt:<Receipt {...p}/>,'clipboard-list':<ClipboardList {...p}/>,building:<Building2 {...p}/>,'shield-check':<ShieldCheck {...p}/>,'bank-rates':<BadgePercent {...p}/>}
     return m[name]||<IconSettings {...p}/>
   }
 
