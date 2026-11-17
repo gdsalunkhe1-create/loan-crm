@@ -5,7 +5,7 @@
     "KOTAK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v10-2026-10-27",
+  "policy_version": "v11-2026-11-17",
   "sources": {
     "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
   },
@@ -49,10 +49,59 @@
           "CAT A",
           "CAT B"
         ],
+        "salary_min_incl": 75000,
+        "loan_min_incl": 2500000,
+        "loan_max_excl": null,
+        "roi_pct": 9.99
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "salary_min_incl": 50000,
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.04
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
         "salary_min_incl": 50000,
         "loan_min_incl": 1000000,
+        "loan_max_excl": 1500000,
+        "roi_pct": 10.6
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "salary_max_excl": 50000,
+        "loan_min_incl": 1000000,
         "loan_max_excl": null,
-        "roi_pct": 9.95
+        "roi_pct": 12.0,
+        "range": "11-12"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "loan_min_incl": 500000,
+        "loan_max_excl": 1000000,
+        "roi_pct": 11.5
+      },
+      {
+        "categories": [
+          "CAT A",
+          "CAT B"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": 500000,
+        "roi_pct": 12.99
       },
       {
         "categories": [
@@ -83,15 +132,6 @@
       },
       {
         "categories": [
-          "CAT A",
-          "CAT B"
-        ],
-        "loan_min_incl": 0,
-        "loan_max_excl": 1000000,
-        "roi_pct": 11.0
-      },
-      {
-        "categories": [
           "CAT C"
         ],
         "loan_min_incl": 0,
@@ -107,21 +147,10 @@
         "loan_max_excl": 1000000,
         "roi_pct": 14.0,
         "range": "13-14"
-      },
-      {
-        "categories": [
-          "CAT A",
-          "CAT B"
-        ],
-        "salary_max_excl": 50000,
-        "loan_min_incl": 1000000,
-        "loan_max_excl": null,
-        "roi_pct": 12.0,
-        "range": "11-12"
       }
     ],
     "roi_unconfirmed": false,
-    "roi_note": "CAT A/B with salary 50K+: 9.95% from 10L. CAT C: 10.75-11% above 15L, 11.5-12% for 10-15L (upper end used). No rate given below 10L, for CAT D, or CAT A/B below 50K salary - highest rate used and flagged. CAT D: 12-13% from 10L (13% used). Below 10L: CAT A/B 11%, CAT C 12-12.5% (12.5 used), CAT D 13-14% (14 used)."
+    "roi_note": "CAT A / B (CIBIL 730+, NTH ₹50K+): 9.99% for ₹25L+ with NTH ₹75K+, 10.04% ₹15L+, 10.60% ₹10–15L, 11.50% ₹5–10L, 12.99% below ₹5L. Not for top-ups. CAT C / D unchanged. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that."
   },
   "min_net_salary": {
     "_all": 35000
@@ -481,7 +510,7 @@
   },
   "co_applicant_income": true,
   "product_info": {
-    "foreclosure": "0% after 1 year on ₹20L+ with own funds (any category); otherwise 4% up to 36 months",
+    "foreclosure": "0% after 12 EMIs on ₹20L+ with own funds (offer); otherwise 4% up to 36 months",
     "part_payment": "same charges as foreclosure"
   },
   "checklist": [

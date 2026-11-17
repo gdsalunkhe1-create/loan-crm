@@ -1,7 +1,7 @@
 {
   "bank": "HDFC Bank",
   "product": "Personal Loan (salaried)",
-  "policy_version": "v16-2026-10-27",
+  "policy_version": "v17-2026-11-17",
   "sources": {
     "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
     "rules": "Gauri's policy notes, 12 Oct 2026"
@@ -42,14 +42,32 @@
     },
     "roi_slabs_by_loan_amount": [
       {
+        "categories": [
+          "Super A",
+          "CAT A"
+        ],
         "loan_min_incl": 1500000,
         "loan_max_excl": null,
-        "roi_pct": 9.99
+        "roi_pct": 10.25
       },
       {
+        "categories": [
+          "Super A",
+          "CAT A"
+        ],
         "loan_min_incl": 1000000,
         "loan_max_excl": 1500000,
-        "roi_pct": 10.5
+        "roi_pct": 10.75
+      },
+      {
+        "categories": [
+          "CAT B",
+          "CAT C",
+          "CAT D"
+        ],
+        "loan_min_incl": 1000000,
+        "loan_max_excl": null,
+        "roi_pct": 10.75
       },
       {
         "loan_min_incl": 0,
@@ -61,7 +79,7 @@
     "foir_formula": "max_emi = net_salary * foir_pct - obligations_after_bt; loan = PV(max_emi, roi, tenure)",
     "multiplier_formula": "loan = (net_salary - obligations_after_bt) * multiplier; grid column chosen on net_salary band, category and risk band",
     "bt_loans": "loans selected for BT are excluded from obligations; their outstanding is paid off from the new loan (net in hand = loan - BT outstanding)",
-    "roi_note": "No separate 6-year rate: 72M uses the same loan-amount ROI slabs (confirmed by Gauri)",
+    "roi_note": "Diwali offer: Super A / CAT A / Staff / Govt 10.25% (₹15L+), 10.75% (₹10–15L); other categories 10.75% (₹10–20L). Offer needs CIBIL above 750, salary ₹50K+ and good internal band. Below ₹10L: 11%. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
     "combine": "both",
     "method_note": "Gauri: bad banding -> bank applies multiplier, good banding -> FOIR. Show both, don't decide."
   },

@@ -5,7 +5,7 @@
     "INDUSIND"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v7-2026-10-27",
+  "policy_version": "v8-2026-11-17",
   "sources": {
     "rules": "Gauri's IndusInd template, 20 Oct 2026"
   },
@@ -151,8 +151,17 @@
           "CAT C 1000"
         ],
         "loan_min_incl": 1500000,
-        "loan_max_excl": null,
+        "loan_max_excl": 2000000,
         "roi_pct": 10.5
+      },
+      {
+        "categories": [
+          "CAT C1000",
+          "CAT C 1000"
+        ],
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "roi_pct": 10.25
       },
       {
         "categories": [
@@ -171,9 +180,17 @@
         "loan_min_incl": 0,
         "loan_max_excl": 1000000,
         "roi_pct": 13.0
+      },
+      {
+        "categories": [
+          "UNLISTED"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "roi_pct": 11.0
       }
     ],
-    "roi_note": "Unlisted: 11% (confirmed)",
+    "roi_note": "Offer (same as Bandhan): CAT A / B / A+ / G 9.99% (₹15L+); CAT C1000 10.50% (₹15–20L), 10.25% (₹20L+). Other bands unchanged; unlisted 11%. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
     "max_loan": 7500000,
     "min_cibil": 705
   },

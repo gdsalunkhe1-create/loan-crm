@@ -17,9 +17,9 @@ test("Gauri example 1: ICICI BT, HL obligated, CAT A, 1L salary", () => {
   expect(r.foirPct).toBe(70);
   const s = r.scenarios.find((x) => x.bt.join() === 'icici');
   expect(s.obligations).toBe(25000);
-  expect(Math.round(s.foir[60].amount)).toBe(2118432);
-  expect(s.foir[60].roi).toBe(9.99);
-  expect(Math.round(s.foir[72].amount)).toBe(2429701);
+  expect(Math.round(s.foir[60].amount)).toBe(2105730);   // HDFC CAT A 15L+ now 10.25% (Diwali offer)
+  expect(s.foir[60].roi).toBe(10.25);   // HDFC Diwali offer, CAT A 15L+
+  expect(Math.round(s.foir[72].amount)).toBe(2412590);
   expect(s.multiplier.better.amount).toBe(2025000);
 });
 
@@ -90,7 +90,7 @@ test('Final amount carries its own ROI and what limited it', () => {
   const s = r.scenarios.find((x) => x.bt.join() === 'icici');
   expect(s.limitedBy).toBe('multiplier');          // 20.25L multiplier < 21.18L FOIR
   expect(s.conservativeAmount).toBe(2025000);
-  expect(s.conservativeRoi).toBe(9.99);
+  expect(s.conservativeRoi).toBe(10.25);   // HDFC Diwali offer
 });
 
 import icici from './icici_pl_policy.json';
@@ -119,7 +119,7 @@ test('ICICI: FOIR only, score-based ROI, BT all NBFC except fintech, CC 8%, join
   const s = r.scenarios.find((x) => x.bt.join() === 'bajaj');
   // obligations = KreditBee 5000 + CC 4000 ; EMI room = 70000 - 9000 = 61000
   expect(s.obligations).toBe(9000);
-  expect(s.foir[60].roi).toBe(9.99);
+  expect(s.foir[60].roi).toBe(10.35);   // ICICI Nov offer, CIBIL 775+, 15L+
   expect(Object.keys(s.foir)).toEqual(['60']);
   expect(s.multiplier).toEqual({});
 });
@@ -270,7 +270,7 @@ test('Kotak: category/salary ROI, scorecard multiplier for all cards until one i
   expect(ms.map((m) => m.multiplier)).toEqual([19, 17, 15, 12]);    // 50K-1L column, all scorecards
   expect(ms.every((m) => m.indicative)).toBe(true);
   expect(r.best.eligibleBy.startsWith('foir')).toBe(true);           // indicative rows don't set "highest"
-  expect(r.best.methods.find((m) => m.key === 'foir_60').roi).toBe(9.95);
+  expect(r.best.methods.find((m) => m.key === 'foir_60').roi).toBe(10.04);   // Kotak Nov offer
   const g = evaluateBank(kotak, { ...kBase, scorecardByBank: { kotak: 'Green' } });
   const gm = g.best.methods.filter((m) => m.key.startsWith('multiplier_'));
   expect(gm.length).toBe(1);
@@ -293,10 +293,10 @@ test('Kotak below 10L rates by category', () => {
   const run = (cat, salary) => evaluateBank(kotak, { ...base, netSalary: salary, loans: [], cards: [],
     company: { categoriesByBank: { kotak: cat } }, credit: { enquiryList: [] } })
     .best.methods.find((x) => x.key === 'foir_60');
-  expect(run('CAT A', 36000).roi).toBe(11);      // 36K salary -> loan under 10L
+  expect(run('CAT A', 36000).roi).toBe(11.5);    // 36K salary -> loan 5–10L, Kotak Nov offer
   expect(run('CAT C', 36000).roi).toBe(12.5);
   expect(run('CAT D', 36000).roi).toBe(14);
-  expect(run('CAT A', 60000).roi).toBe(9.95);    // 60K salary -> 10L+ at 9.95
+  expect(run('CAT A', 60000).roi).toBe(10.04);   // 60K salary -> 15L+ at 10.04 (Nov offer)
 });
 
 test('Kotak scorecard FOIR: Yellow 60% / 65% with HL, Green no HL 70% 5y, Amber 50% capped 7.5L', () => {
@@ -643,4 +643,16 @@ test('OD BT: confirmed term / EMI-started OD treated as PL; HDFC takes any OD af
   expect(ok(icici, od({ odStatus: 'term' }), 'Elite')).toBe(true);                  // ICICI: OD confirmed as term loan
   expect(ok(icici, od({}), 'Elite')).toBe(false);
   expect(ok(icici, od({ productType: 'PL', odStatus: 'od_no_emi' }), 'Elite')).toBe(false);
+});
+
+test('Nov 2026 offers: Bandhan and IndusInd CAT C 10.50% (15–20L) / 10.25% (20L+); Kotak 9.99% at 25L+ with NTH 75K+', () => {
+  const roi = (pol, cat, sal) => evaluateBank(pol, { ...base, netSalary: sal, loans: [], cards: [], cibilScore: 780, city: 'Pune',
+    company: { categoriesByBank: { [pol.bank_id]: cat } }, credit: { enquiryList: [] } }).best.methods[0];
+  const b = roi(bandhan, 'CAT C', 150000);
+  expect(b.amount).toBeGreaterThanOrEqual(2000000);
+  expect(b.roi).toBe(10.25);
+  const c = roi(indusind, 'CAT C1000', 400000);
+  expect(c.amount).toBeGreaterThanOrEqual(2000000);
+  expect(c.roi).toBe(10.25);
+  expect(roi(kotak, 'CAT A', 200000).roi).toBe(9.99);
 });

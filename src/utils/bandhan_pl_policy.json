@@ -5,7 +5,7 @@
     "BANDHAN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v5-2026-11-16",
+  "policy_version": "v6-2026-11-17",
   "sources": {
     "rules": "Bandhan salaried policy one-pager (Nov 2026) + banker answers 28 Oct + pricing grid 1 Oct 2026"
   },
@@ -50,9 +50,40 @@
     "tenure_note": "3–60 months (defence / para-military max 36)",
     "roi_slabs_by_loan_amount": [
       {
+        "categories": [
+          "CAT A",
+          "CAT B",
+          "Govt",
+          "Government"
+        ],
         "loan_min_incl": 1500000,
         "loan_max_excl": null,
         "roi_pct": 9.99
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "loan_min_incl": 1500000,
+        "loan_max_excl": 2000000,
+        "roi_pct": 10.5
+      },
+      {
+        "categories": [
+          "CAT C"
+        ],
+        "loan_min_incl": 2000000,
+        "loan_max_excl": null,
+        "roi_pct": 10.25
+      },
+      {
+        "categories": [
+          "CAT D"
+        ],
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 10.99,
+        "note": "Not in the offer — 10–15L rate used"
       },
       {
         "loan_min_incl": 1000000,
@@ -482,7 +513,7 @@
       }
     ],
     "roi_unconfirmed": false,
-    "roi_note": "15L+: 9.99%; 10–15L: 10.99% (10.75–10.99); below 10L: pricing grid effective 1 Oct 2026 by category × salary (>50K / 25–50K / <25K) × CIC (750+ / 700–749 / 650–699, 0, -1). Government employees priced as CAT A (manual).",
+    "roi_note": "Offer (CIC 730+, fresh / external BT): CAT A / B / Govt 9.99% (₹15L+); CAT C 10.50% (₹15–20L), 10.25% (₹20L+). ₹10–15L 10.99%; below ₹10L the 1 Oct pricing grid. CAT D ₹15L+ not in the offer (10.99% used). Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
     "max_loan": 4000000,
     "max_loan_note": "₹40L for every category (banker). Above ₹15L: PL focus location + credit PD",
     "min_cibil": 730
@@ -672,7 +703,7 @@
   "product_info": {
     "loan_amount": "₹1L – ₹40L",
     "rate": "9.99% – 15.99%; special 9.99% / 10.50% / 10.99%",
-    "processing_fee": "₹8,999 above ₹20L",
+    "processing_fee": "₹6,999 (CAT A/B/Govt ₹15L+, CAT C ₹15–20L), ₹7,999 (CAT C ₹20L+), ₹8,999 above ₹20L otherwise",
     "bt": "12 EMIs paid"
   },
   "open_items": [
