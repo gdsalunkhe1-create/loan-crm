@@ -459,6 +459,89 @@ export const isClosureNote = (note) => /^Subject to closure/.test(note);
 // Closure items to show: none when the bank declines for a permanent reason.
 // A wait (eligibleAfterWait) or a soft fail (no EMI room / BT more than
 // eligibility — out.softFail) keeps them: closing a loan can fix those.
+// ---- Result card summary, own-amount EMI, income reminders ----
+
+// The method the card's summary strip shows. 'both' banks (HDFC): the best FOIR figure, with the
+// multiplier figure alongside; otherwise the method the engine picked (eligibleBy).
+export function summaryMethod(best) {
+  const methods = (best && best.methods) || [];
+  if (!methods.length) return null;
+  if (best.eligibleRule === 'both') {
+    const firm = methods.filter((m) => !m.indicative);
+    const foir = firm.filter((m) => m.key.startsWith('foir')).reduce((a, m) => (!a || m.amount > a.amount ? m : a), null);
+    const multiplier = firm.find((m) => m.key.startsWith('multiplier')) || null;
+    return foir ? { method: foir, multiplier } : { method: multiplier, multiplier: null };
+  }
+  const method = methods.find((m) => m.key === best.eligibleBy) || methods[0];
+  return { method, multiplier: null };
+}
+
+// "Customer wants ₹… for [tenure]": the bank's method tenures plus 1–4 years, shortest first.
+export function emiTenureOptions(methods) {
+  const set = new Set([12, 24, 36, 48, ...(methods || []).map((m) => m.tenure).filter((t) => t > 0)]);
+  return [...set].sort((a, b) => a - b);
+}
+
+// Grey text after the "Customer wants" rate: "incl. +0.50% for 7 years / card / app-loan BT".
+// rate = rateForAmount(…, result.rateAdjust, months); scenario = the best plan (its card / app-loan BT).
+export function rateAddOnText(rate, adj, months, scenario, cibilScore) {
+  if (!rate || !(rate.addOn > 0)) return null;
+  const parts = [];
+  if (adj && adj.tenureAdd && adj.tenureAdd[months] > 0) parts.push(months % 12 === 0 ? `${months / 12} years` : `${months} months`);
+  if (scenario && ((scenario.btCards || []).length || (scenario.btApps || []).length)) parts.push('card / app-loan BT');
+  if (cibilScore === 0 || cibilScore === -1) parts.push('no CIBIL score');
+  return `incl. +${rate.addOn.toFixed(2)}%${parts.length ? ` for ${parts.join(' / ')}` : ''}`;
+}
+
+// What a loan's Treatment does at the bank in "Counted for" (line = that bank's obligations line).
+export function treatmentNote(loan, line, bankLabel) {
+  const t = treatmentChoice(loan);
+  if (t === 'closed') return { tone: 'grey', text: 'Closed — EMI not counted' };
+  if (t === 'obligate') return { tone: 'grey', text: 'Kept as obligation' };
+  if (t === 'bt' && line && line.bt) {
+    return line.bt.ok ? { tone: 'green', text: 'BT' } : { tone: 'red', text: `Not taken in BT by ${bankLabel}: ${line.bt.why}` };
+  }
+  return null;
+}
+
+// Extra income a bank counts (out.incomeHints.accepts) that the agent has not entered yet.
+const HINT_FIELDS = { rental: 'rentMonthly', bonus: 'bonusAnnualNet', quarterly: 'quarterlyIncentiveNet', monthly_incentive: 'monthlyIncentiveAvg6m', pension: 'pensionMonthly', consulting: 'consultingMonthly' };
+export function openIncomeHints(hints, draft) {
+  const oi = (draft && draft.otherIncome) || {};
+  return ((hints && hints.accepts) || []).filter((a) => (a.key === 'co_applicant'
+    ? !((draft && draft.coApplicantNetSalary) > 0)
+    : !(oi[HINT_FIELDS[a.key]] > 0)));
+}
+const acceptText = (a) => (a.key === 'co_applicant' ? a.label : `${a.label} ${a.pct}%${a.capPct != null ? ` (up to ${a.capPct}% of salary)` : ''}`);
+
+// Light-blue "can raise eligibility" box: { kind: 'needed' | 'gain', text } or null.
+export function incomeHintText(result, bankLabel, draft, fmtAmount) {
+  const h = result && result.incomeHints;
+  const open = openIncomeHints(h, draft);
+  if (!open.length) return null;
+  const counts = `${bankLabel} counts: ${open.map(acceptText).join(' · ')}`;
+  if (result.status === 'NOT_ELIGIBLE' && result.softFail && h.neededExtra > 0) {
+    return { kind: 'needed', text: `About ${fmtAmount(h.neededExtra)}/month more counted income would make ${bankLabel} eligible. ${counts}.` };
+  }
+  if (result.status !== 'NOT_ELIGIBLE' && h.gainPer10k > 0) {
+    return { kind: 'gain', text: `${counts}. Each ₹10,000/month of counted income adds about ${fmtAmount(h.gainPer10k)}.` };
+  }
+  return null;
+}
+
+// One line above the bank results: "… it can raise eligibility at N banks (and make M more banks eligible)."
+export function incomeReminderText(hintKinds) {
+  const raise = hintKinds.filter((k) => k === 'gain').length;
+  const more = hintKinds.filter((k) => k === 'needed').length;
+  if (!raise && !more) return null;
+  const banks = (n) => `${n} bank${n === 1 ? '' : 's'}`;
+  const moreBanks = (n) => `${n} more bank${n === 1 ? '' : 's'} eligible`;
+  const tail = raise
+    ? `it can raise eligibility at ${banks(raise)}${more ? ` (and make ${moreBanks(more)})` : ''}`
+    : `it can make ${moreBanks(more)}`;
+  return `Ask the customer about rent, bonus / incentives and co-applicant income — ${tail}.`;
+}
+
 // Bank results order: Eligible, Deviation, Needs input, Not eligible (errors last);
 // inside a group the highest eligible amount first, then the highest in hand.
 const STATUS_RANK = { ELIGIBLE: 0, DEVIATION: 1, NEEDS_INPUT: 2, NOT_ELIGIBLE: 3 };

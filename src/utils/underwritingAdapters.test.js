@@ -1,5 +1,5 @@
-import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, rankResults, pickedFirst, closeLoansPatch, closeAllSuggestion, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
-import { parseSalaryText } from '../pages/TaxCalculator';
+import { parseDate, mapProductType, cibilToProfile, bankStatementToProfile, buildCibilRow, buildBsaRow, passwordErrorKind, detectPayslipMonth, averageNetPay, averageGrossPay, buildProfileDraft, normalizeMobile, extractEmployerName, companyNameVariants, summarizeEmployer, normalizePersonName, treatmentPatch, treatmentChoice, loanReason, isTopUp, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch, cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, buildEnquiryList, ownBankEnquiries, plEnquiries90d, scorecardPatch, bureauTierPatch, bureauTierLabel, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, rankResults, pickedFirst, closeLoansPatch, closeAllSuggestion, summaryMethod, emiTenureOptions, rateAddOnText, treatmentNote, openIncomeHints, incomeHintText, incomeReminderText, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany, isUnlistedFor, searchedIncorporationYear } from './underwritingAdapters';
+import { parseSalaryText, netPayInWords } from '../pages/TaxCalculator';
 import { evaluateBank } from './underwritingEngine';
 import policy from './hdfc_pl_policy.json';
 import kotak from './kotak_pl_policy.json';
@@ -1153,5 +1153,189 @@ describe('closeAllSuggestion (Apply suggestion — close N loans)', () => {
     expect(closeAllSuggestion(plan, { eligibleAmount: 800000, netInHand: 250000 })).toBeNull();
     expect(closeAllSuggestion([], { eligibleAmount: 1, netInHand: 1 })).toBeNull();
     expect(closeAllSuggestion(plan, undefined)).toBeNull();
+  });
+});
+
+describe('parseSalaryText: summary header row + value row (Sutherland-style payslip)', () => {
+  const slip = 'Payslip for the month of October 2026 Employee Name RAVI KUMAR MEHTA Employee Code 100234 '
+    + 'Earnings Deductions Monthly Basic Salary 39,272.00 PT 200.00 HRA 23,563.00 PF 3,754.00 CP Special Allowance 7,854.00 '
+    + 'Conveyance Allowances 18,926.00 Arr. Special Allowance -1.00 Comp-off Encashment 5,782.00 Level 1 to 4 - PBI. 3,960.00 '
+    + 'Other Incentive 3,500.00 Total 1,02,856.00 Total 3,954.00 Earnings Deductions Net Pay 1,02,856.00 3,954.00 98,903.00 '
+    + 'Net Pay (In Words) NINETY EIGHT THOUSAND NINE HUNDRED THREE RUPEES ONLY';
+
+  test('gross, net and variable pay', () => {
+    const p = parseSalaryText(slip);
+    expect(p.grossMonthly).toBe(102856);
+    expect(p.netPayMonthly).toBe(98903);
+    expect(p.variablePayMonthly).toBe(13242);   // PBI 3,960 + incentive 3,500 + comp-off encashment 5,782
+  });
+
+  test('the same text with " | " separators reads the same', () => {
+    const piped = 'Payslip Earnings | Deductions | Monthly | Basic Salary | 39,272.00 PT | 200.00 | HRA | 23,563.00 PF | 3,754.00 | CP Special Allowance | 7,854.00 | '
+      + 'Conveyance Allowances | 18,926.00 | Arr. Special Allowance | -1.00 | Comp-off Encashment | 5,782.00 | Level 1 to 4 - PBI. | 3,960.00 | Other Incentive | 3,500.00 | '
+      + 'Total | 1,02,856.00 | Total | 3,954.00 | Earnings | Deductions | Net Pay | 1,02,856.00 | 3,954.00 | 98,903.00 | Net Pay (In Words) | NINETY EIGHT THOUSAND NINE HUNDRED THREE RUPEES ONLY';
+    const p = parseSalaryText(piped);
+    expect(p.variablePayMonthly).toBe(13242);
+    expect([p.grossMonthly, p.netPayMonthly]).toEqual([102856, 98903]);
+  });
+
+  test('net = gross − deductions when the printed net does not add up; words confirm', () => {
+    expect(netPayInWords(slip)).toBe(98903);
+    expect(netPayInWords('Net Pay (In Words): Rupees One Lakh Two Thousand Fifty Only')).toBe(102050);
+    expect(netPayInWords('NET PAY 55,000')).toBe(0);
+    // Net Pay figure equal to the gross (header misread) falls back to Total − Total.
+    const t = 'Payslip Earnings Basic 50,000 HRA 20,000 Total 70,000 PF 1,800 PT 200 Total 2,000 Net Pay 70,000';
+    expect(parseSalaryText(t).netPayMonthly).toBe(68000);
+    expect(parseSalaryText(t).grossMonthly).toBe(70000);
+  });
+});
+
+describe('Treatment dropdowns reach the engine (Auto → BT / Closed, card Keep → Paid)', () => {
+  const bandhanPolicy = require('./bandhan_pl_policy.json');
+  const row = { report_date: '2026-11-01', score: 780, accounts: [
+    acc({ bankName: 'AXIS BANK', loanType: 'Personal Loan', openDate: '01/01/2025', tenure: '48', emi: '12000', outstanding: '300000' }),
+    acc({ bankName: 'SBI', loanType: 'Personal Loan', openDate: '01/06/2024', tenure: '60', emi: '9000', outstanding: '250000' }),
+    acc({ bankName: 'SBI CARD', loanType: 'Credit Card', loanAmount: '200000', outstanding: '120000' }),
+  ] };
+  const draft0 = buildProfileDraft(row, null, { payslipNetPay: 120000, today: new Date(2026, 10, 18) });
+  // Same updates the Obligations table makes (setLoanById / setCard).
+  const setLoan = (d, id, patch) => ({ ...d, loans: d.loans.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
+  const setCard = (d, id, patch) => ({ ...d, cards: d.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
+  const run = (d) => evaluateBank(bandhanPolicy, { ...d, credit: { enquiryList: [] },
+    company: { name: 'ACME', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { bandhan: 'CAT A' }, confirmedByBank: {} } });
+  const [axis, sbi] = draft0.loans;
+  const card = draft0.cards[0];
+
+  test('Auto → BT sets treatment and the loan is in the plan', () => {
+    const d = setLoan(draft0, axis.id, treatmentPatch('bt'));
+    expect(d.loans[0]).toMatchObject({ treatment: 'bt', closedBeforeLoginWithProof: false });
+    const r = run(d);
+    expect(r.best.bt).toContain(axis.id);
+    expect(treatmentNote(d.loans[0], r.obligations.loans.find((l) => l.id === axis.id), 'Bandhan Bank')).toEqual({ tone: 'green', text: 'BT' });
+  });
+
+  test('Obligate → Closed before login drops the EMI (and takes the loan out of BT)', () => {
+    const kept = setLoan(draft0, sbi.id, treatmentPatch('obligate'));
+    const before = run(kept);
+    expect(before.best.bt).not.toContain(sbi.id);
+    expect(treatmentNote(kept.loans[1], null, 'Bandhan Bank')).toEqual({ tone: 'grey', text: 'Kept as obligation' });
+    const d = setLoan(kept, sbi.id, treatmentPatch('closed'));
+    expect(d.loans[1]).toMatchObject({ closedBeforeLoginWithProof: true, treatment: 'auto' });
+    const r = run(d);
+    expect(r.obligations.loans.find((l) => l.id === sbi.id).obligation.amount).toBe(0);
+    expect(r.best.obligations).toBe(before.best.obligations - 9000);
+    expect(r.best.eligibleAmount).toBeGreaterThan(before.best.eligibleAmount);
+    expect(treatmentNote(d.loans[1], null, 'Bandhan Bank')).toEqual({ tone: 'grey', text: 'Closed — EMI not counted' });
+  });
+
+  test('card Keep open → Paid before login pre-fills the full outstanding and removes the 5% obligation', () => {
+    expect(run(draft0).obligations.cards.amount).toBe(6000);   // 5% of 1,20,000
+    const d = setCard(draft0, card.id, cardActionPatch(card, 'paid'));
+    expect(d.cards[0]).toMatchObject({ action: 'paid', paidBeforeLoginWithProof: 120000 });
+    expect(run(d).obligations.cards.amount).toBe(0);
+  });
+
+  test('BT on a loan the bank will not take shows the reason in red; Obligate is grey', () => {
+    const line = { bt: { ok: false, why: '11 EMIs paid — BT after 12' } };
+    expect(treatmentNote({ treatment: 'bt' }, line, 'Bandhan Bank')).toEqual({ tone: 'red', text: 'Not taken in BT by Bandhan Bank: 11 EMIs paid — BT after 12' });
+    expect(treatmentNote({ treatment: 'obligate' }, line, 'X')).toEqual({ tone: 'grey', text: 'Kept as obligation' });
+    expect(treatmentNote({ treatment: 'auto' }, line, 'X')).toBeNull();
+  });
+});
+
+describe('Result card summary, own-amount EMI, income hints', () => {
+  const { emiFor, rateForAmount } = require('./underwritingEngine');
+
+  test('summaryMethod: picked method; "both" banks give the best FOIR figure plus the multiplier', () => {
+    const methods = [{ key: 'foir_60', amount: 900000 }, { key: 'foir_72', amount: 1000000 }, { key: 'multiplier', amount: 1200000 }];
+    expect(summaryMethod({ eligibleBy: 'multiplier', eligibleRule: 'highest', methods }).method.key).toBe('multiplier');
+    const both = summaryMethod({ eligibleBy: 'multiplier', eligibleRule: 'both', methods });
+    expect([both.method.key, both.multiplier.key]).toEqual(['foir_72', 'multiplier']);
+    expect(summaryMethod({ methods: [] })).toBeNull();
+  });
+
+  test('every method row has an EMI and the strip uses the eligible one', () => {
+    const r = evaluateBank(policy, { netSalary: 120000, salaryAccountBank: 'ICICI Bank', loans: [], cards: [], credit: {}, cibilScore: 780,
+      company: { name: 'ACME', category: 'CAT A', categoryConfirmed: true } });
+    r.best.methods.forEach((m) => expect(m.emi).toBeCloseTo(emiFor(m.amount, m.roi, m.tenure), 0));
+    expect(summaryMethod(r.best).method.emi).toBeGreaterThan(0);
+  });
+
+  test('tenure options: method tenures plus 1–4 years', () => {
+    expect(emiTenureOptions([{ tenure: 60 }, { tenure: 72 }, { tenure: 84 }, { tenure: 60 }])).toEqual([12, 24, 36, 48, 60, 72, 84]);
+  });
+
+  test('own amount: rate from the bands, assumed above them', () => {
+    const slabs = [{ loan_min_incl: 0, loan_max_excl: 1000000, roi_pct: 12 }, { loan_min_incl: 1000000, loan_max_excl: 3000000, roi_pct: 11 }];
+    expect(rateForAmount(slabs, 500000)).toEqual({ roi: 12, assumed: false, addOn: 0 });
+    expect(rateForAmount(slabs, 5000000)).toEqual({ roi: 12, assumed: true, addOn: 0 });
+    expect(Math.round(emiFor(500000, 12, 60))).toBe(11122);
+  });
+
+  const hints = { accepts: [{ key: 'rental', label: 'Rent', pct: 70, capPct: null }, { key: 'monthly_incentive', label: 'Monthly incentive', pct: 50, capPct: 30 },
+    { key: 'co_applicant', label: 'Co-applicant income', pct: 100 }], neededExtra: 7500, gainPer10k: 312000 };
+  const fmtAmt = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+  test('incomes already entered are left out', () => {
+    expect(openIncomeHints(hints, { otherIncome: { rentMonthly: 15000 }, coApplicantNetSalary: 40000 }).map((a) => a.key)).toEqual(['monthly_incentive']);
+    expect(incomeHintText({ status: 'ELIGIBLE', incomeHints: hints }, 'X', { otherIncome: { rentMonthly: 1, monthlyIncentiveAvg6m: 1 }, coApplicantNetSalary: 1 }, fmtAmt)).toBeNull();
+  });
+
+  test('Not eligible (soft fail) → needed extra; eligible → gain per ₹10,000', () => {
+    expect(incomeHintText({ status: 'NOT_ELIGIBLE', softFail: true, incomeHints: hints }, 'Axis Bank', {}, fmtAmt)).toEqual({ kind: 'needed',
+      text: 'About ₹7,500/month more counted income would make Axis Bank eligible. Axis Bank counts: Rent 70% · Monthly incentive 50% (up to 30% of salary) · Co-applicant income.' });
+    expect(incomeHintText({ status: 'ELIGIBLE', incomeHints: hints }, 'HDFC Bank', { otherIncome: { rentMonthly: 9000 } }, fmtAmt)).toEqual({ kind: 'gain',
+      text: 'HDFC Bank counts: Monthly incentive 50% (up to 30% of salary) · Co-applicant income. Each ₹10,000/month of counted income adds about ₹3,12,000.' });
+    expect(incomeHintText({ status: 'NOT_ELIGIBLE', softFail: false, incomeHints: hints }, 'X', {}, fmtAmt)).toBeNull();
+  });
+
+  test('reminder line counts banks', () => {
+    expect(incomeReminderText(['gain', 'gain', 'needed'])).toBe('Ask the customer about rent, bonus / incentives and co-applicant income — it can raise eligibility at 2 banks (and make 1 more bank eligible).');
+    expect(incomeReminderText(['needed', 'needed'])).toBe('Ask the customer about rent, bonus / incentives and co-applicant income — it can make 2 more banks eligible.');
+    expect(incomeReminderText([])).toBeNull();
+  });
+});
+
+describe('"Customer wants" rate uses the engine add-ons (rateAdjust)', () => {
+  const { rateForAmount } = require('./underwritingEngine');
+  const pfl = require('./poonawalla_pl_policy.json');
+  const hdfc = require('./hdfc_pl_policy.json');
+  const company = (bank, cat) => ({ name: 'ACME', category: cat, categoryConfirmed: true, categoriesByBank: { [bank]: cat }, confirmedByBank: {} });
+  // Default line = the summary method's amount (rounded, as the input shows it) and tenure.
+  const defaultRate = (r) => {
+    const m = summaryMethod(r.best).method;
+    return { m, rate: rateForAmount(r.roiSlabs, Math.round(m.amount), r.rateAdjust, m.tenure) };
+  };
+
+  test('Poonawalla with card + app-loan BT at 7 years: same rate as the summary strip, add-on shown', () => {
+    const r = evaluateBank(pfl, { netSalary: 150000, cibilScore: 760, city: 'Pune', credit: { enquiryList: [] }, company: company('poonawalla_fincorp', 'CAT A'),
+      loans: [{ id: 'kb', lender: 'KRAZYBEE', productType: 'PL', outstanding: 60000, emi: 6000, emisPaid: 1, emisRemaining: 10, treatment: 'bt' }],
+      cards: [{ id: 'c1', issuer: 'SBI CARD', outstanding: 200000 }] });
+    const { m, rate } = defaultRate(r);
+    expect(m.tenure).toBe(84);
+    expect(r.best.btCards.length + r.best.btApps.length).toBeGreaterThan(0);
+    expect(rate.roi).toBe(m.roi);
+    expect(rate.addOn).toBeGreaterThan(0);
+    expect(rateAddOnText(rate, r.rateAdjust, m.tenure, r.best, 760)).toMatch(/^incl\. \+\d+\.\d{2}% for 7 years \/ card \/ app-loan BT$/);
+    // Every FOIR row: the same rate for its own amount and tenure.
+    r.best.methods.filter((x) => x.key.startsWith('foir')).forEach((x) => {
+      expect(rateForAmount(r.roiSlabs, Math.round(x.amount), r.rateAdjust, x.tenure).roi).toBe(x.roi);
+    });
+  });
+
+  test('HDFC (no add-ons): same rate, no grey text', () => {
+    const r = evaluateBank(hdfc, { netSalary: 120000, salaryAccountBank: 'ICICI Bank', loans: [], cards: [], credit: {}, cibilScore: 780, company: company('hdfc_bank', 'CAT A') });
+    const { m, rate } = defaultRate(r);
+    expect(rate.roi).toBe(m.roi);
+    expect(rate.addOn).toBe(0);
+    expect(rateAddOnText(rate, r.rateAdjust, m.tenure, r.best, 780)).toBeNull();
+  });
+
+  test('rateAddOnText wording', () => {
+    const adj = { add: 1.25, min: 15, tenureAdd: { 72: 0.25, 84: 0.5 } };
+    expect(rateAddOnText({ roi: 12.75, addOn: 0.5 }, { add: 0, tenureAdd: adj.tenureAdd }, 84, { btCards: [], btApps: [] }, 760)).toBe('incl. +0.50% for 7 years');
+    expect(rateAddOnText({ roi: 16, addOn: 1.75 }, adj, 84, { btCards: ['c1'] }, 760)).toBe('incl. +1.75% for 7 years / card / app-loan BT');
+    expect(rateAddOnText({ roi: 14.5, addOn: 1 }, { add: 1 }, 60, {}, -1)).toBe('incl. +1.00% for no CIBIL score');
+    expect(rateAddOnText({ roi: 12, addOn: 0 }, adj, 60, {}, 760)).toBeNull();
   });
 });

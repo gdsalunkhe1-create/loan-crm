@@ -8,7 +8,7 @@
     "PFL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-11-05",
+  "policy_version": "v2-2026-11-18",
   "sources": {
     "rules": "Gauri's template + Poonawalla FOIR norms, rate grid, policy norms update (proposed), 5 Nov 2026"
   },
@@ -1721,7 +1721,8 @@
         "months": 12
       }
     ],
-    "note": "Up to 8 in total (PL 5–6, cards 4–5, app loans 3–4). PL BT after 6 EMIs (+1 loan with 3 EMIs); app loans after 1 EMI; cards need 2 months' statements"
+    "note": "Up to 8 in total (PL 5–6, cards 4–5, app loans 3–4). PL BT after 6 EMIs (+1 loan with 3 EMIs); app loans after 1 EMI; cards need 2 months' statements",
+    "card_bt_min_outstanding": 50000
   },
   "obligations": {
     "credit_card": {

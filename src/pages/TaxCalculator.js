@@ -111,7 +111,8 @@ export function parseSalaryText(text) {
   if (isPayslip) {
     const blockMatch = text.match(/Earnings[\s\S]{0,2000}?(?:GROSS\s*PAY|NET\s*PAY|Total\s*Earnings)/i)
     const block = blockMatch ? blockMatch[0] : ''
-    const varRe = /\b(Performance\s*Bonus|Variable\s*Pay|Variable\s*Allowance|Incentives?|Bonus|Commission)\b[^0-9]{0,25}([0-9][0-9,]*\.?[0-9]*)/gi
+    // "PBI" = performance-based incentive; "Encashment" (comp-off / leave encashment) is one-time.
+    const varRe = /\b(Performance\s*Bonus|Variable\s*Pay|Variable\s*Allowance|Incentives?|Bonus|Commission|PBI|Encashment)\b[^0-9]{0,25}([0-9][0-9,]*\.?[0-9]*)/gi
     let m
     while ((m = varRe.exec(block))) variablePay += num(m[2])
   }
@@ -119,11 +120,34 @@ export function parseSalaryText(text) {
   // Monthly gross (total earnings) as printed (Underwriting Desk: Bandhan checks its
   // minimum on gross). A printed figure below net pay, or far above the summed
   // earnings (a YTD / annual column), is not this month's gross: use the sum instead.
+  //
+  // Summary row printed as a header line then a value line (e.g. Sutherland):
+  // "Earnings Deductions Net Pay 1,02,856.00 3,954.00 98,903.00" — map the amounts by position.
+  // Two plain "Total" rows (earnings list, then deductions list) are read the same way.
+  const summary = isPayslip ? readSummaryRow(text) : {}
+  const totals = isPayslip ? plainTotals(text) : []
   const printedGross = after('Total\\s*Earnings') || after('Gross\\s*Earnings') || after('Gross\\s*Pay')
     || after('Gross\\s*Salary')
-  const grossOk = printedGross > 0 && (!(netPay > 0) || printedGross >= netPay)
-    && (!(regularMonthly > 0) || printedGross <= regularMonthly * 3)
-  const grossMonthly = isPayslip ? (grossOk ? printedGross : regularMonthly) : 0
+  const grossCands = [summary.gross, printedGross, totals[0]].filter((g) => g > 0)
+  const printedNet = summary.net || netPay
+  const grossOkFor = (g) => (!(regularMonthly > 0) || g <= regularMonthly * 3) && (!(printedNet > 0) || g >= printedNet)
+  const pickedGross = grossCands.find(grossOkFor) || 0
+  const grossOk = pickedGross > 0
+  const grossMonthly = isPayslip ? (grossOk ? pickedGross : regularMonthly) : 0
+  const deductions = summary.deductions || after('Total\\s*Deductions') || totals[1] || 0
+
+  // Net pay: the summary row's Net Pay column wins. A "Net Pay" figure equal to the gross is the
+  // next column's header value, not the net. Then cross-check net ≈ gross − deductions (₹10),
+  // with the amount in words after "Net Pay (In Words)" as a confirmation when it is printed.
+  let net = printedNet
+  if (isPayslip && grossOk && net === grossMonthly && deductions > 0) net = 0
+  if (isPayslip && grossOk && deductions > 0 && deductions < grossMonthly) {
+    const diff = grossMonthly - deductions
+    const words = netPayInWords(text)
+    const near = (a, b) => Math.abs(a - b) <= 10
+    if (words > 0 && near(words, diff) && !near(net, words)) net = diff
+    else if (!(net > 0) || (!near(net, diff) && !(words > 0 && near(net, words)))) net = diff
+  }
 
   // Payslip figures are monthly -> annualise x12. "Annual Bonus" is already annual.
   const mult = isPayslip ? 12 : 1
@@ -134,12 +158,64 @@ export function parseSalaryText(text) {
     professionalTaxAnnual: Math.round(pt * mult),
     employerNPSAnnual: Math.round(nps * mult),
     bonusAnnual: Math.round(bonus), // annual as-is
-    netPayMonthly: Math.round(netPay),
+    netPayMonthly: Math.round(net),
     variablePayMonthly: Math.round(variablePay),
     grossMonthly: Math.round(grossMonthly),
     ok: regularMonthly > 0,
     isPayslip,
   }
+}
+
+const AMT = '(-?[0-9][0-9,]*(?:\\.[0-9]+)?)'
+const amt = (s) => parseFloat(String(s).replace(/,/g, '')) || 0
+const SEP = '[\\s|:]+'
+
+// "Earnings Deductions Net Pay <n> <n> <n>": 2–3 consecutive column labels, then as many amounts.
+function readSummaryRow(text) {
+  const LBL = '(?:(?:Total|Gross)\\s+)?Earnings|(?:Total\\s+)?Deductions|Net\\s*Pay(?!able)(?!\\s*\\()'
+  const re = new RegExp(`((?:${LBL})(?:${SEP}(?:${LBL})){1,2})${SEP}${AMT}${SEP}${AMT}(?:${SEP}${AMT})?`, 'gi')
+  let m, out = {}
+  while ((m = re.exec(text))) {
+    const labels = m[1].split(new RegExp(`${SEP}(?=(?:${LBL}))`, 'i')).map((l) => l.trim())
+    const vals = [m[2], m[3], m[4]].filter((v) => v != null).map(amt)
+    if (vals.length < labels.length) continue
+    const row = {}
+    labels.forEach((l, i) => {
+      if (/earnings/i.test(l)) row.gross = vals[i]
+      else if (/deductions/i.test(l)) row.deductions = vals[i]
+      else row.net = vals[i]
+    })
+    out = row   // the last such row is the payslip summary
+  }
+  return out
+}
+
+// Plain "Total <n>" rows (not "Total Earnings" etc.): the first follows the earnings list, the second the deductions.
+function plainTotals(text) {
+  const re = new RegExp(`\\bTotal${SEP}${AMT}`, 'gi')
+  const vals = []
+  let m
+  while ((m = re.exec(text)) && vals.length < 2) vals.push(amt(m[1]))
+  return vals.length === 2 && vals[0] > vals[1] ? vals : []
+}
+
+// "Net Pay (In Words) NINETY EIGHT THOUSAND NINE HUNDRED THREE RUPEES ONLY" -> 98903 (0 if absent).
+const ONES = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 }
+const SCALES = { hundred: 100, thousand: 1000, lakh: 100000, lakhs: 100000, lac: 100000, crore: 10000000, crores: 10000000 }
+export function netPayInWords(text) {
+  const m = String(text).match(/Net\s*Pay\s*\(\s*In\s*Words\s*\)[\s|:]*(?:Rs\.?|Rupees|INR)?\s*([A-Za-z\s-]+?)(?:\s+(?:Rupees|Only)\b|$)/i)
+  if (!m) return 0
+  let total = 0, cur = 0, seen = false
+  for (const w of m[1].toLowerCase().split(/[\s-]+/)) {
+    if (w === 'and' || !w) continue
+    if (ONES[w] != null) { cur += ONES[w]; seen = true }
+    else if (w === 'hundred') { cur = (cur || 1) * 100; seen = true }
+    else if (SCALES[w]) { total += (cur || 1) * SCALES[w]; cur = 0; seen = true }
+    else break
+  }
+  return seen ? total + cur : 0
 }
 
 function taxNewRegime(taxable) {

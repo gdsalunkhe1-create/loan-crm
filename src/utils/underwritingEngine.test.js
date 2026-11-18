@@ -656,3 +656,60 @@ test('Nov 2026 offers: Bandhan and IndusInd CAT C 10.50% (15–20L) / 10.25% (20
   expect(c.roi).toBe(10.25);
   expect(roi(kotak, 'CAT A', 200000).roi).toBe(9.99);
 });
+
+test('18 Nov: EMI on every amount, Poonawalla card BT only from 50K, forced BT kept within limits, extra-income hints', () => {
+  // EMI shown for each method and matches the standard formula
+  const r = evaluateBank(policy, base);
+  for (const m of r.best.methods) {
+    const i = m.roi / 1200, n = m.tenure;
+    expect(m.emi).toBe(Math.round(m.amount * i * (1 + i) ** n / ((1 + i) ** n - 1)));
+  }
+  // Poonawalla: card under 50K is not a BT candidate, 60K is
+  const p = (cards) => evaluateBank(pfl, { ...base, netSalary: 150000, loans: [], cards, cibilScore: 760, city: 'Pune',
+    company: { categoriesByBank: { poonawalla_fincorp: 'CAT A' } }, credit: { enquiryList: [] } });
+  const small = p([{ id: 's', issuer: 'SBI CARD', outstanding: 40000 }]);
+  expect(small.scenarios.some((sc) => sc.btCards.includes('s'))).toBe(false);
+  expect(small.notes.join()).toMatch(/under ₹50,000/);
+  expect(p([{ id: 'b', issuer: 'SBI CARD', outstanding: 60000 }]).scenarios.some((sc) => sc.btCards.includes('b'))).toBe(true);
+  // Yes Bank allows 5 loans in BT: 6 loans all marked BT -> best plan instead of no plan
+  const six = Array.from({ length: 6 }, (_, i) => ({ id: 'f' + i, lender: 'AXIS BANK', productType: 'PL', outstanding: 100000, emi: 5000, emisPaid: 10, emisRemaining: 20, treatment: 'bt' }));
+  const y = evaluateBank(yes, { ...base, netSalary: 150000, loans: six, cards: [], cibilScore: 760, city: 'Pune',
+    company: { categoriesByBank: { yes: 'Gold' } }, credit: { enquiryList: [], servedLoanAmount: 1200000 } });
+  expect(y.best).toBeDefined();
+  expect(y.warnings.join()).toMatch(/can't all be taken together/);
+  // a loan marked BT is never dropped by the 12-candidate cap
+  const many = Array.from({ length: 14 }, (_, i) => ({ id: 'm' + i, lender: 'AXIS BANK', productType: 'PL', outstanding: 50000, emi: 2000, emisPaid: 10, emisRemaining: 20, treatment: i === 13 ? 'bt' : 'auto' }));
+  const h = evaluateBank(policy, { ...base, netSalary: 400000, loans: many });
+  expect(h.best.bt).toContain('m13');
+  // hints: L&T counts rent / incentives; a no-EMI-room case says how much extra income would make it eligible
+  const lp = (x) => evaluateBank(lt, { ...base, netSalary: 60000, cibilScore: 760, city: 'Pune', cards: [], company: { categoriesByBank: { lt: 'CAT A' } }, credit: { enquiryList: [] }, ...x });
+  const ok = lp({ loans: [] });
+  expect(ok.incomeHints.accepts.map((a) => a.key)).toEqual(expect.arrayContaining(['rental', 'monthly_incentive']));
+  expect(ok.incomeHints.gainPer10k).toBeGreaterThan(0);
+  const tight = lp({ loans: [{ id: 'x', lender: 'SBI', productType: 'HL', emi: 44000, emisPaid: 20, emisRemaining: 200 }] });
+  expect(tight.status).toBe('NOT_ELIGIBLE');
+  expect(tight.incomeHints.neededExtra).toBeGreaterThan(0);
+  const withExtra = lp({ loans: [{ id: 'x', lender: 'SBI', productType: 'HL', emi: 44000, emisPaid: 20, emisRemaining: 200 }], _extraIncome: tight.incomeHints.neededExtra });
+  expect(withExtra.status).not.toBe('NOT_ELIGIBLE');
+});
+
+import { rateForAmount, emiFor } from './underwritingEngine';
+
+test('Own-amount EMI box: rate for a typed amount comes from the bank bands', () => {
+  const r = evaluateBank(policy, base);               // HDFC CAT A
+  expect(rateForAmount(r.roiSlabs, 1600000).roi).toBe(10.25);
+  expect(rateForAmount(r.roiSlabs, 1200000).roi).toBe(10.75);
+  expect(rateForAmount(r.roiSlabs, 500000).roi).toBe(11);
+  expect(Math.round(emiFor(500000, 11, 60))).toBe(10871);
+});
+
+test('Own-amount EMI box uses the same add-ons as the summary (Poonawalla 7-year +0.50%, card BT add-on)', () => {
+  const r = evaluateBank(pfl, { ...base, netSalary: 150000, loans: [], cibilScore: 760, city: 'Pune',
+    cards: [{ id: 'c1', issuer: 'SBI CARD', outstanding: 200000 }],
+    company: { categoriesByBank: { poonawalla_fincorp: 'CAT A' } }, credit: { enquiryList: [] } });
+  for (const m of r.best.methods) {
+    const own = rateForAmount(r.roiSlabs, m.amount, r.rateAdjust, m.tenure);
+    expect(own.roi).toBe(m.roi);                      // default amount -> same rate as the summary row
+  }
+  expect(rateForAmount(r.roiSlabs, 1000000, r.rateAdjust, 84).addOn).toBeGreaterThanOrEqual(0.5);
+});

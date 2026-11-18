@@ -27,6 +27,28 @@ const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').re
 const inBand = (x, min, maxExcl) => x >= (min ?? 0) && (maxExcl == null || x < maxExcl);
 
 // Present value of an EMI stream = loan amount that EMI can service.
+// Rate for any amount from a bank's rate bands (out.roiSlabs): the lowest rate whose band holds the amount,
+// else the highest known rate (assumed). Used when the agent types the amount the customer wants.
+// adj = result.rateAdjust (the same add-ons the engine used for the best plan) and the chosen tenure in months.
+export function rateForAmount(slabs, amount, adj = null, months = null) {
+  const list = [...(slabs || [])].sort((x, y) => x.roi_pct - y.roi_pct);
+  const hit = list.find((x) => amount >= (x.loan_min_incl ?? 0) && (x.loan_max_excl == null || amount < x.loan_max_excl));
+  const base = hit ? hit.roi_pct : (list.length ? list[list.length - 1].roi_pct : null);
+  if (base == null) return { roi: null, assumed: true, addOn: 0 };
+  const tAdd = (adj?.tenureAdd && months != null ? adj.tenureAdd[months] : 0) || 0;
+  const add = (adj?.add || 0) + tAdd;
+  const roi = +Math.max(base + add, adj?.min || 0).toFixed(2);
+  return { roi, assumed: !hit, addOn: +(roi - base).toFixed(2) };
+}
+
+// EMI for a loan amount at a yearly rate over N months (used for every eligible amount and the agent's own amount).
+export function emiFor(amount, roiPct, months) {
+  if (!(amount > 0) || !(months > 0)) return 0;
+  const r = (roiPct || 0) / 1200;
+  if (r === 0) return amount / months;
+  return amount * r * Math.pow(1 + r, months) / (Math.pow(1 + r, months) - 1);
+}
+
 export function loanFromEmi(emi, roiPct, months) {
   if (emi <= 0) return 0;
   const r = roiPct / 1200;
@@ -505,7 +527,7 @@ export function evaluateBank(policy, profileIn) {
 
   const salary = profile.netSalary;                 // slabs, segments and minimums use net salary alone
   const oiRes = otherIncomeFor(policy, profile);
-  const income = salary + oiRes.total;              // amounts use net salary + allowed other income
+  const income = salary + oiRes.total + (profile._extraIncome || 0);   // amounts use net salary + allowed other income
   out.otherIncome = oiRes;
   const oiNotes = [];
   if (oiRes.total > 0) oiNotes.push(`Other income added: ${oiRes.lines.map((l) => `${l.label} ${fmtINR(l.amount)} (${l.pct}%)`).join(', ')} — eligibility on ${fmtINR(income)}/month`);
@@ -651,6 +673,7 @@ export function evaluateBank(policy, profileIn) {
   const allTenures = extTenure && !foirTenures.includes(extTenure.months) ? [...foirTenures, extTenure.months] : foirTenures;
   if (gridMax && gridMax < 60) out.warnings.push(`${cat} grid stops at ${gridMax} months — FOIR also calculated at ${gridMax} months`);
 
+  out.roiSlabs = roiSlabs;   // rate bands for this customer, for the agent's own-amount EMI box
   // BT scenarios: every subset of BT-able loans (n is small in practice; capped at 10).
   // Agent treatment per loan: 'auto' (engine decides) | 'bt' (always BT) | 'obligate' (never BT).
   for (const l of loanLines) {
@@ -660,14 +683,19 @@ export function evaluateBank(policy, profileIn) {
   // Credit-card BT (e.g. Poonawalla): cards with a balance become candidates; their outstanding is paid from the loan.
   const cardCands = btCfg.card_bt
     ? (profile.cards || []).map((c, i) => ({ id: c.id ?? `card${i}`, lender: c.issuer, outstanding: Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0)), isCard: true }))
-      .filter((c) => c.outstanding > 0)
+      .filter((c) => c.outstanding > 0 && c.outstanding >= (btCfg.card_bt_min_outstanding || 0))
     : [];
-  const cands = [...loanLines.filter((l) => l.bt.ok && l.treatment !== 'obligate'), ...cardCands].slice(0, 12);
-  const forcedMask = cands.reduce((m, l, i) => (l.treatment === 'bt' ? m | (1 << i) : m), 0);
+  if (btCfg.card_bt && btCfg.card_bt_min_outstanding && (profile.cards || []).some((c) => (c.outstanding || 0) > 0 && (c.outstanding || 0) < btCfg.card_bt_min_outstanding)) {
+    out.notes.push(`Cards under ${fmtINR(btCfg.card_bt_min_outstanding)} outstanding are not taken in BT at ${policy.bank}`);
+  }
+  const btLoans = loanLines.filter((l) => l.bt.ok && l.treatment !== 'obligate');
+  const cands = [...btLoans.filter((l) => l.treatment === 'bt'), ...btLoans.filter((l) => l.treatment !== 'bt'), ...cardCands].slice(0, 12);
+  let forcedMask = cands.reduce((m, l, i) => (l.treatment === 'bt' ? m | (1 << i) : m), 0);
   const loanObl = loanLines.reduce((s, l) => s + l.obligation.amount, 0);
   const ntcScoreBT = profile.cibilScore === -1 || profile.cibilScore === 0;
   const addons = policy.roi_addons || {};
   const scenarios = [];
+  for (let pass = 0; pass < 2; pass++) {
   for (let mask = 0; mask < 1 << cands.length; mask++) {
     if ((mask & forcedMask) !== forcedMask) continue;
     const picked = cands.filter((_, i) => mask & (1 << i));
@@ -757,6 +785,7 @@ export function evaluateBank(policy, profileIn) {
           netInHand: amt - btOutstanding, multiplier: mx, band: bonus ? 'own house + home loan' : null });
       }
     }
+    for (const m of methods) m.emi = Math.round(emiFor(m.amount, m.roi, m.tenure));
     const firm = methods.filter((x) => !x.indicative);
     let top = firm.reduce((a, b) => (b.amount > a.amount ? b : a), firm[0]);
     if (policy.eligibility.combine === 'lower') {
@@ -770,7 +799,7 @@ export function evaluateBank(policy, profileIn) {
       conservativeRoi: roiSlab ? roiSlab.roi_pct : Math.max(...roiSlabs.map((x) => x.roi_pct)),
       roiAssumed: !roiSlab,   // rate for the lower (conservative) amount
       bt: picked.map((l) => l.id), btOutstanding, obligations: obl, emiRoom, foir, multiplier: mult,
-      btCards: picked.filter((x) => x.isCard).map((x) => x.id), btApps: picked.filter((x) => x.bt?.isApp).map((x) => x.id), rateAddOn: add,
+      btCards: picked.filter((x) => x.isCard).map((x) => x.id), btApps: picked.filter((x) => x.bt?.isApp).map((x) => x.id), rateAddOn: add, rateFloor: floor,
       topUp: picked.filter((l) => l.bt?.topUp).map((l) => l.id),   // subset of bt closed via own-bank top-up
       methods,                                  // [{ key, label, tenure, amount, roi, netInHand }]
       eligibleAmount: top.amount,               // highest of the methods (or the lower of FOIR / multiplier when combine = 'lower')
@@ -781,10 +810,16 @@ export function evaluateBank(policy, profileIn) {
       netInHandConservative: conservative - btOutstanding,
     });
   }
+  if (scenarios.length || !forcedMask) break;
+  out.warnings.push(`Loans marked BT can't all be taken together at ${policy.bank} (BT limit) — showing the best plan instead`);
+  forcedMask = 0;
+  }
   scenarios.sort((a, b) => b.netInHand - a.netInHand);
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
+  // Same rate add-ons as the best plan (card / app-loan BT, NTC, longer tenure), for the agent's own-amount EMI box.
+  out.rateAdjust = { add: out.best?.rateAddOn || 0, min: out.best?.rateFloor || 0, tenureAdd: policy.eligibility.tenure_roi_add || null };
   // Max live unsecured loans after this loan (e.g. Bandhan: 3, waiver up to 5) — counts loans left after BT / closure + the new loan.
   const mu = policy.max_unsecured_loans;
   if (mu && out.best) {
@@ -880,6 +915,33 @@ export function evaluateBank(policy, profileIn) {
     for (const c of out.closurePlan) {
       out.notes.push(`Subject to closure${c.mode === 'before_login' ? ' (close before login, own funds)' : ''} of ${c.lender} (${fmtINR(c.outstanding)}): eligible ${fmtINR(c.newEligible)} (+${fmtINR(c.gain)})`);
     }
+  }
+  // Extra income this bank counts (rent, incentives, bonus, co-applicant) and what it would do.
+  if (!profile._noHints && out.best) {
+    const LBL = { rental: 'Rent', bonus: 'Bonus', quarterly: 'Quarterly incentive', monthly_incentive: 'Monthly incentive', pension: 'Pension', consulting: 'Consulting income' };
+    const accepts = [];
+    for (const [k, r] of Object.entries(policy.other_income || {})) {
+      if (!r) continue;
+      const pct = r.high_salary_min != null && salary >= r.high_salary_min ? r.pct_high : r.pct;
+      if (pct > 0) accepts.push({ key: k, label: LBL[k] || k, pct, capPct: r.cap_pct_of_salary ?? null, note: r.note || r.needs || null });
+    }
+    if (policy.co_applicant_income) accepts.push({ key: 'co_applicant', label: 'Co-applicant income', pct: 100, note: 'Incomes added; same norms' });
+    const hints = { accepts, neededExtra: null, gainPer10k: null };
+    if (accepts.length) {
+      const sim = (x) => evaluateBank(policy, { ...profileIn, _extraIncome: (profileIn._extraIncome || 0) + x, _noHints: true, _noCardPlan: true });
+      if (out.status === 'NOT_ELIGIBLE' && out.softFail) {
+        const hi = Math.max(salary, 50000) * 2;
+        if (sim(hi).status !== 'NOT_ELIGIBLE') {
+          let lo = 0; let up = hi;
+          for (let i = 0; i < 14 && up - lo > 250; i++) { const mid = (lo + up) / 2; if (sim(mid).status !== 'NOT_ELIGIBLE') up = mid; else lo = mid; }
+          hints.neededExtra = Math.ceil(up / 500) * 500;
+        }
+      } else if (out.status !== 'NOT_ELIGIBLE') {
+        const s = sim(10000);
+        if (s.best) hints.gainPer10k = Math.max(0, Math.round(s.best.eligibleAmount - out.best.eligibleAmount));
+      }
+    }
+    out.incomeHints = hints;
   }
   return out;
 }
