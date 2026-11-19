@@ -1,0 +1,296 @@
+{
+  "bank": "Tata Capital",
+  "bank_id": "tata_capital",
+  "own_bank_match": [
+    "TATA CAPITAL",
+    "TATA CAP",
+    "TATACAP",
+    "TCL",
+    "TCFSL"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v1-2026-11-19",
+  "sources": {
+    "rules": "Gauri's Tata Capital template + multiplier / FOIR grid, 19 Nov 2026"
+  },
+  "eligibility": {
+    "method": "foir; CAT C lower of FOIR & multiplier",
+    "combine": "lower",
+    "foir_slabs": [
+      {
+        "salary_min_incl": 75000,
+        "salary_max_excl": null,
+        "foir_pct": 65,
+        "foir_pct_secured": 75
+      },
+      {
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "foir_pct": 60,
+        "foir_pct_secured": 65
+      },
+      {
+        "salary_min_incl": 25000,
+        "salary_max_excl": 50000,
+        "foir_pct": 50,
+        "foir_pct_secured": 60
+      },
+      {
+        "salary_min_incl": 0,
+        "salary_max_excl": 25000,
+        "foir_pct": 40,
+        "foir_pct_secured": 50
+      }
+    ],
+    "groups": {
+      "AB": {
+        "categories": [
+          "Super CAT A",
+          "TGE",
+          "Tata Group Employer",
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B",
+          "GovernmentSector",
+          "Government Sector"
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60,
+              72
+            ]
+          }
+        ],
+        "note": "FOIR only, eligibility on 5 and 6 years. Government Sector treated as CAT A/B — TO CONFIRM"
+      },
+      "C": {
+        "categories": [
+          "CAT C",
+          "Category C"
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 50000,
+            "multiplier": 15
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": 75000,
+            "multiplier": 18
+          },
+          {
+            "salary_min_incl": 75000,
+            "salary_max_excl": null,
+            "multiplier": 18
+          }
+        ],
+        "note": "Lower of FOIR (5 years) and multiplier (49–60 month column)"
+      }
+    },
+    "roi_slabs_by_loan_amount": [
+      {
+        "loan_min_incl": 1500000,
+        "loan_max_excl": null,
+        "roi_pct": 12.0
+      },
+      {
+        "loan_min_incl": 0,
+        "loan_max_excl": 1500000,
+        "roi_pct": 17.0,
+        "range": "13-17"
+      }
+    ],
+    "roi_note": "12% for ₹15L+; below ₹15L 13–17% (upper end 17% used until the card is given)",
+    "max_loan": 6000000,
+    "min_cibil": 675,
+    "category_caps": [
+      {
+        "categories": [
+          "Super CAT A",
+          "TGE",
+          "Tata Group Employer",
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B",
+          "GovernmentSector",
+          "Government Sector",
+          "CAT C",
+          "Category C"
+        ],
+        "cap": 500000
+      },
+      {
+        "categories": [
+          "Super CAT A",
+          "TGE",
+          "Tata Group Employer",
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B",
+          "GovernmentSector",
+          "Government Sector",
+          "CAT C",
+          "Category C"
+        ],
+        "cibil_min_incl": 701,
+        "cap": 6000000
+      }
+    ]
+  },
+  "multiplier_by_salary": {
+    "apply_on": "salary",
+    "slabs": [],
+    "note": "CAT C only; net salary × multiplier — TO CONFIRM (salary or salary − EMIs)"
+  },
+  "min_net_salary": {
+    "_all": 25000,
+    "CAT C": 30000,
+    "Category C": 30000
+  },
+  "company": {
+    "unlisted_allowed": false,
+    "excluded_categories": [
+      "DELIST",
+      "Delist"
+    ],
+    "category_source": "Tata Capital list in Company Category Checker"
+  },
+  "first_time_borrower": {
+    "trigger": "ntc_only",
+    "cap": 500000,
+    "range": "₹3–5L"
+  },
+  "co_applicant_income": true,
+  "other_income": {
+    "rental": {
+      "pct": 100,
+      "cap_pct_of_salary": 33.33
+    },
+    "quarterly": {
+      "pct": 50
+    },
+    "monthly_incentive": {
+      "pct": 50
+    },
+    "bonus": {
+      "pct": 50
+    },
+    "note": "'All counts' — percentages assumed like Bandhan, TO CONFIRM"
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 3,
+      "nbfc": 3
+    },
+    "nbfc_mode": "all_except",
+    "lender_blacklist": [],
+    "product_types": [
+      "PL"
+    ],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 6,
+    "card_bt": true,
+    "max_card_bt_salary_multiple": 6,
+    "max_cards": 5,
+    "max_total": 6,
+    "lender_lock_in": [
+      {
+        "name": "IndusInd Bank",
+        "match": [
+          "INDUSIND"
+        ],
+        "months": 12
+      }
+    ],
+    "note": "6 EMIs normally; 3 EMIs OK with foreclosure letter later. NBFC flexi OD after 3 EMIs; bank OD not taken. Cards up to 5, total 6 accounts, card BT within 6× salary (1 month's statement)"
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_net_salary": true,
+      "prelogin_paydown": "all",
+      "rule": "Not counted when total is below salary, else 5%; paid before login accepted with proof"
+    },
+    "pct_by_type": {
+      "GOLD": 1,
+      "OD": 1
+    },
+    "home_loan_joint": {
+      "joint_pct": 50,
+      "rule": "Joint home loan 50% whoever pays"
+    },
+    "loan_with_emis_remaining_lte": 3
+  },
+  "hard_rejects": [
+    {
+      "rule": "unlisted_company"
+    },
+    {
+      "rule": "excluded_category"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "enquiries": {
+    "max_30d": 4,
+    "count_types": [
+      "Personal Loan"
+    ],
+    "deviation_possible": true,
+    "note": "Up to 4 in 30 days fine, 5th by deviation; 60/90 days not checked"
+  },
+  "subject_to_closure_allowed": true,
+  "checklist": [
+    "Bachelor accommodation: PA verification compulsory",
+    "2 years' experience proof",
+    "No card overdue at login — ask the customer to clear it",
+    "BT loans with 3–5 EMIs paid: foreclosure letter needed (FC later)",
+    "Card BT: 1 month's card statement; BT proof: repayment schedule accepted"
+  ],
+  "product_info": {
+    "rate": "12% (₹15L+), 13–17% below",
+    "foreclosure": "6.5% before 12 months, 4.5% after",
+    "part_payment": "25% allowed, 2% charge",
+    "loan_amount": "₹1L – ₹60L"
+  },
+  "open_items": [
+    "Rate card below ₹15L",
+    "Multiplier on net salary or salary − EMIs?",
+    "Government Sector: CAT A/B rules?",
+    "Other income %",
+    "CAT D (not in the list)",
+    "Own Tata enquiry in 30 days blocks?"
+  ]
+}

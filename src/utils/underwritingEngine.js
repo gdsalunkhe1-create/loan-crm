@@ -618,7 +618,13 @@ export function evaluateBank(policy, profileIn) {
     foirPct = foirPct - adj.foir_minus;
     out.notes.push(`CIBIL ${profile.cibilScore} (below ${adj.cibil_max_excl}): FOIR reduced by ${adj.foir_minus} points to ${foirPct}%`);
   }
-  if ((profile.ownHouse || liveHlAny) && foirSlab?.foir_pct_own_house_or_hl != null) {
+  // Higher FOIR when the customer has a live secured loan (e.g. Tata Capital: home loan / LAP / auto loan)
+  const SECURED = ['HL', 'LAP', 'AL', 'AUTO', 'TW', 'CV', 'BL_SECURED'];
+  const liveSecured = loanLines.some((l) => SECURED.includes(l.productType) && !l.closedBeforeLoginWithProof && ((l.outstanding || 0) > 0 || (l.emi || 0) > 0));
+  if (liveSecured && foirSlab?.foir_pct_secured != null) {
+    foirPct = foirSlab.foir_pct_secured;
+    out.notes.push(`Live secured loan (home / auto loan) — FOIR ${foirPct}%`);
+  } else if ((profile.ownHouse || liveHlAny) && foirSlab?.foir_pct_own_house_or_hl != null) {
     foirPct = foirSlab.foir_pct_own_house_or_hl;
     out.notes.push(`${profile.ownHouse ? 'Own house' : 'Live home loan'} — FOIR ${foirPct}%`);
   } else if (profile.ownHouse && liveHlAny && foirSlab?.foir_pct_own_house_hl != null) {

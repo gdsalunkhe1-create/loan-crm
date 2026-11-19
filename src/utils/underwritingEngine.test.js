@@ -713,3 +713,21 @@ test('Own-amount EMI box uses the same add-ons as the summary (Poonawalla 7-year
   }
   expect(rateForAmount(r.roiSlabs, 1000000, r.rateAdjust, 84).addOn).toBeGreaterThanOrEqual(0.5);
 });
+
+import tata from './tata_pl_policy.json';
+
+test('Tata Capital: FOIR 50/60/65 (60/65/75 with a secured loan), CAT A/B 5+6 years, CAT C lower of FOIR & multiplier, CIBIL caps', () => {
+  const p = (x) => ({ ...base, loans: [], cards: [], cibilScore: 760, city: 'Pune', company: { categoriesByBank: { tata_capital: 'CAT A' } }, credit: { enquiryList: [] }, ...x });
+  const a = evaluateBank(tata, p({ netSalary: 90000 }));
+  expect(a.foirPct).toBe(65);
+  expect(a.best.methods.map((m) => m.tenure)).toEqual([60, 72]);
+  expect(evaluateBank(tata, p({ netSalary: 90000, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', outstanding: 3000000, emi: 25000, emisPaid: 20, emisRemaining: 200 }] })).foirPct).toBe(75);
+  expect(evaluateBank(tata, p({ netSalary: 40000 })).foirPct).toBe(50);
+  const c = evaluateBank(tata, p({ netSalary: 60000, company: { categoriesByBank: { tata_capital: 'Category C' } } }));
+  expect(c.best.methods.find((m) => m.key === 'multiplier').multiplier).toBe(18);
+  expect(c.best.eligibleRule).toBe('lower');
+  expect(evaluateBank(tata, p({ netSalary: 28000, company: { categoriesByBank: { tata_capital: 'CAT C' } } })).status).toBe('NOT_ELIGIBLE');   // CAT C 30K
+  expect(evaluateBank(tata, p({ netSalary: 150000, cibilScore: 690 })).best.eligibleAmount).toBeLessThanOrEqual(500000);
+  expect(evaluateBank(tata, p({ netSalary: 150000, cibilScore: 660 })).status).toBe('NOT_ELIGIBLE');
+  expect(evaluateBank(tata, p({ company: { categoriesByBank: { tata_capital: 'DELIST' } } })).status).toBe('NOT_ELIGIBLE');
+});
