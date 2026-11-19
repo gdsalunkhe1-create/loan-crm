@@ -5,7 +5,7 @@
     "BANDHAN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v6-2026-11-17",
+  "policy_version": "v7-2026-11-19",
   "sources": {
     "rules": "Bandhan salaried policy one-pager (Nov 2026) + banker answers 28 Oct + pricing grid 1 Oct 2026"
   },
@@ -743,7 +743,8 @@
     "count_types": [
       "Personal Loan"
     ],
-    "note": "3 fine, 4–5 deviation, more only if duplicates (manual CIBIL). 60/90 days not checked"
+    "note": "3 fine, 4–5 deviation, 6+ declined unless duplicates (manual CIBIL). 60/90 days not checked",
+    "over_deviation_note": "unless they are duplicate enquiries (manual CIBIL check)"
   },
   "subject_to_closure_allowed": true,
   "max_unsecured_loans": {

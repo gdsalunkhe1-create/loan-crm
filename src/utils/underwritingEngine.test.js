@@ -508,7 +508,7 @@ test('Bandhan (one-pager Nov 2026): FOIR 50/60/65/70, 75% at 1L+ with own house 
   expect(Object.fromEntries(bt.obligations.loans.map((l) => [l.id, l.bt.ok]))).toEqual({ a: false, b: true, k: false, own: true, g: false });
   expect(bt.obligations.loans.find((l) => l.id === 'g').obligation.amount).toBe(0);
   const enq = (n) => evaluateBank(bandhan, p({ netSalary: 90000, credit: { enquiryList: Array.from({ length: n }, (_, i) => ({ lender: 'X', product: 'Personal Loan', daysAgo: i + 1 })) } })).status;
-  expect([enq(3), enq(5), enq(7)]).toEqual(['ELIGIBLE', 'DEVIATION', 'DEVIATION']);
+  expect([enq(3), enq(5), enq(7)]).toEqual(['ELIGIBLE', 'DEVIATION', 'NOT_ELIGIBLE']);   // 6+ declined unless duplicates
   const oi = evaluateBank(bandhan, p({ netSalary: 90000, otherIncome: { quarterlyIncentiveNet: 30000, rentMonthly: 20000, rentVerified: true, bonusAnnualNet: 120000 } }));
   expect(oi.otherIncome.lines.map((l) => [l.key, l.amount])).toEqual([['quarterly', 5000], ['rent', 20000]]);
 });
@@ -730,4 +730,13 @@ test('Tata Capital: FOIR 50/60/65 (60/65/75 with a secured loan), CAT A/B 5+6 ye
   expect(evaluateBank(tata, p({ netSalary: 150000, cibilScore: 690 })).best.eligibleAmount).toBeLessThanOrEqual(500000);
   expect(evaluateBank(tata, p({ netSalary: 150000, cibilScore: 660 })).status).toBe('NOT_ELIGIBLE');
   expect(evaluateBank(tata, p({ company: { categoriesByBank: { tata_capital: 'DELIST' } } })).status).toBe('NOT_ELIGIBLE');
+});
+
+test('Tata Capital enquiries: 4 fine, 5th deviation, 6+ declined', () => {
+  const enq = (n) => evaluateBank(tata, { ...base, netSalary: 90000, loans: [], cards: [], cibilScore: 760, city: 'Pune',
+    company: { categoriesByBank: { tata_capital: 'CAT A' } },
+    credit: { enquiryList: Array.from({ length: n }, (_, i) => ({ lender: 'X', product: 'Personal Loan', daysAgo: i + 1 })) } });
+  expect([enq(4).status, enq(5).status, enq(8).status]).toEqual(['ELIGIBLE', 'DEVIATION', 'NOT_ELIGIBLE']);
+  expect(enq(5).deviations.join()).toMatch(/5 Personal Loan enquiries in 30 days \(max 4\) — deviation needed \(allowed up to 5\)/);
+  expect(enq(8).reasons.join()).toMatch(/8 Personal Loan enquiries in 30 days \(max 4, deviation up to 5\)/);
 });

@@ -9,7 +9,7 @@
     "TCFSL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-11-19",
+  "policy_version": "v2-2026-11-19",
   "sources": {
     "rules": "Gauri's Tata Capital template + multiplier / FOIR grid, 19 Nov 2026"
   },
@@ -265,11 +265,12 @@
   ],
   "enquiries": {
     "max_30d": 4,
+    "max_30d_deviation": 5,
     "count_types": [
       "Personal Loan"
     ],
-    "deviation_possible": true,
-    "note": "Up to 4 in 30 days fine, 5th by deviation; 60/90 days not checked"
+    "deviation_possible": false,
+    "note": "Up to 4 in 30 days fine, 5th by deviation, 6+ declined; 60/90 days not checked"
   },
   "subject_to_closure_allowed": true,
   "checklist": [

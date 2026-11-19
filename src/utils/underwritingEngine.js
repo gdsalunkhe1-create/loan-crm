@@ -338,9 +338,9 @@ function hardChecks(policy, profile) {
     if (n30 > enq.max_30d) {
       const msg = `${n30} ${types ? types.join('/') + ' ' : ''}enquiries in 30 days (max ${enq.max_30d})`;
       if (enq.max_30d_deviation != null) {
-        // e.g. Bandhan: up to 3 fine, 4–5 deviation, more only if they are duplicate enquiries (manual CIBIL check)
-        if (n30 <= enq.max_30d_deviation) deviations.push(`${msg} — deviation needed`);
-        else deviations.push(`${msg} — above ${enq.max_30d_deviation}: only if they are duplicate enquiries (manual CIBIL check)`);
+        // e.g. Tata: up to 4 fine, 5th by deviation, more = decline. Bandhan: up to 3, 4–5 deviation, more = decline unless duplicates.
+        if (n30 <= enq.max_30d_deviation) deviations.push(`${msg} — deviation needed (allowed up to ${enq.max_30d_deviation})`);
+        else reasons.push(`${n30} ${types ? types.join('/') + ' ' : ''}enquiries in 30 days (max ${enq.max_30d}, deviation up to ${enq.max_30d_deviation})${enq.over_deviation_note ? ` — ${enq.over_deviation_note}` : ''}`);
       } else if (enq.deviation_possible) deviations.push(`${msg} — deviation needed`); else reasons.push(msg);
     }
   }
