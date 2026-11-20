@@ -498,6 +498,16 @@ export function evaluateBank(policy, profileIn) {
   let cat = (category && Object.keys(policy.multiplier_grids || {}).find((k) => norm(k) === category))
     || rawCat;
   if (!cat && policy.company?.unlisted_rules) cat = 'UNLISTED';
+  // Category upgrade by salary, e.g. Poonawalla: Central Govt with net take-home above ₹75K is treated as CAT A.
+  let upgradeNote = null;
+  const catNorm = cat ? norm(cat) : null;
+  const sal = profile.netSalary || 0;
+  const upg = catNorm && (policy.company?.category_upgrades || [])
+    .find((u) => (u.from || []).some((x) => norm(x) === catNorm) && sal > (u.salary_min_excl ?? 0));
+  if (upg) {
+    upgradeNote = `${cat} with net salary above ₹${Number(upg.salary_min_excl || 0).toLocaleString('en-IN')} treated as ${upg.to}`;
+    cat = upg.to;
+  }
   const groups = policy.eligibility?.groups || {};
   const groupKey = cat && Object.keys(groups).find((g) => (groups[g].categories || []).some((x) => norm(x) === norm(cat)));
   const group = groupKey ? groups[groupKey] : null;
@@ -535,6 +545,7 @@ export function evaluateBank(policy, profileIn) {
   const risk = riskIndication(policy, profile);
   out.risk = risk;
   out.notes = risk.notes;   // informational, e.g. card late payment that this bank accepts
+  if (upgradeNote) out.notes.push(upgradeNote);
   out.notes.push(...oiNotes);
   if (profile._variableRemoved) out.notes.push(`${policy.bank} counts fixed salary only — variable pay ${fmtINR(profile._variableRemoved)} left out (net used ${fmtINR(profile.netSalary - (profile._coApplicantAdded || 0))})`);
   if (profile._coApplicantAdded) out.notes.push(`Co-applicant income ${fmtINR(profile._coApplicantAdded)} added — eligibility on combined ${fmtINR(profile.netSalary)} (add the co-applicant's loans to the table)`);

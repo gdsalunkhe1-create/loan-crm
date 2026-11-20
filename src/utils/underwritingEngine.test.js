@@ -740,3 +740,13 @@ test('Tata Capital enquiries: 4 fine, 5th deviation, 6+ declined', () => {
   expect(enq(5).deviations.join()).toMatch(/5 Personal Loan enquiries in 30 days \(max 4\) — deviation needed \(allowed up to 5\)/);
   expect(enq(8).reasons.join()).toMatch(/8 Personal Loan enquiries in 30 days \(max 4, deviation up to 5\)/);
 });
+
+test('Poonawalla: Central Govt above ₹75K net is treated as CAT A', () => {
+  const run = (sal) => evaluateBank(pfl, { ...base, netSalary: sal, loans: [], cards: [], cibilScore: 760, city: 'Pune',
+    company: { categoriesByBank: { poonawalla_fincorp: 'Central Government' } } });
+  const hi = run(90000), lo = run(70000);
+  expect(hi.notes.join()).toMatch(/Central Government with net salary above ₹75,000 treated as CAT A/);
+  expect(lo.notes.join()).not.toMatch(/treated as CAT A/);
+  const a = evaluateBank(pfl, { ...base, netSalary: 90000, loans: [], cards: [], cibilScore: 760, city: 'Pune', company: { categoriesByBank: { poonawalla_fincorp: 'CAT A' } } });
+  expect(hi.best.eligibleAmount).toBe(a.best.eligibleAmount);
+});

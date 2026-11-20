@@ -8,9 +8,10 @@
     "PFL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v2-2026-11-18",
+  "policy_version": "v3-2026-11-20",
   "sources": {
-    "rules": "Gauri's template + Poonawalla FOIR norms, rate grid, policy norms update (proposed), 5 Nov 2026"
+    "rules": "Gauri's template + Poonawalla FOIR norms, rate grid, policy norms update (proposed), 5 Nov 2026",
+    "policy_norms_update": "Poonawalla \"Policy Norms Update\" flyer, 20 Nov 2026"
   },
   "eligibility": {
     "method": "foir_only",
@@ -1516,7 +1517,8 @@
           "High"
         ]
       }
-    ]
+    ],
+    "max_loan_note": "Super A / CAT A / Govt Ratna: 50L (VL/L & Medium), 60L for VL/L (PL V2) with HL/AL/PL track of 20L+ and income > 2L, 30L High risk. CAT B / Govt: 30L, 40L for VL/L with income > 1.5L. CAT C: 20L, 30L for VL/L with income > 1.5L"
   },
   "risk_segment": {
     "name": "Poonawalla risk segment",
@@ -1571,7 +1573,7 @@
     ],
     "default_cap": 4000000,
     "default_label": "Tier 2 (assumed)",
-    "note": "Metro 60L, Tier 1 50L, Tier 2 40L, Tier 3 30L, Tier 4 / others 25L — city lists assumed, TO CONFIRM"
+    "note": "Metro 60L, Tier 1 50L, Tier 2 40L, Tier 3 30L, Tier 4 25L, others 25L (Policy Norms Update Nov 2026). City lists assumed — Tier 2/3/4 lists TO CONFIRM; unlisted cities get 40L until then"
   },
   "min_net_salary": {
     "_all": 30000
@@ -1579,7 +1581,17 @@
   "company": {
     "unlisted_allowed": false,
     "category_source": "Poonawalla list in Company Category Checker (old list — category can be edited)",
-    "unlisted_note": "Not done — suggest listing / check category with the banker"
+    "unlisted_note": "Not done — suggest listing / check category with the banker",
+    "category_upgrades": [
+      {
+        "from": [
+          "Central Government"
+        ],
+        "to": "CAT A",
+        "salary_min_excl": 75000,
+        "note": "Central Govt with NTH > ₹75K = CAT A (earlier CAT B)"
+      }
+    ]
   },
   "first_time_borrower": {
     "trigger": "ntc_only",
@@ -1771,10 +1783,10 @@
   "own_bank_bad_history_min_count": 2,
   "subject_to_closure_allowed": true,
   "checklist": [
-    "No PL EMI bounce in last 6 months (one bounce paid same / next day: deviation)",
+    "EMI bounce (all categories): max 1 in last 3 months, cleared within 30 days, none in the current month",
+    "Govt segment: 2 EMI bounces in last 3 months allowed if each was cleared within 3 days of salary credit — deviation at L3",
     "Card BT: 2 months' card statements; no card rotation; charges on the card not taken; EMI-converted spends taken",
-    "Co-applicant: higher earner is the applicant; both companies must be listed",
-    "Central Govt with NTH > ₹75K is treated as CAT A (pick CAT A)"
+    "Co-applicant: higher earner is the applicant; both companies must be listed"
   ],
   "product_info": {
     "processing_fee": "0.5% (₹10L+), 0.75% (₹5–10L), 1% (<₹5L / CAT D), 2% CAT E",
@@ -1782,10 +1794,10 @@
     "extra": "+0.25% ROI/PF for 6-year, +0.50% ROI for 7-year eligibility"
   },
   "open_items": [
-    "Metro / Tier 1–4 city lists",
+    "Tier 2 / Tier 3 / Tier 4 city lists (caps 40L / 30L / 25L)",
     "Credit card % and gold/OD %",
     "Enquiry limits",
-    "Credit history rules",
-    "Central vs state govt in the company list"
+    "Credit history rules (other than EMI bounces)",
+    "Is 'income > 2L / > 1.5L' net monthly salary?"
   ]
 }
