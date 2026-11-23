@@ -8,7 +8,7 @@
     "PFL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v3-2026-11-20",
+  "policy_version": "v4-2026-11-23",
   "sources": {
     "rules": "Gauri's template + Poonawalla FOIR norms, rate grid, policy norms update (proposed), 5 Nov 2026",
     "policy_norms_update": "Poonawalla \"Policy Norms Update\" flyer, 20 Nov 2026"
@@ -1734,7 +1734,8 @@
       }
     ],
     "note": "Up to 8 in total (PL 5–6, cards 4–5, app loans 3–4). PL BT after 6 EMIs (+1 loan with 3 EMIs); app loans after 1 EMI; cards need 2 months' statements",
-    "card_bt_min_outstanding": 50000
+    "card_bt_min_outstanding": 50000,
+    "top_up_note": "Top-up of own-bank loan after 6 months (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -1799,5 +1800,12 @@
     "Enquiry limits",
     "Credit history rules (other than EMI bounces)",
     "Is 'income > 2L / > 1.5L' net monthly salary?"
-  ]
+  ],
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> can't log in this bank (Gauri, 23 Nov 2026)"
+  }
 }

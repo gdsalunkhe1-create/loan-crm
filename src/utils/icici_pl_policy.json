@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v11-2026-11-17",
+  "policy_version": "v12-2026-11-23",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -360,7 +360,9 @@
         ],
         "months": 12
       }
-    ]
+    ],
+    "top_up_min_emis": 6,
+    "top_up_note": "Top-up of own-bank loan after 6 months (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {

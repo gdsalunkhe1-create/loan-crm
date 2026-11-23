@@ -9,7 +9,7 @@
     "TCFSL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v2-2026-11-19",
+  "policy_version": "v3-2026-11-23",
   "sources": {
     "rules": "Gauri's Tata Capital template + multiplier / FOIR grid, 19 Nov 2026"
   },
@@ -293,5 +293,12 @@
     "Other income %",
     "CAT D (not in the list)",
     "Own Tata enquiry in 30 days blocks?"
-  ]
+  ],
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> can't log in this bank (Gauri, 23 Nov 2026)"
+  }
 }

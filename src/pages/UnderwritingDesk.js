@@ -25,9 +25,10 @@ import {
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch,
   cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, rankResults, pickedFirst, closeLoansPatch, closeAllSuggestion,
-  summaryMethod, emiTenureOptions, rateAddOnText, treatmentNote, incomeHintText, incomeReminderText, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
+  summaryMethod, emiTenureOptions, rateAddOnText, treatmentNote, incomeHintText, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
   isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
   countedObligationsTotal, sameCompany, isExactMatch, uniqueCompanyNames,
+  isWaitResult, autoBankEntry, canLogFromDate, askCustomerRows, hlCoApplicantPaysPatch, bankAskChips, topUpLoanNote, ownBankTopUpNote,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -53,6 +54,9 @@ const fmt = (n) => Math.round(+n || 0).toLocaleString('en-IN'); // table cells: 
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 const fmtDate = (s) => (s ? new Date(s).toLocaleDateString('en-GB') : '');
 const pick = (obj, keys) => Object.fromEntries(keys.map((k) => [k, obj[k]]));
+
+// Cases (lead id / new-customer number) that already had the "Ask the customer" pop-up this session.
+const ASK_POPUP_SHOWN = new Set();
 
 const S = {
   section: { marginBottom: 18 },
@@ -166,8 +170,12 @@ export default function UnderwritingDesk({ userId, orgId }) {
 
   const setDoc = (kind, patch) => setDocs((d) => ({ ...d, [kind]: { ...d[kind], ...patch } }));
 
+  // Bumped for every new customer / lead pick: the "Ask the customer" rows and pop-up are per case.
+  const [caseNo, setCaseNo] = useState(0);
+
   const resetAll = (nextMode) => {
     cancelReads();
+    setCaseNo((n) => n + 1);
     setMode(nextMode);
     setLead(null);
     setLeadError(null);
@@ -184,6 +192,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
   };
 
   const onPickLead = async (l) => {
+    setCaseNo((n) => n + 1);
     setLead(l);
     setLoadingLead(true);
     setLeadError(null);
@@ -516,7 +525,8 @@ export default function UnderwritingDesk({ userId, orgId }) {
         const closeAll = plan.length
           ? closeAllSuggestion(plan, evaluateBank(p.policy, { ...profile, ...closeLoansPatch(profile.loans, plan.map((c) => c.id)) }).best)
           : null;
-        return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null, closeAll, result };
+        return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null,
+          topUpNote: ownBankTopUpNote(p.policy, profile.loans), closeAll, result };
       } catch (e) {
         return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, salaryBase, error: e.message || String(e) };
       }
@@ -528,13 +538,35 @@ export default function UnderwritingDesk({ userId, orgId }) {
   const shownResults = useMemo(() => pickedFirst(ranked, tableBankId), [ranked, tableBankId]);
   // "Can raise eligibility": extra income each bank counts that isn't entered yet.
   const incomeHints = useMemo(() => Object.fromEntries(results.map((r) => [r.bankId, r.result ? incomeHintText(r.result, r.label, draft, fmtINR) : null])), [results, draft]);
-  const incomeReminder = incomeReminderText(Object.values(incomeHints).filter(Boolean).map((h) => h.kind));
   const [otherIncomeOpen, setOtherIncomeOpen] = useState(0);
   const otherIncomeRef = useRef(null);
-  const openOtherIncome = () => {
-    setOtherIncomeOpen((n) => n + 1);
-    if (otherIncomeRef.current) otherIncomeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Opens Other income (if the field is there) and focuses the field; no field = just scroll to the panel.
+  const focusIncomeField = (field) => {
+    if (!field || OTHER_INCOME_FIELDS.some(([k]) => k === field)) setOtherIncomeOpen((n) => n + 1);
+    setTimeout(() => {
+      const el = field && document.getElementById(`uw-field-${field}`);
+      const target = el || otherIncomeRef.current;
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (el) el.focus({ preventScroll: true });
+    }, 60);
   };
+
+  // "Ask the customer before logging": rows per case; "Asked — no" hides a row for this case.
+  const caseKey = lead ? `lead:${lead.id}` : `new:${caseNo}`;
+  const [askDismissed, setAskDismissed] = useState({});
+  const askRows = useMemo(() => (draft ? askCustomerRows(results, draft, fmtINR, askDismissed[caseKey]) : []), [results, draft, askDismissed, caseKey]);
+  const dismissAsk = (id) => setAskDismissed((m) => ({ ...m, [caseKey]: [...(m[caseKey] || []), id] }));
+  const applyHlCoApplicant = () => patchDraft(hlCoApplicantPaysPatch(draft.loans));
+  // One-time pop-up per case and session, the first time the panel has rows.
+  const [askPopup, setAskPopup] = useState(false);
+  const hasAskRows = askRows.length > 0 && !loadingLead;
+  useEffect(() => { setAskPopup(false); }, [caseKey]);   // another case: close (runs before the check below)
+  useEffect(() => {
+    if (!hasAskRows || ASK_POPUP_SHOWN.has(caseKey)) return;
+    ASK_POPUP_SHOWN.add(caseKey);
+    setAskPopup(true);
+  }, [hasAskRows, caseKey]);
+  const firstIncomeField = (askRows.find((r) => r.field && r.id !== 'co_applicant') || askRows.find((r) => r.field) || {}).field || null;
 
   const customerName = lead?.full_name || newLeadForm.full_name || sources.uploads.cibil?.parsed.customerName || '';
   const canUpload = mode === 'new' || !!lead;
@@ -660,11 +692,15 @@ export default function UnderwritingDesk({ userId, orgId }) {
           {policies.length === 0 && !policyError && (
             <div className="info-box info-box-yellow">No active bank policies found.</div>
           )}
-          {incomeReminder && (
-            <div style={{ margin: '0 0 12px', padding: '8px 12px', borderRadius: '8px', background: '#eef4fb', color: BLUE, fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ flex: 1, minWidth: '240px' }}>{incomeReminder}</span>
-              <button style={btnSecSm} onClick={openOtherIncome}>Open Other income</button>
-            </div>
+          {askRows.length > 0 && (
+            <AskCustomerPanel rows={askRows} onAdd={focusIncomeField} onDismiss={dismissAsk} onHlYes={applyHlCoApplicant} />
+          )}
+          {askPopup && askRows.length > 0 && (
+            <AskCustomerPopup
+              rows={askRows}
+              onGo={() => { setAskPopup(false); focusIncomeField(firstIncomeField); }}
+              onLater={() => setAskPopup(false)}
+            />
           )}
           {shownResults.map((r) => (
             <ResultCard
@@ -1349,13 +1385,14 @@ function IncomePanel({ draft, patchDraft, payslips }) {
         <div>
           <label style={S.label}>Co-applicant net salary (₹/month)</label>
           <input
+            id="uw-field-coApplicantNetSalary"
             style={inp}
             type="number"
             value={draft.coApplicantNetSalary ?? ''}
             onChange={(e) => patchDraft({ coApplicantNetSalary: numOrNull(e.target.value) })}
             placeholder="Optional"
           />
-          <div style={S.hint}>Added for HDFC and Kotak; add the co-applicant&apos;s loans in the obligations table</div>
+          <div style={S.hint}>Added for HDFC, Kotak, Poonawalla and Tata Capital; add the co-applicant&apos;s loans in the obligations table</div>
         </div>
         <div>
           <label style={S.label}>Salary account bank</label>
@@ -1461,7 +1498,7 @@ function OtherIncomePanel({ draft, patchDraft, openSignal }) {
         {OTHER_INCOME_FIELDS.map(([k, label, hint]) => (
           <div key={k}>
             <label style={S.label}>{label} (₹)</label>
-            <input style={inp} type="number" value={oi[k] ?? ''} onChange={(e) => patchOi({ [k]: numOrNull(e.target.value) })} />
+            <input id={`uw-field-${k}`} style={inp} type="number" value={oi[k] ?? ''} onChange={(e) => patchOi({ [k]: numOrNull(e.target.value) })} />
             {hint && <div style={S.hint}>{hint}</div>}
             {k === 'rentMonthly' && (
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12, cursor: 'pointer', marginTop: 6 }}>
@@ -1543,7 +1580,9 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const removeCard = (id) => patchDraft({ cards: draft.cards.filter((c) => c.id !== id) });
   const nextId = (prefix, list) => `${prefix}${Date.now().toString(36)}${list.length}`;
 
-  const entry = results.find((r) => r.bankId === bankId) || results[0];
+  // Auto = the best bank that can be logged now (never one waiting out a recent own-bank enquiry).
+  const autoEntry = autoBankEntry(results);
+  const entry = results.find((r) => r.bankId === bankId) || autoEntry;
   const res = entry && entry.result;
   const lines = (res && res.obligations && res.obligations.loans) || [];
   const cardCalc = res && res.obligations && res.obligations.cards;
@@ -1626,6 +1665,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
             {TREATMENTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>
           <TreatmentNote note={treatmentNote(l, line, entry ? entry.label : 'this bank')} />
+          <TopUpNote note={topUpLoanNote(l, line, best)} />
           {closeLoan.has(l.id) && (
             <div style={{ marginTop: '4px' }} title={`closing raises eligibility by ${fmtINR(closeLoan.get(l.id).gain)}`}>
               <span style={tag('#dcfce7', '#166534')}>Suggested: close</span>
@@ -1760,13 +1800,13 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
               <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
                 Counted for
                 <select style={{ ...cellSel, width: 'auto' }} value={bankId && results.some((r) => r.bankId === bankId) ? bankId : ''} onChange={(e) => setBankId(e.target.value || null)}>
-                  <option value="">Auto (best bank) — {results[0].label}</option>
+                  <option value="">Auto (best bank) — {autoEntry ? autoEntry.label : 'none'}</option>
                   {results.map((r) => <option key={r.bankId} value={r.bankId}>{r.label}</option>)}
                 </select>
               </label>
               {res && res.status === 'NOT_ELIGIBLE' && (
                 <div style={{ ...smallNote, color: RED, marginTop: '3px', maxWidth: '340px', marginLeft: 'auto' }}>
-                  {entry.label}: Not eligible{res.reasons && res.reasons[0] ? ` — ${res.reasons[0]}` : ''}
+                  {entry.label}: {res.eligibleAfterWait ? "Can't log — recent enquiry" : 'Not eligible'}{res.reasons && res.reasons[0] ? ` — ${res.reasons[0]}` : ''}
                 </div>
               )}
             </div>
@@ -2025,6 +2065,8 @@ const STATUS = {
   NEEDS_INPUT: { label: 'Needs input', background: '#fef9c3', color: '#854d0e' },
   DEVIATION: { label: 'Deviation', background: '#ffedd5', color: '#9a3412' },
 };
+// Recent own-bank enquiry: a temporary block, not a decline.
+const WAIT_BADGE = { label: "Can't log — recent enquiry", background: '#e5e7eb', color: '#374151' };
 const pill = { display: 'inline-block', padding: '2px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' };
 const chip = { display: 'inline-block', padding: '3px 10px', margin: '2px 6px 2px 0', borderRadius: '999px', background: '#eef4fb', color: BLUE, fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' };
 
@@ -2211,6 +2253,9 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
   const showFigures = !!(best && (!notEligible || afterWait));
   const summary = showFigures ? summaryMethod(best) : null;
   const fade = needsInput ? { opacity: 0.45 } : afterWait ? { opacity: 0.55 } : null;
+  const waiting = isWaitResult(entry);
+  const badge = waiting ? WAIT_BADGE : st;
+  const askChips = bankAskChips(result, fmtINR);
   const fadeTitle = needsInput ? 'Provisional — fix the input above' : afterWait ? 'Applies once the wait is over' : undefined;
 
   return (
@@ -2218,7 +2263,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
         {rank > 0 && <span style={{ fontSize: '12px', fontWeight: 700, color: '#7a8194' }}>#{rank}</span>}
         <h3 style={{ ...cardHeader, margin: 0 }}>{label}</h3>
-        {st && <span style={{ ...pill, background: st.background, color: st.color }}>{st.label}</span>}
+        {badge && <span style={{ ...pill, background: badge.background, color: badge.color }}>{badge.label}</span>}
         {entry.scorecard && <ScorecardSelect scorecard={entry.scorecard} value={scorecardValue} onChange={onScorecard} />}
         {entry.bureauTier && <BureauTierSelect tier={entry.bureauTier} onChange={onBureauTier} />}
         {entry.riskSegment && <RiskSegmentSelect segment={entry.riskSegment} onChange={onRiskSegment} />}
@@ -2243,9 +2288,10 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
       {needsInput && <MessageList items={result.reasons} color="#854d0e" background="#fef9c3" />}
       {/* Not eligible: the red reasons first. */}
       {notEligible && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
-      {afterWait && (
-        <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background: '#eef4fb', color: BLUE, fontSize: '12px', fontWeight: 600 }}>
-          Eligible after {result.waitDays} day{result.waitDays === 1 ? '' : 's'}: {fmtINR(best.eligibleAmount)} (amount in hand {fmtINR(best.netInHand)})
+      {waiting && (
+        <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background: '#f3f4f6', color: '#374151', fontSize: '12px', fontWeight: 600 }}>
+          Can log from {canLogFromDate(result.waitDays)} ({result.waitDays} day{result.waitDays === 1 ? '' : 's'})
+          {afterWait ? ` — eligible ${fmtINR(best.eligibleAmount)}, amount in hand ${fmtINR(best.netInHand)}` : ''}
         </div>
       )}
 
@@ -2254,6 +2300,11 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
           <SummaryStrip summary={summary} />
           <ObligationsLine result={result} />
           {!notEligible && !needsInput && <CustomerEmi result={result} method={summary.method} cibilScore={cibilScore} />}
+        </div>
+      )}
+      {askChips.length > 0 && (
+        <div style={{ margin: '-4px 0 10px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {askChips.map((c) => <span key={c} style={tag('#fef3c7', '#92400e')}>{c}</span>)}
         </div>
       )}
       {incomeHint && <IncomeHintBox hint={incomeHint} />}
@@ -2280,6 +2331,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
       {result && !notEligible && <MessageList items={(result.notes || []).filter((n) => !isClosureNote(n))} color={BLUE} background="#eef4fb" />}
       {result && !notEligible && <MessageList items={[...odWarnings, ...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" />}
 
+      {entry.topUpNote && <div style={{ fontSize: '12px', color: '#7a8194', margin: '8px 0 0' }}>{entry.topUpNote}</div>}
       {result && result.checklist && result.checklist.length > 0 && <Checklist items={result.checklist} />}
       {entry.productInfo && <ProductInfoLine info={entry.productInfo} />}
     </div>
@@ -2420,6 +2472,58 @@ const REASON_PILLS = {
   'Top-up': { background: '#ede9fe', color: '#5b21b6' },
 };
 const NOTE_TONES = { grey: '#7a8194', red: RED };
+function TopUpNote({ note }) {
+  if (!note) return null;
+  if (note.chip) return <div style={{ marginTop: '4px' }}><span style={tag('#dcfce7', '#166534')}>{note.chip}</span></div>;
+  return <div style={{ fontSize: '10px', color: AMBER, fontWeight: 600, marginTop: '3px', lineHeight: 1.3, whiteSpace: 'normal' }}>{note.text}</div>;
+}
+
+// "Ask the customer before logging — can raise eligibility" (amber panel above the bank cards).
+const ASK_AMBER = { background: '#fffbeb', border: '1px solid #fcd34d', color: '#78350f' };
+const askBankText = (row) => row.banks.map((b) => (b.pct ? `${b.label} ${b.pct}` : b.label)).join(' · ');
+function AskCustomerPanel({ rows, onAdd, onDismiss, onHlYes }) {
+  return (
+    <div style={{ ...ASK_AMBER, margin: '0 0 12px', padding: '10px 14px', borderRadius: '8px' }}>
+      <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '6px' }}>Ask the customer before logging — can raise eligibility</div>
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid #fde68a' }}>
+          <div style={{ flex: 1, minWidth: '260px', fontSize: '12.5px', lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 600 }}>{r.question}</div>
+            <div style={{ fontSize: '11.5px' }}>{askBankText(r)}</div>
+            {r.impact && <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#92400e' }}>{r.impact}</div>}
+            {r.hint && <div style={{ fontSize: '11px', color: '#a16207' }}>{r.hint}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {r.id === 'hl_co_applicant'
+              ? <button style={btnSecSm} onClick={onHlYes}>Yes — co-applicant pays</button>
+              : <button style={btnSecSm} onClick={() => onAdd(r.field)}>Add</button>}
+            <button style={btnGhostSm} onClick={() => onDismiss(r.id)}>Asked — no</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AskCustomerPopup({ rows, onGo, onLater }) {
+  return (
+    <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onLater}>
+      <div style={{ ...ASK_AMBER, background: '#fff', borderRadius: '10px', padding: '16px 18px', maxWidth: '460px', width: '100%', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>Ask these before logging</div>
+        <ul style={{ margin: '0 0 12px', paddingLeft: '18px', fontSize: '12.5px', lineHeight: 1.6 }}>
+          {rows.map((r) => (
+            <li key={r.id}>{r.question}{r.impact ? <span style={{ color: '#92400e' }}> — {r.impact}</span> : null}</li>
+          ))}
+        </ul>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button style={btnSecSm} onClick={onLater}>Later</button>
+          <button style={btnPriSm} onClick={onGo}>Go to Other income</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TreatmentNote({ note }) {
   if (!note) return null;
   if (note.tone === 'green') return <ReasonLine text="BT" />;

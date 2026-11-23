@@ -5,7 +5,7 @@
     "BANDHAN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v7-2026-11-19",
+  "policy_version": "v8-2026-11-23",
   "sources": {
     "rules": "Bandhan salaried policy one-pager (Nov 2026) + banker answers 28 Oct + pricing grid 1 Oct 2026"
   },
@@ -554,7 +554,7 @@
       "PL"
     ],
     "own_bank_loans": "top_up",
-    "top_up_min_emis": 1,
+    "top_up_min_emis": 9,
     "lender_blacklist": [
       {
         "name": "Small fintech / microfinance",
@@ -635,7 +635,8 @@
       }
     ],
     "credit_card_bt": false,
-    "note": "BT after 12 months; microfinance / fintech (KreditBee etc.) never; Bandhan top-up after 1 month"
+    "note": "BT after 12 months; microfinance / fintech (KreditBee etc.) never; Bandhan top-up after 1 month",
+    "top_up_note": "Top-up of own-bank loan after 9 months (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -758,5 +759,12 @@
     ],
     "include_new_loan": true,
     "note": "Max 3 unsecured loans incl. Bandhan retail loans; waiver up to 5 (new loan counted — TO CONFIRM)"
+  },
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> can't log in this bank (Gauri, 23 Nov 2026)"
   }
 }

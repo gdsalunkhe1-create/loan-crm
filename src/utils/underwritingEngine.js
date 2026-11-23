@@ -446,6 +446,9 @@ function btCandidate(policy, loan) {
     return { ok: false, why: 'Already not obligated (≤2 EMIs left)' };
   }
   // Own-bank loan: the bank closes it through a top-up instead of a BT (same effect on eligibility, own label).
+  if (bt.own_bank_loans === 'none' && isOwnBank(policy, loan.lender)) {
+    return { ok: false, why: `${policy.bank} doesn't top up or take over its own loan — stays as obligation (can be closed before login)` };
+  }
   if (bt.own_bank_loans === 'top_up' && isOwnBank(policy, loan.lender)) {
     const needOwn = bt.top_up_min_emis ?? bt.min_emis_paid?.bank ?? 6;
     if ((loan.emisPaid || 0) < needOwn) return { ok: false, why: `Own-bank loan — top-up needs ${needOwn} EMIs paid (${loan.emisPaid || 0} so far)` };
@@ -956,6 +959,22 @@ export function evaluateBank(policy, profileIn) {
       } else if (out.status !== 'NOT_ELIGIBLE') {
         const s = sim(10000);
         if (s.best) hints.gainPer10k = Math.max(0, Math.round(s.best.eligibleAmount - out.best.eligibleAmount));
+      }
+    }
+    // Live home loan in the applicant's name only: what if a co-applicant (spouse / parent) is on it and pays the EMI?
+    const soloHl = (profileIn.loans || []).filter((l) => l.productType === 'HL' && !l.isJoint && !l.hlEmiPaidBy
+      && !l.closedBeforeLoginWithProof && (l.emi || 0) > 0);
+    if (soloHl.length && policy.obligations?.home_loan_joint) {
+      const ids = new Set(soloHl.map((l) => l.id));
+      const co = evaluateBank(policy, { ...profileIn, _noHints: true, _noCardPlan: true,
+        loans: profileIn.loans.map((l) => (ids.has(l.id) ? { ...l, isJoint: true, hlEmiPaidBy: 'co_applicant', coApplicantIncomeOk: true } : l)) });
+      const emi = soloHl.reduce((n, l) => n + (l.emi || 0), 0);
+      const counted = (co.obligations?.loans || []).filter((l) => ids.has(l.id)).reduce((n, l) => n + (l.obligation?.amount || 0), 0);
+      const gain = co.best && out.best ? Math.round(co.best.eligibleAmount - out.best.eligibleAmount) : 0;
+      const makesEligible = out.status === 'NOT_ELIGIBLE' && co.status !== 'NOT_ELIGIBLE';
+      if (counted < emi && (gain > 0 || makesEligible)) {
+        hints.hlCoApplicant = { lenders: soloHl.map((l) => l.lender), emi, counted: Math.round(counted), gain: Math.max(0, gain), makesEligible,
+          rule: policy.obligations.home_loan_joint.rule || null };
       }
     }
     out.incomeHints = hints;

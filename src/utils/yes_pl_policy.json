@@ -6,7 +6,7 @@
     "YESBANK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-11-03",
+  "policy_version": "v2-2026-11-23",
   "sources": {
     "rules": "Gauri's Yes Bank template + FOIR/multiplier annexure + PL pricing Nov'26, 3 Nov 2026"
   },
@@ -1447,7 +1447,8 @@
     "max_loans": 3,
     "max_loans_deviation": 5,
     "credit_card_bt": false,
-    "note": "HDFC NBFC list; any PL or OD after 3 months; 3 loans normally, up to 5 with deviation"
+    "note": "HDFC NBFC list; any PL or OD after 3 months; 3 loans normally, up to 5 with deviation",
+    "top_up_note": "Top-up of own-bank loan after 3 months (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -1537,5 +1538,12 @@
     "Tier 1 city list",
     "Bureau depth: loans summed or largest loan?",
     "IBT column — internal BT / top-up?"
-  ]
+  ],
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> can't log in this bank (Gauri, 23 Nov 2026)"
+  }
 }

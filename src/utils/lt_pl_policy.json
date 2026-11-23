@@ -7,10 +7,12 @@
     "LT FINANCE",
     "LTFIN",
     "LTFS",
-    "L&TFIN"
+    "L&TFIN",
+    "LNTFIN",
+    "LNT FIN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v3-2026-10-27",
+  "policy_version": "v5-2026-11-23",
   "sources": {
     "rules": "L&T PL policy flyer + Other Income page + Gauri's template, 21 Oct 2026"
   },
@@ -368,8 +370,7 @@
       "PL",
       "OD"
     ],
-    "own_bank_loans": "top_up",
-    "top_up_min_emis": 6,
+    "own_bank_loans": "none",
     "lender_blacklist": [],
     "lender_lock_in": [
       {
@@ -381,7 +382,8 @@
       }
     ],
     "blacklist_note": "Any lender that can give a foreclosure letter (Gauri, 27 Oct 2026)",
-    "credit_card_bt": false
+    "credit_card_bt": false,
+    "top_up_note": "No top-up of an existing L&T loan (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {

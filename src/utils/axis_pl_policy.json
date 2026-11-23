@@ -6,7 +6,7 @@
     "AXISBANK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v2-2026-11-06",
+  "policy_version": "v3-2026-11-23",
   "sources": {
     "rules": "Gauri's Axis template, 6 Nov 2026 (rate grid photo not received)"
   },
@@ -439,7 +439,7 @@
       }
     ],
     "own_bank_loans": "top_up",
-    "top_up_min_emis": 6,
+    "top_up_min_emis": 4,
     "lender_lock_in": [
       {
         "name": "IndusInd Bank",
@@ -449,7 +449,8 @@
         "months": 12
       }
     ],
-    "note": "PL after 6 EMIs (HDFC NBFC list; Navi the only app lender). OD from Bajaj/Tata/Kotak/ABFL only after EMIs started + 6 paid. Card BT allowed: total ≤ 6× salary, not EMI-converted, not loan on card, no late payment or charges; card BT on 5-year tenure"
+    "note": "PL after 6 EMIs (HDFC NBFC list; Navi the only app lender). OD from Bajaj/Tata/Kotak/ABFL only after EMIs started + 6 paid. Card BT allowed: total ≤ 6× salary, not EMI-converted, not loan on card, no late payment or charges; card BT on 5-year tenure",
+    "top_up_note": "Top-up of own-bank loan after 4 EMIs (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -532,5 +533,12 @@
   "product_info": {
     "processing_fee": "₹8,999 (15L+) / ₹6,999 (10–15L, and Govt 5L+) under the offer; max 2% + GST",
     "offer": "Festive rates valid for logins till 30 Nov 2026"
+  },
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> can't log in this bank (Gauri, 23 Nov 2026)"
   }
 }

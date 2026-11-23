@@ -144,21 +144,31 @@ export function plEnquiries90d(enquiryList) {
   return enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= 90 && /PERSONAL\s*LOAN/i.test(e.product || '')).length;
 }
 
+// Word-start match, same as the engine's isOwnBank: ' ' + name contains ' ' + one of the match words.
+const words = (s) => ' ' + String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+const ownMatch = (policy) => policy.own_bank_match || [String(policy.bank || '').split(' ')[0]];
+const isOwnLender = (policy, lender) => ownMatch(policy).some((m) => words(lender).includes(words(m)));
+
+// Short bank name for chips: "Axis Bank" -> "Axis", "L&T Finance" -> "L&T", "Yes Bank" stays "Yes Bank".
+export function shortBankName(bank) {
+  const parts = String(bank || '').trim().split(/\s+/);
+  const first = parts[0] || '';
+  return first.length <= 3 && first !== first.toUpperCase() && parts[1] ? `${first} ${parts[1]}` : first;
+}
+
 // Own-bank enquiries per active policy, for the Credit flags summary chips:
-// [{ bankId, short: 'HDFC', daysAgo }]. Mirrors the engine's
+// [{ bankId, short: 'Axis', daysAgo }]. Mirrors the engine's
 // own_bank_enquiry_block test (word-start match on own_bank_match, product
 // filter, within the block's days); the engine stays the one that rejects.
 export function ownBankEnquiries(enquiryList, policies) {
-  const words = (s) => ' ' + String(s || '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const out = [];
   for (const { bank_id: bankId, policy } of policies || []) {
     const blk = policy && policy.own_bank_enquiry_block;
     if (!blk) continue;
-    const own = policy.own_bank_match || [String(policy.bank || '').split(' ')[0]];
     const hits = (enquiryList || []).filter((e) => e.daysAgo != null && e.daysAgo <= blk.days
-      && own.some((m) => words(e.lender).includes(words(m)))
+      && isOwnLender(policy, e.lender)
       && (!blk.products || blk.products.some((p) => words(e.product).includes(words(p)))));
-    if (hits.length) out.push({ bankId, short: own[0], daysAgo: Math.min(...hits.map((e) => e.daysAgo)) });
+    if (hits.length) out.push({ bankId, short: shortBankName(policy.bank) || ownMatch(policy)[0], daysAgo: Math.min(...hits.map((e) => e.daysAgo)) });
   }
   return out;
 }
@@ -499,6 +509,7 @@ export function treatmentNote(loan, line, bankLabel) {
   if (t === 'closed') return { tone: 'grey', text: 'Closed — EMI not counted' };
   if (t === 'obligate') return { tone: 'grey', text: 'Kept as obligation' };
   if (t === 'bt' && line && line.bt) {
+    if (line.bt.ok && line.bt.topUp) return null;   // the row's "Top-up" chip says it (topUpLoanNote)
     return line.bt.ok ? { tone: 'green', text: 'BT' } : { tone: 'red', text: `Not taken in BT by ${bankLabel}: ${line.bt.why}` };
   }
   return null;
@@ -542,15 +553,16 @@ export function incomeReminderText(hintKinds) {
   return `Ask the customer about rent, bonus / incentives and co-applicant income — ${tail}.`;
 }
 
-// Bank results order: Eligible, Deviation, Needs input, Not eligible (errors last);
-// inside a group the highest eligible amount first, then the highest in hand.
-const STATUS_RANK = { ELIGIBLE: 0, DEVIATION: 1, NEEDS_INPUT: 2, NOT_ELIGIBLE: 3 };
+// Bank results order: Eligible, Deviation, Can't log yet (recent own-bank enquiry),
+// Needs input, Not eligible (errors last); inside a group the highest eligible amount
+// first, then the highest in hand.
+const STATUS_RANK = { ELIGIBLE: 0, DEVIATION: 1, NEEDS_INPUT: 3, NOT_ELIGIBLE: 4 };
 export function rankResults(results) {
   const key = (r) => {
     const res = r.result;
     const best = res && res.best;
     return [
-      r.error || !res ? 4 : (STATUS_RANK[res.status] ?? 4),
+      r.error || !res ? 5 : res.eligibleAfterWait ? 2 : (STATUS_RANK[res.status] ?? 5),
       best && best.eligibleAmount != null ? best.eligibleAmount : -Infinity,
       best && best.netInHand != null ? best.netInHand : -Infinity,
     ];
@@ -565,6 +577,122 @@ export function rankResults(results) {
 export function pickedFirst(ranked, bankId) {
   const picked = bankId && ranked.find((r) => r.bankId === bankId);
   return picked ? [picked, ...ranked.filter((r) => r !== picked)] : ranked;
+}
+
+// ---- Own-bank enquiry wait (engine: status NOT_ELIGIBLE + eligibleAfterWait + waitDays) ----
+export const isWaitResult = (entry) => !!(entry && entry.result && entry.result.eligibleAfterWait);
+
+// "Counted for: Auto (best bank)": the top-ranked bank that can be logged now —
+// never one blocked by a recent own-bank enquiry. null when there is none.
+export function autoBankEntry(ranked) {
+  return (ranked || []).find((r) => r && r.result && !r.error && !isWaitResult(r)) || null;
+}
+
+// Date the bank can be logged: today + waitDays, as "dd Mon" (e.g. "03 Dec").
+export function canLogFromDate(waitDays, today = new Date()) {
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (Number(waitDays) || 0));
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTH_NAMES[d.getMonth()]}`;
+}
+
+// ---- "Ask the customer before logging" panel ----
+// One row per question, only those that apply: some bank counts it and it isn't entered yet.
+// entries: bank results ({ bankId, label, result }); dismissed: row ids the agent marked "Asked — no".
+const ASK_GROUPS = [
+  { id: 'bonus', keys: ['bonus', 'quarterly', 'monthly_incentive'], question: 'Bonus / incentives (monthly, quarterly, annual)?' },
+  { id: 'rent', keys: ['rental'], question: 'Rent income (registered / notarised agreement)?' },
+  { id: 'co_applicant', keys: ['co_applicant'], question: 'Co-applicant (spouse / parent) with income?', hint: 'Higher earner should be the applicant' },
+];
+const pctRange = (ps) => {
+  const u = [...new Set(ps)].sort((a, b) => a - b);
+  return u.length === 1 ? `${u[0]}%` : `${u[0]}–${u[u.length - 1]}%`;
+};
+const nBanks = (n) => `${n} bank${n === 1 ? '' : 's'}`;
+
+export function askCustomerRows(entries, draft, fmtAmount, dismissed = []) {
+  const skip = new Set(dismissed || []);
+  const list = (entries || []).filter((e) => e && e.result && e.result.incomeHints);
+  const rows = [];
+  for (const g of ASK_GROUPS) {
+    const banks = [];
+    let gain = null; let needed = null; let field = null;
+    for (const e of list) {
+      const h = e.result.incomeHints;
+      const open = openIncomeHints(h, draft).filter((a) => g.keys.includes(a.key));
+      if (!open.length) continue;
+      if (!field) field = g.id === 'co_applicant' ? 'coApplicantNetSalary' : HINT_FIELDS[open[0].key];
+      banks.push({ bankId: e.bankId, label: e.label, pct: g.id === 'co_applicant' ? null : pctRange(open.map((a) => a.pct)) });
+      const st = e.result.status;
+      if (st !== 'NOT_ELIGIBLE' && h.gainPer10k > 0 && (!gain || h.gainPer10k > gain.amount)) gain = { amount: h.gainPer10k, label: e.label };
+      if (st === 'NOT_ELIGIBLE' && e.result.softFail && h.neededExtra > 0 && (!needed || h.neededExtra < needed.amount)) needed = { amount: h.neededExtra, label: e.label };
+    }
+    if (!banks.length || skip.has(g.id)) continue;
+    const impact = [
+      gain && `each ₹10,000/month adds about ${fmtAmount(gain.amount)} at ${gain.label}`,
+      needed && `${fmtAmount(needed.amount)}/month more makes ${needed.label} eligible`,
+    ].filter(Boolean).join(' · ');
+    rows.push({ id: g.id, question: g.question, hint: g.hint || null, banks, impact: impact || null, field });
+  }
+  // Home loan in the applicant's name only: is a co-applicant on it, paying the EMI?
+  const hl = list.filter((e) => e.result.incomeHints.hlCoApplicant);
+  if (hl.length && !skip.has('hl_co_applicant')) {
+    const lenders = [...new Set(hl.flatMap((e) => e.result.incomeHints.hlCoApplicant.lenders || []))];
+    const raised = hl.filter((e) => e.result.incomeHints.hlCoApplicant.gain > 0);
+    const made = hl.filter((e) => e.result.incomeHints.hlCoApplicant.makesEligible);
+    const impact = [
+      raised.length && `Raises eligibility at ${nBanks(raised.length)} (up to ${fmtAmount(Math.max(...raised.map((e) => e.result.incomeHints.hlCoApplicant.gain)))})`,
+      made.length && `makes ${nBanks(made.length)} eligible`,
+    ].filter(Boolean).join(' · ');
+    rows.push({
+      id: 'hl_co_applicant',
+      question: `Is there a co-applicant on the ${lenders.join(' / ') || 'home'} home loan who pays the EMI?`,
+      hint: null,
+      banks: hl.map((e) => ({ bankId: e.bankId, label: e.label, pct: null })),
+      impact: impact || null,
+      field: null,
+    });
+  }
+  return rows;
+}
+
+// "Yes — co-applicant pays": the home loans the engine treats as applicant-only
+// (same filter as its hlCoApplicant hint) become joint, EMI paid by the co-applicant,
+// co-applicant income OK.
+const isSoloHl = (l) => l.productType === 'HL' && !l.isJoint && !l.hlEmiPaidBy && !l.closedBeforeLoginWithProof && (l.emi || 0) > 0;
+export function hlCoApplicantPaysPatch(loans) {
+  return { loans: (loans || []).map((l) => (isSoloHl(l) ? { ...l, isJoint: true, hlEmiPaidBy: 'co_applicant', coApplicantIncomeOk: true } : l)) };
+}
+
+// Small chips under a bank card's summary strip.
+export function bankAskChips(result, fmtAmount) {
+  const h = result && result.incomeHints;
+  if (!h) return [];
+  const out = [];
+  if ((h.accepts || []).some((a) => a.key === 'co_applicant')) out.push('Co-applicant income allowed');
+  const hl = h.hlCoApplicant;
+  if (hl && hl.gain > 0) out.push(`Joint HL: +${fmtAmount(hl.gain)}`);
+  else if (hl && hl.makesEligible) out.push('Joint HL: makes eligible');
+  return out;
+}
+
+// ---- Own-bank top-up ----
+// Loan row: "Top-up" chip when the selected bank's best plan closes it through a top-up;
+// otherwise the reason when it's an own-bank loan that can't be topped up yet (or at all).
+// Treatment "BT" already shows its red reason line, Obligate / Closed need nothing.
+export function topUpLoanNote(loan, line, best) {
+  const t = treatmentChoice(loan);
+  if (!line || !line.bt || t === 'closed' || t === 'obligate') return null;
+  if (isTopUp(best, loan.id)) return { chip: 'Top-up' };
+  if (t !== 'bt' && !line.bt.ok && /top.?up/i.test(line.bt.why || '')) return { text: line.bt.why };
+  return null;
+}
+
+// Bank card grey note (balance_transfer.top_up_note, e.g. Kotak: rate same as the existing loan)
+// when the customer has an open loan with that bank. The "(Gauri, 23 Nov 2026)" source tag is dropped.
+export function ownBankTopUpNote(policy, loans) {
+  const note = policy && policy.balance_transfer && policy.balance_transfer.top_up_note;
+  if (!note) return null;
+  const has = (loans || []).some((l) => !l.closedBeforeLoginWithProof && (l.outstanding || 0) > 0 && isOwnLender(policy, l.lender));
+  return has ? note.replace(/\s*\([^()]*\d{4}\)/g, '').replace(/\s+/g, ' ').trim() : null;
 }
 
 // Loans in the selected bank's closure plan get Treatment "Closed before login (proof)" —

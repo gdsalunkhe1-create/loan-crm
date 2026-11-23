@@ -5,7 +5,7 @@
     "INDUSIND"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v8-2026-11-17",
+  "policy_version": "v9-2026-11-23",
   "sources": {
     "rules": "Gauri's IndusInd template, 20 Oct 2026"
   },
@@ -249,7 +249,7 @@
       "PL"
     ],
     "own_bank_loans": "top_up",
-    "top_up_min_emis": 6,
+    "top_up_min_emis": 3,
     "nbfc_whitelist": [
       {
         "name": "Bajaj Finance",
@@ -470,7 +470,8 @@
       }
     ],
     "credit_card_bt": false,
-    "emi_count_note": "BT after 3 installments since disbursal — a first interest-only installment counts (Gauri, 27 Oct 2026)"
+    "emi_count_note": "BT after 3 installments since disbursal — a first interest-only installment counts (Gauri, 27 Oct 2026)",
+    "top_up_note": "Top-up of own-bank loan after 3 months (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {
@@ -537,5 +538,12 @@
   "open_items": [
     "Enquiries over 6: hard reject or deviation; own-bank 30-day block?"
   ],
-  "exclude_variable_pay": true
+  "exclude_variable_pay": true,
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own-bank PL enquiry within 30 days -> can't log in this bank (Gauri, 23 Nov 2026)"
+  }
 }

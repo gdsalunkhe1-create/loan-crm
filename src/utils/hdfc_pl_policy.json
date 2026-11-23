@@ -1,7 +1,7 @@
 {
   "bank": "HDFC Bank",
   "product": "Personal Loan (salaried)",
-  "policy_version": "v17-2026-11-17",
+  "policy_version": "v18-2026-11-23",
   "sources": {
     "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
     "rules": "Gauri's policy notes, 12 Oct 2026"
@@ -945,7 +945,9 @@
       }
     ],
     "od_interest_only_after_months": 6,
-    "od_note": "HDFC takes any OD (Bajaj Flexi etc.) in BT after 6 months, even if only interest is being paid (Gauri, 7 Nov 2026)"
+    "od_note": "HDFC takes any OD (Bajaj Flexi etc.) in BT after 6 months, even if only interest is being paid (Gauri, 7 Nov 2026)",
+    "top_up_min_emis": 3,
+    "top_up_note": "Top-up of own-bank loan after 3 months (Gauri, 23 Nov 2026)"
   },
   "obligations": {
     "credit_card": {

@@ -1339,3 +1339,118 @@ describe('"Customer wants" rate uses the engine add-ons (rateAdjust)', () => {
     expect(rateAddOnText({ roi: 12, addOn: 0 }, adj, 60, {}, 760)).toBeNull();
   });
 });
+
+describe('Own-bank enquiry block, ask the customer, top-up (23 Nov policies)', () => {
+  const A = require('./underwritingAdapters');
+  const IDS = { axis: 'axis_bank', bandhan: 'bandhan', hdfc: 'hdfc_bank', icici: 'icici', indusind: 'indusind', kotak: 'kotak', lt: 'lt', poonawalla: 'poonawalla_fincorp', tata: 'tata_capital', yes: 'yes' };
+  const CATS = { axis_bank: 'CAT A', bandhan: 'CAT A', hdfc_bank: 'CAT A', icici: 'Preferred', indusind: 'CAT A', kotak: 'CAT A', lt: 'CAT A', poonawalla_fincorp: 'CAT A', tata_capital: 'CAT A', yes: 'Gold' };
+  const all = Object.keys(IDS).map((k) => ({ bank_id: IDS[k], policy: require(`./${k}_pl_policy.json`) }));
+  const fmt = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+  const enquiryList = [
+    { lender: 'AXIS BANK', product: 'Personal Loan', daysAgo: 10 },
+    { lender: 'ICICI BANK', product: 'Personal Loan', daysAgo: 28 },
+    { lender: 'LNTFIN', product: 'Personal Loan', daysAgo: 5 },
+  ];
+  const profile = {
+    netSalary: 90000, cibilScore: 770, city: 'Pune', salaryAccountBank: 'HDFC Bank',
+    company: { name: 'ACME', category: null, categoryConfirmed: true, categoriesByBank: CATS, confirmedByBank: {} },
+    credit: { enquiryList },
+    loans: [
+      { id: 'hl', lender: 'SBI', productType: 'HL', outstanding: 3000000, emi: 30000, emisPaid: 24, emisRemaining: 200, treatment: 'auto' },
+      { id: 'bd', lender: 'BANDHAN BANK', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 5, emisRemaining: 30, treatment: 'auto' },
+      { id: 'kt', lender: 'KOTAK MAHINDRA BANK', productType: 'PL', outstanding: 300000, emi: 9000, emisPaid: 10, emisRemaining: 30, treatment: 'auto' },
+    ],
+    cards: [],
+  };
+  const run = (p = profile) => all.map((x) => ({ bankId: x.bank_id, label: x.policy.bank, result: evaluateBank(x.policy, p) }));
+  const results = run();
+  const byId = (id) => results.find((r) => r.bankId === id);
+  const line = (id, loanId) => byId(id).result.obligations.loans.find((l) => l.id === loanId);
+
+  test('Credit flags: every bank with a PL enquiry in 30 days, short names, L&T matched as LNTFIN', () => {
+    expect(A.ownBankEnquiries(enquiryList, all)).toEqual([
+      { bankId: 'axis_bank', short: 'Axis', daysAgo: 10 },
+      { bankId: 'icici', short: 'ICICI', daysAgo: 28 },
+      { bankId: 'lt', short: 'L&T', daysAgo: 5 },
+    ]);
+    expect(['Axis Bank', 'L&T Finance', 'Yes Bank', 'Kotak Mahindra Bank', 'Tata Capital', 'HDFC Bank'].map(A.shortBankName))
+      .toEqual(['Axis', 'L&T', 'Yes Bank', 'Kotak', 'Tata', 'HDFC']);
+  });
+
+  test('recent-enquiry banks: after Eligible / Deviation, never the auto bank, "Can log from" date', () => {
+    const lt = byId('lt').result;
+    expect([lt.status, lt.eligibleAfterWait, lt.waitDays]).toEqual(['NOT_ELIGIBLE', true, 25]);
+    expect(lt.reasons[0]).toBe("L&T Finance enquiry 5 day(s) ago — can't be done with L&T Finance until 30 days have passed (25 more)");
+    const ranked = A.rankResults(results);
+    const pos = (id) => ranked.findIndex((r) => r.bankId === id);
+    const lastOk = Math.max(...ranked.map((r, i) => (['ELIGIBLE', 'DEVIATION'].includes(r.result.status) ? i : -1)));
+    expect(pos('lt')).toBeGreaterThan(lastOk);
+    expect(pos('icici')).toBeGreaterThan(lastOk);
+    expect(pos('axis_bank')).toBeGreaterThan(pos('lt'));   // plain Not eligible (no EMI room) goes after the waits
+    expect(A.isWaitResult(byId('lt'))).toBe(true);
+    expect(A.isWaitResult(byId('axis_bank'))).toBe(false);
+    expect(A.autoBankEntry(ranked).bankId).toBe(ranked.find((r) => r.result.status === 'ELIGIBLE').bankId);
+    // Only waiting banks left: no auto bank at all.
+    const waits = ranked.filter(A.isWaitResult);
+    expect(A.rankResults([...waits, { bankId: 'err', error: 'x' }])[0].bankId).toBe(waits[0].bankId);
+    expect(A.autoBankEntry(A.rankResults([...waits, { bankId: 'err', error: 'x' }]))).toBeNull();
+    expect(A.canLogFromDate(25, new Date(2026, 10, 23))).toBe('18 Dec');
+    expect(A.canLogFromDate(2, new Date(2026, 10, 23))).toBe('25 Nov');
+  });
+
+  test('ask-the-customer rows: bonus, rent, co-applicant, joint HL — only those that apply', () => {
+    const rows = A.askCustomerRows(results, profile, fmt);
+    expect(rows.map((r) => r.id)).toEqual(['bonus', 'rent', 'co_applicant', 'hl_co_applicant']);
+    const co = rows.find((r) => r.id === 'co_applicant');
+    expect(co.banks.map((b) => b.bankId)).toEqual(['hdfc_bank', 'kotak', 'poonawalla_fincorp', 'tata_capital']);
+    expect(co.hint).toBe('Higher earner should be the applicant');
+    expect(co.field).toBe('coApplicantNetSalary');
+    const rent = rows.find((r) => r.id === 'rent');
+    expect(rent.banks.find((b) => b.bankId === 'bandhan').pct).toBe('100%');
+    expect(rent.field).toBe('rentMonthly');
+    expect(rent.impact).toMatch(/^each ₹10,000\/month adds about ₹[\d,]+ at [A-Za-z&. ]+$/);
+    const hl = rows.find((r) => r.id === 'hl_co_applicant');
+    expect(hl.question).toBe('Is there a co-applicant on the SBI home loan who pays the EMI?');
+    expect(hl.impact).toMatch(/^Raises eligibility at \d+ banks \(up to ₹[\d,]+\)$/);
+    // Rent entered + "Asked — no" on bonus: both rows go.
+    const d2 = { ...profile, otherIncome: { rentMonthly: 15000 } };
+    expect(A.askCustomerRows(results, d2, fmt, ['bonus']).map((r) => r.id)).toEqual(['co_applicant', 'hl_co_applicant']);
+  });
+
+  test('"Yes — co-applicant pays" makes the solo HL joint, paid by the co-applicant; the HL question then goes', () => {
+    const patch = A.hlCoApplicantPaysPatch(profile.loans);
+    expect(patch.loans[0]).toMatchObject({ id: 'hl', isJoint: true, hlEmiPaidBy: 'co_applicant', coApplicantIncomeOk: true });
+    expect(patch.loans.slice(1)).toEqual(profile.loans.slice(1));
+    const after = run({ ...profile, ...patch });
+    expect(A.askCustomerRows(after, { ...profile, ...patch }, fmt).map((r) => r.id)).not.toContain('hl_co_applicant');
+  });
+
+  test('bank card chips: co-applicant income allowed, joint HL gain', () => {
+    const k = A.bankAskChips(byId('kotak').result, fmt);
+    expect(k[0]).toBe('Co-applicant income allowed');
+    expect(k[1]).toMatch(/^Joint HL: \+₹[\d,]+$/);
+    expect(A.bankAskChips(byId('yes').result, fmt).some((c) => c.startsWith('Co-applicant'))).toBe(false);
+  });
+
+  test('top-up: chip when taken as top-up, the reason when not allowed yet / never (L&T)', () => {
+    expect(A.topUpLoanNote(profile.loans[2], line('kotak', 'kt'), byId('kotak').result.best)).toEqual({ chip: 'Top-up' });
+    expect(A.topUpLoanNote(profile.loans[1], line('bandhan', 'bd'), byId('bandhan').result.best))
+      .toEqual({ text: 'Own-bank loan — top-up needs 9 EMIs paid (5 so far)' });
+    expect(A.topUpLoanNote({ ...profile.loans[1], treatment: 'obligate' }, line('bandhan', 'bd'), byId('bandhan').result.best)).toBeNull();
+    const ltPolicy = require('./lt_pl_policy.json');
+    const ltLoan = { id: 'l1', lender: 'LNTFIN', productType: 'PL', outstanding: 150000, emi: 6000, emisPaid: 20, emisRemaining: 12, treatment: 'auto' };
+    const r = evaluateBank(ltPolicy, { ...profile, credit: { enquiryList: [] }, loans: [ltLoan] });
+    const ln = r.obligations.loans.find((l) => l.id === 'l1');
+    expect(A.topUpLoanNote(ltLoan, ln, r.best).text).toMatch(/doesn't top up or take over its own loan — stays as obligation/);
+    // Treatment BT on a top-up the bank takes: no separate green "BT" line, the chip says it.
+    expect(A.treatmentNote({ treatment: 'bt' }, { bt: { ok: true, topUp: true } }, 'Kotak')).toBeNull();
+  });
+
+  test('card grey note from balance_transfer.top_up_note when an own-bank loan exists', () => {
+    const kotak = require('./kotak_pl_policy.json');
+    expect(A.ownBankTopUpNote(kotak, profile.loans)).toBe('Top-up of own-bank loan after 6 months — rate stays the same as the existing loan');
+    expect(A.ownBankTopUpNote(kotak, profile.loans.filter((l) => l.id !== 'kt'))).toBeNull();
+    expect(A.ownBankTopUpNote(kotak, [{ ...profile.loans[2], closedBeforeLoginWithProof: true }])).toBeNull();
+    expect(A.ownBankTopUpNote(require('./tata_pl_policy.json'), [{ lender: 'TATA CAPITAL', outstanding: 1 }])).toBeNull();   // no note in the policy
+  });
+});

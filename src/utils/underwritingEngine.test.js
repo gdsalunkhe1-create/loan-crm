@@ -406,9 +406,9 @@ test('L&T: FOIR by NTH x CIBIL x category, lower of FOIR & multiplier, city mini
   expect(evaluateBank(lt, p({ netSalary: 45000, company: { categoriesByBank: { lt: 'CAT A' } } })).best.eligibleAmount).toBeLessThanOrEqual(1000000);
   // loan late payment within 6 months rejects
   expect(evaluateBank(lt, p({ netSalary: 120000, credit: { enquiryList: [], dpdAccounts: [{ lender: 'SBI', productType: 'PL', monthsAgo: 4 }] } })).status).toBe('NOT_ELIGIBLE');
-  // own L&T loan is a top-up
+  // own L&T loan: no top-up (23 Nov 2026) — stays as obligation
   const own = evaluateBank(lt, p({ netSalary: 120000, loans: [{ id: 'lt', lender: 'L&T FINANCE LTD', productType: 'PL', outstanding: 200000, emi: 9000, emisPaid: 10 }] }));
-  expect(own.obligations.loans[0].bt.topUp).toBe(true);
+  expect(own.obligations.loans[0].bt.ok).toBe(false);
 });
 
 test('IndusInd: own house + live home loan at 75K+ gives FOIR 75%; Navi taken in BT; Navi needs no OD confirmation at HDFC', () => {
@@ -503,7 +503,7 @@ test('Bandhan (one-pager Nov 2026): FOIR 50/60/65/70, 75% at 1L+ with own house 
     { id: 'a', lender: 'AXIS BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 11 },
     { id: 'b', lender: 'AXIS BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 12 },
     { id: 'k', lender: 'KRAZYBEE', productType: 'PL', outstanding: 50000, emi: 5000, emisPaid: 20 },
-    { id: 'own', lender: 'BANDHAN BANK', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 1 },
+    { id: 'own', lender: 'BANDHAN BANK', productType: 'PL', outstanding: 200000, emi: 8000, emisPaid: 9 },
     { id: 'g', lender: 'MUTHOOT', productType: 'GOLD', outstanding: 300000 }] }));
   expect(Object.fromEntries(bt.obligations.loans.map((l) => [l.id, l.bt.ok]))).toEqual({ a: false, b: true, k: false, own: true, g: false });
   expect(bt.obligations.loans.find((l) => l.id === 'g').obligation.amount).toBe(0);
@@ -749,4 +749,48 @@ test('Poonawalla: Central Govt above ₹75K net is treated as CAT A', () => {
   expect(lo.notes.join()).not.toMatch(/treated as CAT A/);
   const a = evaluateBank(pfl, { ...base, netSalary: 90000, loans: [], cards: [], cibilScore: 760, city: 'Pune', company: { categoriesByBank: { poonawalla_fincorp: 'CAT A' } } });
   expect(hi.best.eligibleAmount).toBe(a.best.eligibleAmount);
+});
+
+test('Own-bank PL enquiry in last 30 days blocks login at every bank (Axis 10 days ago)', () => {
+  const pr = { ...base, netSalary: 120000, loans: [], cards: [], cibilScore: 770, city: 'Pune',
+    company: { categoriesByBank: { axis_bank: 'CAT A', bandhan: 'CAT A', indusind: 'CAT A', yes: 'CAT A', tata_capital: 'CAT A', poonawalla_fincorp: 'CAT A', lt: 'CAT A' } },
+    credit: { enquiryList: [{ lender: 'AXIS BANK', product: 'Personal Loan', daysAgo: 10 }, { lender: 'LNTFIN', product: 'Personal Loan', daysAgo: 5 }] } };
+  const ax = evaluateBank(axis, pr);
+  expect(ax.status).toBe('NOT_ELIGIBLE');
+  expect(ax.eligibleAfterWait).toBe(true);
+  expect(ax.reasons[0]).toMatch(/Axis Bank enquiry 10 day\(s\) ago — can't be done with Axis Bank until 30 days have passed \(20 more\)/);
+  expect(evaluateBank(lt, pr).eligibleAfterWait).toBe(true);   // CIBIL shows L&T as LNTFIN
+  for (const pol of [bandhan, indusind, yes, tata, pfl]) expect(pol.own_bank_enquiry_block.days).toBe(30);
+  const old = evaluateBank(axis, { ...pr, credit: { enquiryList: [{ lender: 'AXIS BANK', product: 'Personal Loan', daysAgo: 31 }] } });
+  expect(old.eligibleAfterWait).toBeFalsy();
+});
+
+test('Own-bank top-up timing per bank (23 Nov 2026)', () => {
+  const t = { hdfc: policy, axis, indusind, yes, bandhan, icici, pfl, kotak };
+  expect(Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v.balance_transfer.top_up_min_emis])))
+    .toEqual({ hdfc: 3, axis: 4, indusind: 3, yes: 3, bandhan: 9, icici: 6, pfl: 6, kotak: 6 });
+  const run = (paid) => evaluateBank(axis, { ...base, netSalary: 120000, cards: [], cibilScore: 770, city: 'Pune', company: { categoriesByBank: { axis_bank: 'CAT A' } },
+    loans: [{ id: 'own', lender: 'AXIS BANK', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: paid, emisRemaining: 40 }] })
+    .obligations.loans[0].bt.ok;
+  expect([run(3), run(4)]).toEqual([false, true]);
+});
+
+test('Hint: co-applicant on a solo home loan lowers the counted EMI', () => {
+  const pr = { ...base, netSalary: 100000, cards: [], cibilScore: 770, city: 'Pune', company: { categoriesByBank: { kotak: 'CAT A' }, category: 'CAT A', categoryConfirmed: true },
+    loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 30000, emisPaid: 40, emisRemaining: 200 }] };
+  const r = evaluateBank(kotak, pr);
+  expect(r.incomeHints.hlCoApplicant.emi).toBe(30000);
+  expect(r.incomeHints.hlCoApplicant.counted).toBe(0);
+  expect(r.incomeHints.hlCoApplicant.gain).toBeGreaterThan(0);
+  const joint = evaluateBank(kotak, { ...pr, loans: [{ ...pr.loans[0], isJoint: true, hlEmiPaidBy: 'applicant' }] });
+  expect(joint.incomeHints.hlCoApplicant).toBeUndefined();
+});
+
+test('L&T: no top-up — own L&T loan stays as obligation', () => {
+  const r = evaluateBank(lt, { ...base, netSalary: 120000, cards: [], cibilScore: 770, city: 'Pune', company: { categoriesByBank: { lt: 'CAT A' } },
+    loans: [{ id: 'own', lender: 'L&T FINANCE', productType: 'PL', outstanding: 300000, emi: 10000, emisPaid: 20, emisRemaining: 30 }] });
+  const l = r.obligations.loans[0];
+  expect(l.bt.ok).toBe(false);
+  expect(l.bt.why).toMatch(/doesn't top up/);
+  expect(l.obligation.amount).toBe(10000);
 });

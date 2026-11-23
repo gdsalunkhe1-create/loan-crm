@@ -5,7 +5,7 @@
     "KOTAK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v11-2026-11-17",
+  "policy_version": "v12-2026-11-23",
   "sources": {
     "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
   },
@@ -338,7 +338,9 @@
         ],
         "months": 12
       }
-    ]
+    ],
+    "top_up_min_emis": 6,
+    "top_up_note": "Top-up of own-bank loan after 6 months (Gauri, 23 Nov 2026) — rate stays the same as the existing loan"
   },
   "obligations": {
     "credit_card": {
