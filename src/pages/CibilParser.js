@@ -669,6 +669,11 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   const [showPwd,setShowPwd]             = useState(false)
   const [showEnqDetail,setShowEnqDetail] = useState(false)
   const pwdRef = useRef(null)
+  // Per-instance file input. Dashboard keeps BOTH analyzers (CIBIL.com + PaisaBazaar) mounted at
+  // once, so the old document.getElementById('cibil-inp') always found the first (hidden CIBIL.com)
+  // copy — picking a file on the PaisaBazaar page sent it to the invisible analyzer and nothing
+  // appeared to happen.
+  const fileInpRef = useRef(null)
   const parseRunRef = useRef(0)
 
   // Warm-up preload only — a failure here is retried and reported by parseFile's own load.
@@ -816,7 +821,8 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
   },[source])
 
   const handleFile = useCallback((file)=>{
-    if(!file||file.type!=='application/pdf'){ setError('Please upload a valid PDF.'); return }
+    // Some Windows setups report an empty MIME type for PDFs, so also accept a .pdf extension.
+    if(!file||!(file.type==='application/pdf'||/\.pdf$/i.test(file.name||''))){ setError('Please upload a valid PDF.'); return }
     setFileName(file.name); setNeedsPwd(false); setPwd(''); setPwdErr('')
     parseFile(file,'')
   },[parseFile])
@@ -1082,7 +1088,7 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
 
       {accounts.length===0&&!parsing&&!needsPwd&&(
         <div style={S.crd}>
-          <div onDrop={handleDrop} onDragOver={e=>e.preventDefault()} onClick={()=>document.getElementById('cibil-inp').click()}
+          <div onDrop={handleDrop} onDragOver={e=>e.preventDefault()} onClick={()=>fileInpRef.current&&fileInpRef.current.click()}
             style={{padding:'48px 32px',textAlign:'center',cursor:'pointer',border:'2px dashed #CBD5E0',borderRadius:12,margin:16}}
             onMouseEnter={e=>e.currentTarget.style.borderColor='#185FA5'}
             onMouseLeave={e=>e.currentTarget.style.borderColor='#CBD5E0'}>
@@ -1092,7 +1098,9 @@ export default function CibilParser({ userRole, userId, source, onUseInCam }) {
             <p style={{color:'#A0AEC0',margin:0,fontSize:12}}>
               {source==='cibil'?'CIBIL.com myscore PDFs':source==='paisabazaar'?'PaisaBazaar Credit Health Reports':'CIBIL.com · PaisaBazaar · Password-protected PDFs ✓'}
             </p>
-            <input id="cibil-inp" type="file" accept=".pdf" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
+            <input ref={fileInpRef} id={source==='paisabazaar'?'cibil-inp-pb':'cibil-inp'} type="file" accept=".pdf" style={{display:'none'}}
+              onClick={e=>e.stopPropagation()}
+              onChange={e=>{ const f=e.target.files[0]; e.target.value=''; handleFile(f) }}/>
           </div>
         </div>
       )}
