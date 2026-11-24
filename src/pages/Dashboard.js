@@ -5707,6 +5707,44 @@ function useAdminImportState(key,initialArg){
   },[key])
   return [value,set]
 }
+function patchAdminImport(patch){
+  adminImportStore.state={...adminImportStore.state,...patch}
+  persistAdminImport()
+  adminImportStore.listeners.forEach(l=>l())
+}
+const SALARY_HEADER_RE=/salary|income|net\s*pay|take\s*home|monthly\s*sal/i
+// Parses the picked sheet and writes it straight into the store. Deliberately module-level with no
+// component closure: AdminDashboardHome is declared inside Dashboard, so any Dashboard re-render
+// (e.g. supabase-js emitting SIGNED_IN when the tab regains visibility after the OS file picker
+// closes → App's setSession) remounts it mid-pick. Results must still land in the modal.
+async function processImportFile(file){
+  if(!file)return
+  try{
+    const{headers,rows}=await parseSpreadsheet(file)
+    if(!rows.length){ patchAdminImport({csvError:'No data rows found'}); return }
+    const map=autoMapHeaders(headers)
+    map.monthly_salary=headers.find(h=>SALARY_HEADER_RE.test(h))||null
+    console.info('[import] parsed headers:',headers,'auto-map:',map)
+    patchAdminImport({
+      fileHeaders:headers, rawRows:rows, colMap:map, importFileName:file.name,
+      csvError:'', importResult:null, showAllPreview:false, importProgress:null, importInterrupted:false,
+    })
+  }catch(err){ patchAdminImport({csvError:'Parse error: '+err.message}) }
+}
+// The file <input> lives outside the React tree (on <body>) so a remount can't remove it before
+// its change event fires. One picker at a time; a stale one from a cancelled pick is dropped.
+let adminImportPicker=null
+function openAdminImportPicker(){
+  if(adminImportPicker){ adminImportPicker.remove(); adminImportPicker=null }
+  const inp=document.createElement('input')
+  inp.type='file'; inp.accept='.xlsx,.xls,.csv,.txt'; inp.style.display='none'
+  const done=()=>{ inp.remove(); if(adminImportPicker===inp) adminImportPicker=null }
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; done(); if(f) processImportFile(f) }
+  inp.addEventListener('cancel',done)
+  document.body.appendChild(inp)
+  adminImportPicker=inp
+  inp.click()
+}
 
 export default function Dashboard({ session }) {
   const [activePage,setActivePage]   =useState('dashboard')
@@ -5980,7 +6018,7 @@ export default function Dashboard({ session }) {
         .on('postgres_changes',{event:'*',schema:'public',table:'loan_obligations'},triggerFetch)
         .subscribe(status=>setApRtConnected(status==='SUBSCRIBED'))
       const poll=setInterval(triggerFetch,60000)
-      const onVis=()=>{ if(document.visibilityState==='visible'&&!statusDropOpenRef.current&&Date.now()-lastFetchAtRef.current>15000) triggerFetch() }
+      const onVis=()=>{ if(document.visibilityState==='visible'&&!statusDropOpenRef.current&&!adminImportStore.state.showImport&&Date.now()-lastFetchAtRef.current>15000) triggerFetch() }
       document.addEventListener('visibilitychange',onVis)
       return()=>{ supabase.removeChannel(sub); clearInterval(poll); clearTimeout(debounceTimer); document.removeEventListener('visibilitychange',onVis) }
     },[])
@@ -7341,7 +7379,6 @@ export default function Dashboard({ session }) {
       const n=Math.round(parseFloat(m[1])*mult)
       return Number.isFinite(n)&&n>0?n:null
     }
-    const SALARY_HEADER_RE=/salary|income|net\s*pay|take\s*home|monthly\s*sal/i
 
     // Derived rows from rawRows + colMap (keeps all existing csvRows references working)
     const csvRows = (()=>{
@@ -7443,22 +7480,6 @@ export default function Dashboard({ session }) {
       run()
       return()=>{cancelled=true}
     },[colMap.mobile,assignTo,rawRows])
-
-    const handleFile=async(e)=>{
-      const file=e.target.files[0]; if(!file)return
-      try{
-        const{headers,rows}=await parseSpreadsheet(file)
-        if(!rows.length){setCsvError('No data rows found');return}
-        setFileHeaders(headers)
-        setRawRows(rows)
-        setImportFileName(file.name)
-        setImportInterrupted(false); setImportProgress(null)
-        const map=autoMapHeaders(headers)
-        map.monthly_salary=headers.find(h=>SALARY_HEADER_RE.test(h))||null
-        setColMap(map)
-        setCsvError(''); setImportResult(null); setShowAllPreview(false)
-      }catch(err){setCsvError('Parse error: '+err.message)}
-    }
 
     const notifyAgentAssigned=async(agentId,count)=>{
       if(!agentId||!count)return
@@ -7598,8 +7619,7 @@ export default function Dashboard({ session }) {
               <div style={{marginBottom:18}}>
                 <div style={{fontSize:13,fontWeight:700,color:'#111827',marginBottom:8}}>Step 1 — Upload Excel (.xlsx/.xls) or CSV file</div>
                 <div style={{background:'#F8FAFC',border:'2px dashed #CBD5E0',borderRadius:10,padding:'20px',textAlign:'center',cursor:'pointer',position:'relative'}}
-                  onClick={()=>document.getElementById('csv-file-input').click()}>
-                  <input id="csv-file-input" type="file" accept=".xlsx,.xls,.csv,.txt" style={{display:'none'}} onChange={handleFile}/>
+                  onClick={openAdminImportPicker}>
                   <IconDownload size={28} color="#94A3B8" style={{display:'block',margin:'0 auto 8px'}}/>
                   <div style={{fontSize:13,fontWeight:600,color:'#374151'}}>Click to upload Excel (.xlsx/.xls) or CSV</div>
                   <div style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>Upload Excel (.xlsx/.xls) or CSV — any column headers</div>

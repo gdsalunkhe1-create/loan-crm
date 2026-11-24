@@ -27,8 +27,19 @@ export function parseSpreadsheet(file) {
         const ws = wb.Sheets[wb.SheetNames[0]]
         const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' })
         if (!aoa.length) { resolve({ headers: [], rows: [] }); return }
-        const headers = aoa[0].map(h => String(h).trim())
-        const rows = aoa.slice(1)
+        // Header row is normally row 1, but exported sheets often have a title/blank row above it
+        // (which left every mapping on "— none —"). Only if row 1 maps neither name nor mobile,
+        // use the first of the next few rows that maps both.
+        const toHeaders = r => r.map(h => String(h).trim())
+        const mapsCore = r => { const m = autoMapHeaders(toHeaders(r)); return [!!m.full_name, !!m.mobile] }
+        let hi = 0
+        const [n0, m0] = mapsCore(aoa[0])
+        if (!n0 && !m0) {
+          const found = aoa.slice(1, 10).findIndex(r => { const [n, m] = mapsCore(r); return n && m })
+          if (found >= 0) hi = found + 1
+        }
+        const headers = toHeaders(aoa[hi])
+        const rows = aoa.slice(hi + 1)
           .map(r => { const o = {}; headers.forEach((h, i) => { o[h] = r[i] != null ? String(r[i]).trim() : '' }); return o })
           .filter(o => Object.values(o).some(v => v !== ''))
         resolve({ headers, rows })
