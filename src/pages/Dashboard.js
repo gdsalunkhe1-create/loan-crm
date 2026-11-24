@@ -5662,6 +5662,52 @@ function BankStatementAnalyzer({ userId }) {
 // MAIN DASHBOARD
 // ==============================================
 let _apTab='overview'
+// ── Admin lead-import state that survives navigation ──────────────────────────────────────
+// The Import Leads modal lives inside AdminDashboardHome, which unmounts whenever the admin opens
+// another page. That used to wipe the uploaded sheet, column mapping, chosen agent and the result,
+// while the half-finished import loop kept inserting rows in the background — so re-uploading the
+// same sheet afterwards hit a wall of "duplicates". This store lives at module scope (and is
+// mirrored to sessionStorage so a refresh keeps the preview too), so the modal comes back exactly
+// as it was left and a running import keeps reporting progress/results into it.
+const ADMIN_IMPORT_KEY='cv_admin_import_v1'
+const adminImportStore=(()=>{
+  let state={}
+  try{ state=JSON.parse(sessionStorage.getItem(ADMIN_IMPORT_KEY)||'{}')||{} }catch(e){ state={} }
+  // A full page reload kills the in-flight insert loop — flag it so the admin knows to re-check.
+  if(state.importing){ state={...state,importing:false,importInterrupted:true} }
+  return { state, listeners:new Set(), saveTimer:null }
+})()
+function persistAdminImport(){
+  clearTimeout(adminImportStore.saveTimer)
+  adminImportStore.saveTimer=setTimeout(()=>{
+    try{ sessionStorage.setItem(ADMIN_IMPORT_KEY,JSON.stringify(adminImportStore.state)) }
+    catch(e){ /* very large sheet over the storage quota — in-memory copy still survives navigation */ }
+  },300)
+}
+function useAdminImportState(key,initialArg){
+  // Pin the default so an unset key returns the SAME []/{} every render — effects that depend on
+  // rawRows/colMap would otherwise re-fire endlessly.
+  const initial=useRef(initialArg).current
+  const [,force]=useState(0)
+  useEffect(()=>{
+    const l=()=>force(n=>n+1)
+    adminImportStore.listeners.add(l)
+    return()=>{ adminImportStore.listeners.delete(l) }
+  },[])
+  const value=Object.prototype.hasOwnProperty.call(adminImportStore.state,key)?adminImportStore.state[key]:initial
+  const set=useCallback(v=>{
+    const st=adminImportStore.state
+    const prev=Object.prototype.hasOwnProperty.call(st,key)?st[key]:initial
+    const next=typeof v==='function'?v(prev):v
+    if(next===prev)return
+    adminImportStore.state={...st,[key]:next}
+    persistAdminImport()
+    adminImportStore.listeners.forEach(l=>l())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[key])
+  return [value,set]
+}
+
 export default function Dashboard({ session }) {
   const [activePage,setActivePage]   =useState('dashboard')
   const [profile,setProfile]         =useState(null)
@@ -6944,18 +6990,21 @@ export default function Dashboard({ session }) {
   }
 
   const AdminDashboardHome=()=>{
-    const [showImport,setShowImport]     = useState(false)
-    const [fileHeaders,setFileHeaders]   = useState([])
-    const [rawRows,setRawRows]           = useState([])
-    const [colMap,setColMap]             = useState({})
-    const [csvError,setCsvError]         = useState('')
-    const [csvAgents,setCsvAgents]       = useState([])
-    const [assignTo,setAssignTo]         = useState('')
+    const [showImport,setShowImport]     = useAdminImportState('showImport',false)
+    const [fileHeaders,setFileHeaders]   = useAdminImportState('fileHeaders',[])
+    const [rawRows,setRawRows]           = useAdminImportState('rawRows',[])
+    const [colMap,setColMap]             = useAdminImportState('colMap',{})
+    const [csvError,setCsvError]         = useAdminImportState('csvError','')
+    const [csvAgents,setCsvAgents]       = useAdminImportState('csvAgents',[])
+    const [assignTo,setAssignTo]         = useAdminImportState('assignTo','')
+    const [importFileName,setImportFileName] = useAdminImportState('importFileName','')
+    const [importProgress,setImportProgress] = useAdminImportState('importProgress',null)
+    const [importInterrupted,setImportInterrupted] = useAdminImportState('importInterrupted',false)
     const [existingOrgMobiles,setExistingOrgMobiles] = useState(new Set())
     const [agentDupMobiles,setAgentDupMobiles] = useState(new Set())
-    const [importing,setImporting]       = useState(false)
-    const [importResult,setImportResult] = useState(null)
-    const [showAllPreview,setShowAllPreview] = useState(false)
+    const [importing,setImporting]       = useAdminImportState('importing',false)
+    const [importResult,setImportResult] = useAdminImportState('importResult',null)
+    const [showAllPreview,setShowAllPreview] = useAdminImportState('showAllPreview',false)
     const [adminNotifs,setAdminNotifs]   = useState([])
     const [unreadCount,setUnreadCount]   = useState(0)
     const [showBell,setShowBell]         = useState(false)
@@ -7339,6 +7388,13 @@ export default function Dashboard({ session }) {
       setCsvAgents(data||[])
     }
 
+    // Clears the previous sheet so a fresh one can be uploaded. Only allowed when no import is running.
+    const resetImport=()=>{
+      if(adminImportStore.state.importing)return
+      setRawRows([]);setFileHeaders([]);setColMap({});setCsvError('');setImportResult(null);setShowAllPreview(false)
+      setImportFileName('');setImportProgress(null);setImportInterrupted(false)
+    }
+
     useEffect(()=>{
       let cancelled=false
       const run=async()=>{
@@ -7395,6 +7451,8 @@ export default function Dashboard({ session }) {
         if(!rows.length){setCsvError('No data rows found');return}
         setFileHeaders(headers)
         setRawRows(rows)
+        setImportFileName(file.name)
+        setImportInterrupted(false); setImportProgress(null)
         const map=autoMapHeaders(headers)
         map.monthly_salary=headers.find(h=>SALARY_HEADER_RE.test(h))||null
         setColMap(map)
@@ -7415,10 +7473,13 @@ export default function Dashboard({ session }) {
     }
 
     const handleImport=async()=>{
-      setImporting(true)
+      if(adminImportStore.state.importing)return   // already running (possibly started before navigating away)
+      setImporting(true); setImportInterrupted(false)
       const valid=trulyValidRows
       let ok=0,dupSkipped=0,fail=0,firstError=''
+      setImportProgress({done:0,total:valid.length})
       for(let i=0;i<valid.length;i+=100){
+        setImportProgress({done:i,total:valid.length})
         const now=new Date().toISOString()
         const chunk=valid.slice(i,i+100).map(r=>{
           let resolvedAgent=assignTo||null
@@ -7468,6 +7529,7 @@ export default function Dashboard({ session }) {
         else { ok+=data.length; if(data.length<chunk.length){ fail+=chunk.length-data.length } }
       }
       setImportResult({ok,dupSkipped,fail,total:valid.length,error:firstError})
+      setImportProgress({done:valid.length,total:valid.length})
       setImporting(false)
       if(ok>0)fetchDashboardStats()
       if(ok>0&&assignTo) await notifyAgentAssigned(assignTo,ok)
@@ -7481,7 +7543,7 @@ export default function Dashboard({ session }) {
           <p>Welcome, {profile?.full_name||'Admin'} — {new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',timeZone:IST_TZ})}</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <button onClick={()=>{setShowImport(true);fetchCSVAgents();setRawRows([]);setFileHeaders([]);setColMap({});setCsvError('');setImportResult(null);setShowAllPreview(false)}}
+          <button onClick={()=>{setShowImport(true);fetchCSVAgents();if(importResult&&!importing){resetImport()}}}
             style={{display:'flex',alignItems:'center',gap:6,background:'#185FA5',color:'white',border:'none',padding:'8px 14px',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
             <IconDownload size={15}/> Import Leads
           </button>
@@ -7522,7 +7584,7 @@ export default function Dashboard({ session }) {
       {/* CSV IMPORT MODAL */}
       {showImport&&(
         <>
-          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:500}} onClick={()=>setShowImport(false)}/>
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:500}} onClick={()=>{ if(!importing) setShowImport(false) }}/>
           <div style={{position:'fixed',top:isMobile?0:'50%',left:isMobile?0:'50%',transform:isMobile?'none':'translate(-50%,-50%)',background:'white',borderRadius:isMobile?0:16,zIndex:600,width:isMobile?'100%':'94%',maxWidth:700,height:isMobile?'100%':'auto',maxHeight:isMobile?'100vh':'90vh',overflow:'hidden',display:'flex',flexDirection:'column',boxShadow:'0 32px 80px rgba(0,0,0,0.25)'}}>
             <div style={{background:'linear-gradient(135deg,#185FA5,#1e40af)',padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
               <div>
@@ -7543,6 +7605,17 @@ export default function Dashboard({ session }) {
                   <div style={{fontSize:11,color:'#9CA3AF',marginTop:4}}>Upload Excel (.xlsx/.xls) or CSV — any column headers</div>
                 </div>
                 {csvError&&<div style={{marginTop:8,color:'#DC2626',fontSize:12,fontWeight:500}}>{csvError}</div>}
+                {importFileName&&rawRows.length>0&&(
+                  <div style={{marginTop:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,fontSize:12,color:'#374151',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'8px 12px'}}>
+                    <span>📄 <b>{importFileName}</b> — {rawRows.length} rows loaded</span>
+                    {!importing&&<button type="button" onClick={resetImport} style={{background:'none',border:'none',color:'#1a56a8',fontWeight:600,fontSize:12,cursor:'pointer',padding:0}}>Upload a different sheet</button>}
+                  </div>
+                )}
+                {importInterrupted&&!importing&&(
+                  <div style={{marginTop:8,fontSize:12,color:'#92400E',background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:8,padding:'8px 12px'}}>
+                    ⚠️ The last import was interrupted by a page refresh{importProgress?` (about ${importProgress.done} of ${importProgress.total} rows were sent)`:''}. Rows that already went in now show as duplicates below and will be skipped — click Import to finish the rest.
+                  </div>
+                )}
               </div>
 
               {/* Step 2: Column Mapping */}
@@ -7657,10 +7730,10 @@ export default function Dashboard({ session }) {
               {rawRows.length>0&&!importResult&&(
                 <button onClick={handleImport} disabled={importing||!colMap.full_name||!colMap.mobile||trulyValidRows.length===0}
                   style={{padding:'9px 20px',background:'#185FA5',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',opacity:(importing||!colMap.full_name||!colMap.mobile||trulyValidRows.length===0)?0.6:1}}>
-                  {importing?'Importing…':`Import ${trulyValidRows.length} Leads`}
+                  {importing?(importProgress&&importProgress.total?`Importing… ${Math.min(importProgress.done,importProgress.total)}/${importProgress.total}`:'Importing…'):`Import ${trulyValidRows.length} Leads`}
                 </button>
               )}
-              {importResult&&<button onClick={()=>setShowImport(false)} style={{padding:'9px 20px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Done</button>}
+              {importResult&&<button onClick={()=>{setShowImport(false);resetImport()}} style={{padding:'9px 20px',background:'#065F46',color:'white',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>Done</button>}
             </div>
           </div>
         </>
