@@ -1,6 +1,6 @@
 ﻿/* eslint-disable */
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -13,12 +13,22 @@ function App() {
   const [showInstall, setShowInstall] = useState(false)
   const [showIOSInstall, setShowIOSInstall] = useState(false)
 
+  // supabase-js re-emits SIGNED_IN with an equivalent session on every tab-visibility return;
+  // replacing the session object then re-renders Dashboard and remounts its inner admin pages.
+  const sessionKeyRef = useRef({ userId: null, token: null })
+  const rememberSession = (s) => { sessionKeyRef.current = { userId: s?.user?.id || null, token: s?.access_token || null } }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      rememberSession(session)
       setSession(session)
       setLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const prev = sessionKeyRef.current
+      if (event === 'SIGNED_OUT' || !session) { rememberSession(null); setSession(null); return }
+      if (session.user?.id === prev.userId && session.access_token === prev.token) return
+      rememberSession(session)
       setSession(session)
     })
     return () => subscription.unsubscribe()
