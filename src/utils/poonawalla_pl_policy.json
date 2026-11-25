@@ -1742,7 +1742,7 @@
       "pct_of_outstanding": 5,
       "exempt_if_total_outstanding_lte_net_salary": false,
       "prelogin_paydown": "all",
-      "rule": "5% of outstanding (TO CONFIRM)"
+      "rule": "5% of outstanding; paid before login accepted with proof"
     },
     "pct_by_type": {
       "GOLD": 1,

@@ -9,7 +9,7 @@
     "TCFSL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v3-2026-11-23",
+  "policy_version": "v4-2026-11-25",
   "sources": {
     "rules": "Gauri's Tata Capital template + multiplier / FOIR grid, 19 Nov 2026"
   },
@@ -218,7 +218,8 @@
         "months": 12
       }
     ],
-    "note": "6 EMIs normally; 3 EMIs OK with foreclosure letter later. NBFC flexi OD after 3 EMIs; bank OD not taken. Cards up to 5, total 6 accounts, card BT within 6× salary (1 month's statement)"
+    "note": "6 EMIs normally; 3 EMIs OK with foreclosure letter later. NBFC flexi OD after 3 EMIs; bank OD not taken. Cards up to 5, total 6 accounts, card BT within 6× salary (1 month's statement). Loans under ₹50,000 outstanding not taken in BT (Gauri, 25 Nov 2026)",
+    "min_outstanding": 50000
   },
   "obligations": {
     "credit_card": {

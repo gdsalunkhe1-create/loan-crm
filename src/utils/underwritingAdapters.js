@@ -775,6 +775,42 @@ export function cardActionPatch(card, action) {
   return { action: 'keep', paidBeforeLoginWithProof: 0 };
 }
 
+// Card Treatment dropdown: Auto / BT / Keep as obligation (profile.cards[i].treatment) plus the
+// paid / close actions. Saved "Keep open" (action 'keep', no treatment) shows as Auto.
+export const CARD_TREATMENTS = [
+  ['auto', 'Auto (bank decides)'], ['bt', 'BT'], ['obligate', 'Keep as obligation (no BT)'],
+  ['paid', 'Paid before login (proof)'], ['close', 'Close before login (suggested)'],
+];
+export function cardTreatmentChoice(card) {
+  const action = card.action || ((card.paidBeforeLoginWithProof || 0) > 0 ? 'paid' : 'keep');
+  if (action === 'paid' || action === 'close') return action;
+  return card.treatment === 'bt' || card.treatment === 'obligate' ? card.treatment : 'auto';
+}
+export function cardTreatmentPatch(card, choice) {
+  if (choice === 'paid' || choice === 'close') return { ...cardActionPatch(card, choice), treatment: 'auto' };
+  return { ...cardActionPatch(card, 'keep'), treatment: choice === 'bt' || choice === 'obligate' ? choice : 'auto' };
+}
+
+// What a card's Treatment does at the bank in "Counted for" (same tones as treatmentNote for loans).
+export function cardTreatmentNote(card, result, bankLabel) {
+  const t = cardTreatmentChoice(card);
+  if (t === 'obligate') return { tone: 'grey', text: 'Kept as obligation' };
+  if (t !== 'bt' || !result || !result.best) return null;
+  if (isBtCard(result.best, card.id)) return { tone: 'green', text: 'BT' };
+  const ws = result.warnings || [];
+  const own = card.issuer && ws.find((w) => w.startsWith(`${card.issuer}: marked BT but`));
+  const why = own || ws.find((w) => /cards marked BT can't all be taken together/.test(w));
+  return { tone: 'red', text: `Not taken in BT by ${bankLabel}${why ? ` — ${why}` : ''}` };
+}
+
+// The bank's own card rule for the table footer (policy obligations.credit_card.rule, first clause),
+// falling back to the engine's line for this case.
+export function cardRuleText(policy, cardCalc) {
+  const r = policy && policy.obligations && policy.obligations.credit_card && policy.obligations.credit_card.rule;
+  if (r) return String(r).split(';')[0].trim();
+  return (cardCalc && cardCalc.rule) || '';
+}
+
 // Outstanding edit that keeps a 'close' plan covering the whole card.
 export function cardOutstandingPatch(card, outstanding) {
   return card.action === 'close' ? { outstanding, paidBeforeLoginWithProof: outstanding } : { outstanding };
@@ -864,9 +900,69 @@ export function rateAddOnLine(scenario, cibilScore) {
   return `Rate includes +${Number(scenario.rateAddOn.toFixed(2))}%${parts.length ? ` for ${parts.join(' and ')}` : ''}`;
 }
 
+// Bank card "BT & obligations" table, built only from that bank's engine result (best.bt /
+// best.btCards / obligations) — the row's own Treatment is never read here.
+//   bt:        taken in BT — lender, POS, EMI freed
+//   closed:    closed / paid before login — amount to pay, EMI removed
+//   obligated: still counted — EMI counted + rule; not BT-able loans carry the bank's reason
+//   notCounted: obligation 0 and not BT / closed — why
+export function btSummary(result, loans, cards, eligible) {
+  const best = result && result.best;
+  const ob = result && result.obligations;
+  if (!best || !ob) return null;
+  const loanLines = ob.loans || [];
+  const cardCalc = ob.cards || null;
+  const btSet = new Set(best.bt || []);
+  const btCardSet = new Set(best.btCards || []);
+  const rows = { bt: [], closed: [], obligated: [], notCounted: [] };
+  const live = (l) => (l.outstanding || 0) > 0 || (l.emi || 0) > 0;
+
+  loanLines.forEach((l) => {
+    if (l.closedBeforeLoginWithProof) {
+      rows.closed.push({ id: l.id, name: l.lender, amount: l.outstanding || 0, emi: l.emi || 0 });
+    } else if (btSet.has(l.id)) {
+      rows.bt.push({ id: l.id, name: l.lender, pos: l.outstanding || 0, emi: l.obligation.amount || 0, topUp: isTopUp(best, l.id) });
+    } else if (l.obligation.amount > 0) {
+      const why = l.bt && !l.bt.ok && l.bt.why ? `${l.bt.why} — not taken in BT` : null;
+      rows.obligated.push({ id: l.id, name: l.lender, emi: l.obligation.amount, rule: l.obligation.rule, why });
+    } else if (live(l)) {
+      rows.notCounted.push({ id: l.id, name: l.lender, why: l.obligation.rule });
+    }
+  });
+
+  const perRupee = cardCalc && cardCalc.amount > 0 && cardCalc.total > 0 ? cardCalc.amount / cardCalc.total : 0;
+  (cards || []).forEach((c) => {
+    const line = cardCalc && (cardCalc.lines || []).find((x) => x.id === c.id);
+    const paid = line ? line.paid : 0;
+    const left = line ? line.remaining : Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0));
+    const name = c.issuer || 'Card';
+    if (paid > 0) rows.closed.push({ id: c.id, name: `${name} (card)`, amount: paid, emi: paid * perRupee, card: true });
+    if (!(left > 0)) return;
+    const share = left * perRupee;
+    if (btCardSet.has(c.id)) rows.bt.push({ id: c.id, name: `${name} (card)`, pos: left, emi: share, card: true });
+    else if (share > 0) rows.obligated.push({ id: c.id, name: `${name} (card)`, emi: share, rule: cardReason(cardCalc, c), card: true });
+    else rows.notCounted.push({ id: c.id, name: `${name} (card)`, why: cardReason(cardCalc, c), card: true });
+  });
+
+  const nCards = rows.bt.filter((r) => r.card).length;
+  const totals = {
+    btPos: best.btOutstanding || 0,
+    btLoans: rows.bt.length - nCards,
+    btCards: nCards,
+    emiFreed: rows.bt.reduce((s, r) => s + r.emi, 0),
+    obligations: best.obligations || 0,
+    closureMoney: rows.closed.reduce((s, r) => s + r.amount, 0),
+    eligible: eligible || 0,
+  };
+  totals.inHand = totals.eligible - totals.btPos;
+  return { rows, totals };
+}
+
 // Own-bank loans the scenario closes through a top-up read 'Top-up' instead of 'BT'.
+// A closed row never reads 'BT' (grey "Closed — EMI not counted"), whatever its old Treatment was.
 export function loanReason(loan, line, best) {
-  if (!line) return loan.closedBeforeLoginWithProof ? 'Closed before login (proof)' : '';
+  if (loan.closedBeforeLoginWithProof || (line && line.closedBeforeLoginWithProof)) return 'Closed — EMI not counted';
+  if (!line) return '';
   if (best && best.bt.includes(loan.id)) return isTopUp(best, loan.id) ? 'Top-up' : 'BT';
   return line.obligation.rule;
 }

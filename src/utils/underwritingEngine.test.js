@@ -857,3 +857,31 @@ describe('Chola (24 Nov 2026)', () => {
     expect(u({ netSalary: 60000, credit: { servedLoanAmount: 600000 } }).best.eligibleAmount).toBe(750000);
   });
 });
+
+test('Card treatment: BT always taken when the bank allows, Obligate never taken', () => {
+  const pr = (cards) => ({ netSalary: 100000, grossSalary: 120000, ownHouse: true, cibilScore: 760, city: 'Pune', loans: [], credit: {},
+    company: { categoriesByBank: { chola: 'CAT A', poonawalla_fincorp: 'CAT A', axis_bank: 'CAT A' } }, cards });
+  const cards = [{ id: 'c1', issuer: 'SBI CARD', outstanding: 300000 }, { id: 'c2', issuer: 'HDFC BANK', outstanding: 200000 }];
+  const forced = evaluateBank(chola, pr([{ ...cards[0], treatment: 'bt' }, cards[1]]));
+  expect(forced.best.btCards).toContain('c1');
+  const kept = evaluateBank(chola, pr([{ ...cards[0], treatment: 'obligate' }, { ...cards[1], treatment: 'obligate' }]));
+  expect(kept.best.btCards).toEqual([]);
+  const noCardBt = evaluateBank(policy, { ...pr([{ ...cards[0], treatment: 'bt' }]), company: { categoriesByBank: { hdfc_bank: 'CAT A' } } });
+  expect(noCardBt.warnings.join()).toMatch(/SBI CARD: marked BT but HDFC Bank doesn't take credit card BT/);
+  const small = evaluateBank(pfl, pr([{ id: 's', issuer: 'RBL', outstanding: 30000, treatment: 'bt' }]));
+  expect(small.warnings.join()).toMatch(/RBL: marked BT but Poonawalla.* takes cards only from ₹50,000/);
+});
+
+test('Tata Capital: loans under ₹50,000 outstanding not taken in BT; closed loans never in BT', () => {
+  const pr = { netSalary: 120000, ownHouse: true, cibilScore: 760, city: 'Pune', cards: [], credit: {}, company: { categoriesByBank: { tata_capital: 'CAT A' } },
+    loans: [{ id: 'small', lender: 'PARFAITFIN', productType: 'PL', outstanding: 21622, emi: 1000, emisPaid: 26, treatment: 'bt' },
+      { id: 'big', lender: 'HERO FINCORP', productType: 'PL', outstanding: 415453, emi: 15653, emisPaid: 12 },
+      { id: 'closed', lender: 'SMICC', productType: 'PL', outstanding: 33665, emi: 3000, emisPaid: 13, closedBeforeLoginWithProof: true, treatment: 'bt' }] };
+  const r = evaluateBank(tata, pr);
+  const bt = Object.fromEntries(r.obligations.loans.map((l) => [l.id, l.bt]));
+  expect(bt.small.ok).toBe(false);
+  expect(bt.small.why).toMatch(/doesn't take loans under ₹50,000 outstanding in BT/);
+  expect(bt.closed.ok).toBe(false);
+  expect(r.best.bt).toEqual(['big']);
+  expect(r.scenarios.every((s) => !s.bt.includes('closed') && !s.bt.includes('small'))).toBe(true);
+});

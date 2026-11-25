@@ -473,6 +473,9 @@ function btCandidate(policy, loan) {
   const btType = odAsPl ? 'PL' : loan.productType;
   if (!(bt.product_types || UNSECURED_BT_TYPES).includes(btType) && !(odIntOnly && loan.productType === 'OD')) return { ok: false, why: `${loan.productType} not taken in BT` };
   if (loan.closedBeforeLoginWithProof) return { ok: false, why: 'Already closed' };
+  if (bt.min_outstanding && (loan.outstanding || 0) > 0 && loan.outstanding < bt.min_outstanding) {   // e.g. Tata Capital: no BT under ₹50,000
+    return { ok: false, why: `${policy.bank} doesn't take loans under ${fmtINR(bt.min_outstanding)} outstanding in BT` };
+  }
   if (!(loan.outstanding > 0)) return { ok: false, why: 'No outstanding to transfer' };
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
     return { ok: false, why: 'Already not obligated (≤2 EMIs left)' };
@@ -743,15 +746,23 @@ export function evaluateBank(policy, profileIn) {
   }
   const btCfg = policy.balance_transfer || {};
   // Credit-card BT (e.g. Poonawalla): cards with a balance become candidates; their outstanding is paid from the loan.
+  // Agent treatment per card: 'auto' (engine decides) | 'bt' (always BT) | 'obligate' (never BT, stays counted).
   const cardCands = btCfg.card_bt
-    ? (profile.cards || []).map((c, i) => ({ id: c.id ?? `card${i}`, lender: c.issuer, outstanding: Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0)), isCard: true }))
-      .filter((c) => c.outstanding > 0 && c.outstanding >= (btCfg.card_bt_min_outstanding || 0))
+    ? (profile.cards || []).map((c, i) => ({ id: c.id ?? `card${i}`, lender: c.issuer, outstanding: Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0)), isCard: true, treatment: c.treatment }))
+      .filter((c) => c.outstanding > 0 && c.outstanding >= (btCfg.card_bt_min_outstanding || 0) && c.treatment !== 'obligate')
     : [];
+  for (const c of profile.cards || []) {
+    if (c.treatment !== 'bt') continue;
+    const left = Math.max(0, (c.outstanding || 0) - (c.paidBeforeLoginWithProof || 0));
+    if (!btCfg.card_bt) out.warnings.push(`${c.issuer || 'Card'}: marked BT but ${policy.bank} doesn't take credit card BT — kept as obligation`);
+    else if (left > 0 && left < (btCfg.card_bt_min_outstanding || 0)) out.warnings.push(`${c.issuer || 'Card'}: marked BT but ${policy.bank} takes cards only from ${fmtINR(btCfg.card_bt_min_outstanding)} outstanding — kept as obligation`);
+  }
   if (btCfg.card_bt && btCfg.card_bt_min_outstanding && (profile.cards || []).some((c) => (c.outstanding || 0) > 0 && (c.outstanding || 0) < btCfg.card_bt_min_outstanding)) {
     out.notes.push(`Cards under ${fmtINR(btCfg.card_bt_min_outstanding)} outstanding are not taken in BT at ${policy.bank}`);
   }
   const btLoans = loanLines.filter((l) => l.bt.ok && l.treatment !== 'obligate');
-  const cands = [...btLoans.filter((l) => l.treatment === 'bt'), ...btLoans.filter((l) => l.treatment !== 'bt'), ...cardCands].slice(0, 12);
+  const cands = [...btLoans.filter((l) => l.treatment === 'bt'), ...cardCands.filter((c) => c.treatment === 'bt'),
+    ...btLoans.filter((l) => l.treatment !== 'bt'), ...cardCands.filter((c) => c.treatment !== 'bt')].slice(0, 12);
   let forcedMask = cands.reduce((m, l, i) => (l.treatment === 'bt' ? m | (1 << i) : m), 0);
   const loanObl = loanLines.reduce((s, l) => s + l.obligation.amount, 0);
   const ntcScoreBT = profile.cibilScore === -1 || profile.cibilScore === 0;
@@ -873,7 +884,7 @@ export function evaluateBank(policy, profileIn) {
     });
   }
   if (scenarios.length || !forcedMask) break;
-  out.warnings.push(`Loans marked BT can't all be taken together at ${policy.bank} (BT limit) — showing the best plan instead`);
+  out.warnings.push(`Loans / cards marked BT can't all be taken together at ${policy.bank} (BT limit) — showing the best plan instead`);
   forcedMask = 0;
   }
   scenarios.sort((a, b) => b.netInHand - a.netInHand);

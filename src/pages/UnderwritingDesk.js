@@ -23,13 +23,14 @@ import {
 import {
   buildProfileDraft, buildCibilRow, buildBsaRow, passwordErrorKind, normalizeMobile, averageNetPay, averageVariablePay, averageGrossPay, summarizeEmployer,
   extractEmployerName, treatmentChoice, treatmentPatch, loanReason, isBtCard, btChipText, rateAddOnLine, riskSegmentPatch, hlJointPatch, hlIncomeOkPatch, hlPayerPatch,
-  cardActionPatch, cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
+  cardOutstandingPatch, cardCountedShare, isZeroBalanceLoan, loanNeedsEmi, emiLooksTooLow, ownBankEnquiries, plEnquiries90d,
   scorecardPatch, scorecardTone, isClosureNote, closureLineText, visibleClosurePlan, rankResults, pickedFirst, closeLoansPatch, closeAllSuggestion,
   summaryMethod, emiTenureOptions, rateAddOnText, treatmentNote, incomeHintText, companyForBank, typedCategoryPatch, manualCategoryBanks, manualCompany,
   isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
   countedObligationsTotal, sameCompany, isExactMatch, uniqueCompanyNames,
   isWaitResult, autoBankEntry, canLogFromDate, askCustomerRows, hlCoApplicantPaysPatch, bankAskChips, topUpLoanNote, ownBankTopUpNote,
   noCompanyListBanks, ownHouseChoice, ownHousePatch,
+  CARD_TREATMENTS, cardTreatmentChoice, cardTreatmentPatch, cardTreatmentNote, cardRuleText, btSummary,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -541,6 +542,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
           : null;
         return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null,
           topUpNote: ownBankTopUpNote(p.policy, profile.loans),
+          cardRule: cardRuleText(p.policy, result.obligations && result.obligations.cards),
           categoryPick: noListBanks[p.bank_id] ? { options: noListBanks[p.bank_id], value: manualCatByBank[p.bank_id] || '' } : null,
           closeAll, result };
       } catch (e) {
@@ -552,6 +554,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
   // Best bank first; the agent's "Counted for" pick (if any) moves its card to the top.
   const ranked = useMemo(() => rankResults(results), [results]);
   const shownResults = useMemo(() => pickedFirst(ranked, tableBankId), [ranked, tableBankId]);
+  const countedForId = tableBankId && ranked.some((r) => r.bankId === tableBankId) ? tableBankId : (autoBankEntry(ranked) || {}).bankId;
   // "Can raise eligibility": extra income each bank counts that isn't entered yet.
   const incomeHints = useMemo(() => Object.fromEntries(results.map((r) => [r.bankId, r.result ? incomeHintText(r.result, r.label, draft, fmtINR) : null])), [results, draft]);
   const [otherIncomeOpen, setOtherIncomeOpen] = useState(0);
@@ -734,6 +737,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               onRiskSegment={(v) => patchDraft(riskSegmentPatch(draft.riskSegmentByBank, r.bankId, v, r.riskSegment && r.riskSegment.values))}
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
               onCategory={(v) => setManualCategory(r.bankId, v)}
+              summaryOpen={ranked.indexOf(r) === 0 || r.bankId === countedForId}
             />
           ))}
         </>
@@ -1585,7 +1589,6 @@ function NumInput({ value, onChange, nullable = false, placeholder = '0', invali
   );
 }
 
-const CARD_ACTIONS = [['keep', 'Keep open'], ['paid', 'Paid before login (proof)'], ['close', 'Close before login (suggested)']];
 const tag = (background, color) => ({ display: 'inline-block', padding: '1px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700, background, color, whiteSpace: 'nowrap', marginRight: '4px' });
 const smallNote = { fontSize: '10px', textAlign: 'right', fontWeight: 600, lineHeight: 1.3, whiteSpace: 'normal' };
 const totalCell = { ...td, ...num, fontWeight: 700, fontSize: '12px' };
@@ -1630,7 +1633,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   const closeAll = entry && entry.closeAll;
   const applyLoanSuggestion = () => patchDraft(closeLoansPatch(draft.loans, closeAll.ids));
   const applySuggestion = () => patchDraft({
-    cards: draft.cards.map((c) => (suggested.has(c.id) ? { ...c, ...cardActionPatch(c, 'close') } : c)),
+    cards: draft.cards.map((c) => (suggested.has(c.id) ? { ...c, ...cardTreatmentPatch(c, 'close') } : c)),
   });
 
   const addLoan = () => patchDraft({ loans: [...draft.loans, {
@@ -1763,7 +1766,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
   };
 
   const cardRow = (c, muted) => {
-    const action = c.action || (c.paidBeforeLoginWithProof > 0 ? 'paid' : 'keep');
+    const action = cardTreatmentChoice(c);
     const share = cardCountedShare(cardCalc, c.id);
     const btCard = isBtCard(best, c.id);   // card BT (Poonawalla): paid off from the loan, nothing counted
     return (
@@ -1777,9 +1780,10 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
         <td style={{ ...td, ...num }}>{dash}</td>
         <td style={{ ...td, ...num }}>{dash}</td>
         <td style={td}>
-          <select style={cellSel} value={action} onChange={(e) => setCard(c.id, cardActionPatch(c, e.target.value))}>
-            {CARD_ACTIONS.map(([v, labelText]) => <option key={v} value={v}>{labelText}</option>)}
+          <select style={cellSel} value={action} onChange={(e) => setCard(c.id, cardTreatmentPatch(c, e.target.value))}>
+            {CARD_TREATMENTS.map(([v, labelText]) => <option key={v} value={v}>{labelText}</option>)}
           </select>
+          <TreatmentNote note={cardTreatmentNote(c, res, entry ? entry.label : 'this bank')} />
           {action === 'paid' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px', fontSize: '10px', color: '#555' }}>
               Amount paid
@@ -1891,7 +1895,7 @@ function ObligationsPanel({ draft, patchDraft, results, bankId, setBankId }) {
       <p style={{ fontSize: '11px', color: '#9aa1b2', margin: '12px 0 0' }}>
         {entry ? (
           res && res.obligations
-            ? <>Counted follows <b>{entry.label}</b>&apos;s policy (loans + cards{cardCalc ? `: ${cardCalc.rule}` : ''}). </>
+            ? <>Counted follows <b>{entry.label}</b>&apos;s policy (loans + cards{entry.cardRule || (cardCalc && cardCalc.rule) ? `: ${entry.cardRule || cardCalc.rule}` : ''}). </>
             : <>Counted appears once <b>{entry.label}</b> can be calculated (see its card below). </>
         ) : null}
         EMI total is term loans only. Treatment: <b>Auto</b> lets the bank decide; <b>BT</b> always takes the loan over when the bank allows it; <b>Obligate</b> keeps it as an obligation.
@@ -2210,16 +2214,60 @@ function SummaryStrip({ summary }) {
   );
 }
 
-// "Obligations ₹A/month · BT ₹B (N loans)" — replaces the two tiles.
-function ObligationsLine({ result }) {
+// "BT & obligations ▾" — what the bank takes in BT, what is closed, still counted and not counted.
+// Built only from the bank's engine result (btSummary); open on the #1 card and the "Counted for" bank.
+function BtSummaryTable({ result, loans, cards, eligible, defaultOpen }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  useEffect(() => { if (defaultOpen) setOpen(true); }, [defaultOpen]);
+  const sum = btSummary(result, loans, cards, eligible);
+  if (!sum) return null;
+  const { rows, totals: t } = sum;
   const best = result.best;
-  const nCards = (best.btCards || []).length;
-  const nLoans = best.bt.length - nCards;
-  const what = [`${nLoans} loan${nLoans === 1 ? '' : 's'}`, nCards ? `${nCards} card${nCards === 1 ? '' : 's'}` : null].filter(Boolean).join(', ');
-  const parts = [`Obligations ${fmtINR(best.obligations)}/month`,
-    best.bt.length ? `${hasTopUp(best) ? 'BT + top-up' : 'BT'} ${fmtINR(best.btOutstanding)} (${what})` : 'No BT'];
-  if (hasMultiplier(best) && result.risk) parts.push(`Risk: ${result.risk.band === 'better' ? 'better band' : 'lower band'}${result.risk.reason ? ` (${result.risk.reason})` : ''}`);
-  return <div style={{ fontSize: '12px', color: '#7a8194', margin: '0 0 10px' }}>{parts.join(' · ')}</div>;
+  const sub = { fontSize: '11px', color: '#9aa1b2' };
+  const groups = [
+    ['bt', hasTopUp(best) ? 'Taken in BT / top-up' : 'Taken in BT', rows.bt, (r) => <>{r.name}{r.topUp ? ' (top-up)' : ''} · POS {fmtINR(r.pos)} · EMI freed {fmtINR(r.emi)}/month</>],
+    ['closed', 'Closed before login', rows.closed, (r) => <>{r.name} · pay {fmtINR(r.amount)} · EMI removed {fmtINR(r.emi)}/month</>],
+    ['obligated', 'Still obligated', rows.obligated, (r) => <>{r.name} · {fmtINR(r.emi)}/month <span style={sub}>({r.rule})</span>{r.why && <div style={sub}>{r.why}</div>}</>],
+    ['notCounted', 'Not counted', rows.notCounted, (r) => <>{r.name} · <span style={sub}>{r.why}</span></>],
+  ].filter(([, , items]) => items.length > 0);
+  const what = [`${t.btLoans} loan${t.btLoans === 1 ? '' : 's'}`, t.btCards ? `${t.btCards} card${t.btCards === 1 ? '' : 's'}` : null].filter(Boolean).join(' + ');
+  const totals = [
+    `BT POS ${fmtINR(t.btPos)} (${what})`,
+    `EMI freed ${fmtINR(t.emiFreed)}/month`,
+    `Obligations counted ${fmtINR(t.obligations)}/month`,
+    t.closureMoney > 0 ? `Closure money needed ${fmtINR(t.closureMoney)}` : null,
+    `Eligible ${fmtINR(t.eligible)}`,
+    `In hand after BT ${fmtINR(t.inHand)}`,
+  ].filter(Boolean);
+  const risk = hasMultiplier(best) && result.risk
+    ? `Risk: ${result.risk.band === 'better' ? 'better band' : 'lower band'}${result.risk.reason ? ` (${result.risk.reason})` : ''}` : null;
+  return (
+    <div style={{ margin: '0 0 10px' }}>
+      <button style={btnLink} onClick={() => setOpen(!open)}>BT &amp; obligations {open ? '▾' : '▸'}</button>
+      {risk && <span style={{ fontSize: '12px', color: '#7a8194', marginLeft: '8px' }}>{risk}</span>}
+      {open && (
+        <div style={{ marginTop: '6px', overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '12px' }}>
+            <tbody>
+              {groups.length === 0 && (
+                <tr><td style={{ ...td, color: '#7a8194' }}>No loans or cards</td></tr>
+              )}
+              {groups.map(([key, title, items, render]) => (
+                <tr key={key}>
+                  <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap', verticalAlign: 'top', width: '150px' }}>{title}</td>
+                  <td style={{ ...td, lineHeight: 1.5 }}>{items.map((r) => <div key={r.id}>{render(r)}</div>)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ ...td, fontWeight: 700, verticalAlign: 'top', background: '#f7f9fc' }}>Totals</td>
+                <td style={{ ...td, fontWeight: 600, background: '#f7f9fc' }}>{totals.join(' · ')}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // "Customer wants ₹[amount] for [tenure] → EMI ₹E/month at r%" — local only, the engine run is unchanged.
@@ -2255,7 +2303,7 @@ function IncomeHintBox({ hint }) {
   return <div style={{ margin: '0 0 12px', padding: '8px 12px', borderRadius: '8px', background: '#eef4fb', color: BLUE, fontSize: '12px', lineHeight: 1.5 }}>{hint.text}</div>;
 }
 
-function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed, onCategory }) {
+function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed, onCategory, summaryOpen }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const chipFor = (scenario, id) => btChipText(scenario, id, loans, cards, fmtINR);
@@ -2327,7 +2375,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
       {summary && summary.method && (
         <div style={{ ...fade, marginTop: needsInput || afterWait ? '10px' : 0 }} title={fadeTitle}>
           <SummaryStrip summary={summary} />
-          <ObligationsLine result={result} />
+          <BtSummaryTable result={result} loans={loans} cards={cards} eligible={summary.method.amount} defaultOpen={summaryOpen} />
           {!notEligible && !needsInput && <CustomerEmi result={result} method={summary.method} cibilScore={cibilScore} />}
         </div>
       )}

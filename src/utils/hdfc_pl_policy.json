@@ -954,7 +954,7 @@
       "pct_of_outstanding": 5,
       "exempt_if_total_outstanding_lte_net_salary": true,
       "exempt_scope": "TOTAL outstanding across all credit cards (confirmed by Gauri)",
-      "rule": "if sum(all CC outstanding) <= net monthly salary -> 0 obligation; else 5% of total outstanding",
+      "rule": "Not counted when total outstanding is at or below net salary, else 5%; paid before login accepted with proof",
       "pre_login_paydown": "customer may pay down before login (with verified proof) to bring total under net salary"
     },
     "gold_loan": {

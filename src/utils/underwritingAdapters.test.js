@@ -318,7 +318,9 @@ describe('obligations table helpers', () => {
     // Own-bank loan closed through the bank's top-up reads 'Top-up'.
     expect(loanReason({ id: 'a' }, line('Full EMI'), { bt: ['a'], topUp: ['a'] })).toBe('Top-up');
     expect(loanReason({ id: 'b' }, line('Only 2 EMI(s) left — not obligated'), best)).toBe('Only 2 EMI(s) left — not obligated');
-    expect(loanReason({ id: 'c', closedBeforeLoginWithProof: true }, null, null)).toBe('Closed before login (proof)');
+    expect(loanReason({ id: 'c', closedBeforeLoginWithProof: true }, null, null)).toBe('Closed — EMI not counted');
+    // Even if the BT plan somehow listed it, a closed row never reads BT.
+    expect(loanReason({ id: 'a', closedBeforeLoginWithProof: true, treatment: 'bt' }, line('Closed before login (proof)'), best)).toBe('Closed — EMI not counted');
     expect(loanReason({ id: 'd' }, null, null)).toBe('');
   });
 
@@ -1503,5 +1505,123 @@ describe('Chola (24 Nov): category pick while the list is not uploaded, own hous
     expect(r.obligations.cards.amount).toBe(0);   // 2.8L within 3 × 1L gross (would be over 3 × 80K net)
     expect(r.obligations.cards.rule).toMatch(/within 3 × gross salary/);
     expect(evaluateBank(chola, { ...prof, grossSalary: null }).obligations.cards.rule).toMatch(/above 3 × net salary/);
+  });
+});
+
+describe('Card Treatment (25 Nov): Auto / BT / Keep as obligation on credit card rows', () => {
+  const A = require('./underwritingAdapters');
+  const chola = require('./chola_pl_policy.json');
+  const hdfcP = require('./hdfc_pl_policy.json');
+  const pfl = require('./poonawalla_pl_policy.json');
+  const base = (cards) => ({ netSalary: 100000, grossSalary: 120000, ownHouse: true, cibilScore: 760, city: 'Pune', loans: [], credit: {},
+    company: { categoriesByBank: { chola: 'CAT A', hdfc_bank: 'CAT A', poonawalla_fincorp: 'CAT A' } }, cards });
+  const sbi = { id: 'c1', issuer: 'SBI CARD', outstanding: 300000, paidBeforeLoginWithProof: 0, action: 'keep' };
+
+  test('dropdown order; saved "Keep open" shows as Auto; paid / close as today', () => {
+    expect(A.CARD_TREATMENTS.map(([v]) => v)).toEqual(['auto', 'bt', 'obligate', 'paid', 'close']);
+    expect(A.CARD_TREATMENTS[0][1]).toBe('Auto (bank decides)');
+    expect(A.cardTreatmentChoice({ action: 'keep' })).toBe('auto');
+    expect(A.cardTreatmentChoice({ paidBeforeLoginWithProof: 5000 })).toBe('paid');
+    expect(A.cardTreatmentPatch(sbi, 'paid')).toEqual({ action: 'paid', paidBeforeLoginWithProof: 300000, treatment: 'auto' });
+    expect(A.cardTreatmentPatch(sbi, 'close')).toEqual({ action: 'close', paidBeforeLoginWithProof: 300000, treatment: 'auto' });
+    expect(A.cardTreatmentPatch({ ...sbi, action: 'paid', paidBeforeLoginWithProof: 300000 }, 'obligate'))
+      .toEqual({ action: 'keep', paidBeforeLoginWithProof: 0, treatment: 'obligate' });
+  });
+
+  test('choosing BT sets profile.cards[i].treatment = "bt" and the bank takes it (green BT)', () => {
+    const draft = { cards: [sbi, { ...sbi, id: 'c2', issuer: 'HDFC BANK', outstanding: 200000 }] };
+    const cards = draft.cards.map((c) => (c.id === 'c1' ? { ...c, ...A.cardTreatmentPatch(c, 'bt') } : c));
+    expect(cards[0].treatment).toBe('bt');
+    expect(A.cardTreatmentChoice(cards[0])).toBe('bt');
+    const r = evaluateBank(chola, base(cards));
+    expect(r.best.btCards).toContain('c1');
+    expect(A.cardTreatmentNote(cards[0], r, 'Chola')).toEqual({ tone: 'green', text: 'BT' });
+  });
+
+  test('BT not taken: red with the warning; Keep as obligation: grey', () => {
+    const bt = { ...sbi, treatment: 'bt' };
+    const h = evaluateBank(hdfcP, base([bt]));
+    expect(A.cardTreatmentNote(bt, h, 'HDFC Bank')).toEqual({ tone: 'red',
+      text: "Not taken in BT by HDFC Bank — SBI CARD: marked BT but HDFC Bank doesn't take credit card BT — kept as obligation" });
+    const small = { id: 's', issuer: 'RBL', outstanding: 30000, treatment: 'bt' };
+    expect(A.cardTreatmentNote(small, evaluateBank(pfl, base([small])), 'Poonawalla').text).toMatch(/^Not taken in BT by Poonawalla — RBL: marked BT but .* takes cards only from ₹50,000/);
+    const ob = { ...sbi, treatment: 'obligate' };
+    const r = evaluateBank(chola, base([ob]));
+    expect(r.best.btCards).toEqual([]);
+    expect(A.cardTreatmentNote(ob, r, 'Chola')).toEqual({ tone: 'grey', text: 'Kept as obligation' });
+    expect(A.cardTreatmentNote(sbi, r, 'Chola')).toBeNull();   // Auto: no line
+  });
+
+  test('footer uses the bank\'s own card rule', () => {
+    expect(A.cardRuleText(chola)).toBe('Not counted while total outstanding is within 3× gross salary, else 5%');
+    expect(A.cardRuleText({}, { rule: '5% of total CC outstanding' })).toBe('5% of total CC outstanding');
+  });
+});
+
+describe('BT summary, closed loans never in BT, Tata ₹50K BT minimum (25 Nov)', () => {
+  const A = require('./underwritingAdapters');
+  const { fmtINR } = require('./underwritingEngine');
+  const tata = require('./tata_pl_policy.json');
+  const chola = require('./chola_pl_policy.json');
+  const CATS = { tata_capital: 'CAT A', chola: 'CAT A' };
+  const base = (loans, cards = []) => ({ netSalary: 150000, grossSalary: 180000, ownHouse: true, cibilScore: 780, city: 'Pune', credit: {}, cards, loans,
+    company: { categoriesByBank: CATS, confirmedByBank: {} } });
+  const bajaj = { id: 'p1', lender: 'BAJAJ FINANCE', productType: 'PL', outstanding: 415453, emi: 15000, emisPaid: 14, emisRemaining: 30, treatment: 'auto' };
+  const idfc = { id: 'p2', lender: 'IDFC FIRST BANK', productType: 'PL', outstanding: 300000, emi: 11000, emisPaid: 14, emisRemaining: 30, treatment: 'auto' };
+
+  test('loan marked BT, then Closed before login: flag set, not BT, out of every BT plan and the summary\'s BT rows', () => {
+    const asBt = [{ ...bajaj, ...A.treatmentPatch('bt') }, idfc];
+    expect(evaluateBank(tata, base(asBt)).best.bt).toContain('p1');
+    const closed = asBt.map((l) => (l.id === 'p1' ? { ...l, ...A.treatmentPatch('closed') } : l));
+    expect(closed[0].closedBeforeLoginWithProof).toBe(true);
+    expect(closed[0].treatment).not.toBe('bt');
+    expect(A.treatmentChoice(closed[0])).toBe('closed');
+    // Switching back clears the closed flag.
+    expect(A.treatmentPatch('bt')).toEqual({ closedBeforeLoginWithProof: false, treatment: 'bt' });
+    for (const p of [tata, chola]) {
+      const r = evaluateBank(p, base(closed));
+      [r.best, ...(r.scenarios || [])].forEach((s) => expect(s.bt).not.toContain('p1'));
+      expect((r.closurePlan || []).map((c) => c.id)).not.toContain('p1');
+      const line = r.obligations.loans.find((l) => l.id === 'p1');
+      expect(A.loanReason(closed[0], line, r.best)).toBe('Closed — EMI not counted');
+      expect(A.treatmentNote(closed[0], line, p.bank)).toEqual({ tone: 'grey', text: 'Closed — EMI not counted' });
+      const sum = A.btSummary(r, closed, [], r.best.eligibleAmount);
+      expect(sum.rows.bt.map((x) => x.id)).not.toContain('p1');
+      expect(sum.rows.closed).toEqual([{ id: 'p1', name: 'BAJAJ FINANCE', amount: 415453, emi: 15000 }]);
+      expect(sum.totals.closureMoney).toBe(415453);
+    }
+  });
+
+  test('Tata: loan under ₹50,000 not BT-able — listed under Still obligated with the reason', () => {
+    const small = { id: 's1', lender: 'KREDITBEE', productType: 'PL', outstanding: 40000, emi: 4000, emisPaid: 6, emisRemaining: 10, treatment: 'bt' };
+    const r = evaluateBank(tata, base([small, idfc]));
+    const line = r.obligations.loans.find((l) => l.id === 's1');
+    expect(line.bt).toMatchObject({ ok: false, why: "Tata Capital doesn't take loans under ₹50,000 outstanding in BT" });
+    expect(r.best.bt).not.toContain('s1');
+    const sum = A.btSummary(r, [small, idfc], [], r.best.eligibleAmount);
+    expect(sum.rows.obligated.find((x) => x.id === 's1'))
+      .toMatchObject({ name: 'KREDITBEE', emi: 4000, why: "Tata Capital doesn't take loans under ₹50,000 outstanding in BT — not taken in BT" });
+  });
+
+  test('summary groups and totals come from the engine result; In hand after BT = eligible − BT POS', () => {
+    const hl = { id: 'h1', lender: 'SBI', productType: 'HL', outstanding: 3000000, emi: 30000, emisPaid: 24, emisRemaining: 200, treatment: 'auto' };
+    const gold = { id: 'g1', lender: 'MUTHOOT', productType: 'GL', outstanding: 80000, emi: 0, emisPaid: 0, emisRemaining: null, treatment: 'auto' };
+    const cards = [{ id: 'c1', issuer: 'SBI CARD', outstanding: 900000, paidBeforeLoginWithProof: 0, action: 'keep', treatment: 'obligate' }];
+    const loans = [bajaj, idfc, hl, gold];
+    const r = evaluateBank(tata, base(loans, cards));
+    const sum = A.btSummary(r, loans, cards, 2500000);
+    expect(sum.rows.bt.map((x) => x.id).sort()).toEqual([...r.best.bt].sort());
+    expect(sum.totals.btPos).toBe(r.best.btOutstanding);
+    expect(sum.totals.obligations).toBe(r.best.obligations);
+    expect(sum.totals.inHand).toBe(2500000 - r.best.btOutstanding);
+    expect(sum.totals.emiFreed).toBe(sum.rows.bt.reduce((s, x) => s + x.emi, 0));
+    expect(sum.rows.obligated.map((x) => x.id)).toEqual(expect.arrayContaining(['h1', 'c1']));
+    expect(sum.rows.obligated.find((x) => x.id === 'c1').rule).toMatch(/% of outstanding/);
+    expect(sum.rows.notCounted.map((x) => x.id)).toContain('g1');
+    expect(fmtINR(415453)).toBe('₹4,15,453');
+  });
+
+  test('"Apply suggestion — close card" clears a BT treatment on the card', () => {
+    expect(A.cardTreatmentPatch({ outstanding: 60000, treatment: 'bt' }, 'close')).toEqual({ action: 'close', paidBeforeLoginWithProof: 60000, treatment: 'auto' });
   });
 });
