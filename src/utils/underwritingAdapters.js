@@ -423,6 +423,43 @@ export function manualCategoryBanks(policies) {
   return out;
 }
 
+// Banks whose company list isn't uploaded yet (policy has unlisted rules, no rows in
+// company_categories, e.g. Chola): every company is Unlisted there until the agent picks
+// the bank's category. Options from the policy's eligibility groups: CAT A–D, one
+// Government option for the government names, then Unlisted (value '' = no category).
+// counts: { bankId: number of company rows }; a bank not counted yet is left out.
+const GOVT_RE = /GOVERNMENT|GOVT|PSU|MAHARATNA|NAVRATNA/i;
+export function categoryPickOptions(policy) {
+  const seen = new Set(); const cats = []; const govt = [];
+  for (const g of Object.values(policy?.eligibility?.groups || {})) {
+    for (const c of g.categories || []) {
+      const key = words(c).trim().replace(/^CATEGORY /, 'CAT ');
+      if (seen.has(key) || key === 'UNLISTED') continue;
+      seen.add(key);
+      (GOVT_RE.test(c) ? govt : cats).push(c);
+    }
+  }
+  const out = [...cats].sort().map((c) => ({ value: c, label: c }));
+  if (govt.length) {
+    const rest = govt.slice(1).map((g) => g.replace(/\s+Government$/i, ''));
+    out.push({ value: govt[0], label: rest.length ? `Government (${rest.join(' / ')})` : 'Government' });
+  }
+  if (policy?.company?.unlisted_rules) out.push({ value: '', label: 'Unlisted' });
+  return out;
+}
+export function noCompanyListBanks(policies, counts) {
+  const out = {};
+  (policies || []).forEach((p) => {
+    const c = p.policy?.company;
+    if (c?.unlisted_rules && !c.manual_category && counts && counts[p.bank_id] === 0) out[p.bank_id] = categoryPickOptions(p.policy);
+  });
+  return out;
+}
+
+// Own house: Yes / No / Not asked -> profile.ownHouse true / false / undefined.
+export const ownHouseChoice = (v) => (v === true ? 'yes' : v === false ? 'no' : '');
+export const ownHousePatch = (choice) => ({ ownHouse: choice === 'yes' ? true : choice === 'no' ? false : undefined });
+
 // Engine company object for a manual-category bank. Needs no company search: the
 // engine only uses the category, and the agent's pick counts as confirmed.
 export function manualCompany(byBank, value) {

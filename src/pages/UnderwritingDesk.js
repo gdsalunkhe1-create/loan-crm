@@ -29,6 +29,7 @@ import {
   isUnlistedFor, searchedIncorporationYear, BUREAU_TIERS, bureauTierLabel, bureauTierPatch, cardReason, isZeroBalanceCard, isBulletLoan, bulletNote, termEmiTotal,
   countedObligationsTotal, sameCompany, isExactMatch, uniqueCompanyNames,
   isWaitResult, autoBankEntry, canLogFromDate, askCustomerRows, hlCoApplicantPaysPatch, bankAskChips, topUpLoanNote, ownBankTopUpNote,
+  noCompanyListBanks, ownHouseChoice, ownHousePatch,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -458,12 +459,25 @@ export default function UnderwritingDesk({ userId, orgId }) {
   const patchDraft = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const patchCredit = (patch) => setDraft((d) => ({ ...d, credit: { ...d.credit, ...patch } }));
 
-  const manualCategories = useMemo(() => manualCategoryBanks(policies), [policies]);
+  // Company rows per bank with unlisted rules: 0 = the bank's list isn't uploaded yet (e.g. Chola).
+  const [companyListCounts, setCompanyListCounts] = useState({});
+  useEffect(() => {
+    let live = true;
+    const ids = policies.filter((p) => p.policy?.company?.unlisted_rules && !p.policy.company.manual_category).map((p) => p.bank_id);
+    Promise.all(ids.map((id) => supabase.from('company_categories').select('bank', { count: 'exact', head: true }).eq('bank', id)
+      .then(({ count, error }) => [id, error ? null : count ?? null])))
+      .then((pairs) => { if (live) setCompanyListCounts(Object.fromEntries(pairs)); });
+    return () => { live = false; };
+  }, [policies]);
+  // Banks without a list: Kotak (manual_category) and banks whose list isn't uploaded (Chola: Unlisted until picked).
+  const noListBanks = useMemo(() => noCompanyListBanks(policies, companyListCounts), [policies, companyListCounts]);
+  const manualCategories = useMemo(() => ({ ...manualCategoryBanks(policies), ...noListBanks }), [policies, noListBanks]);
 
   // Manual-category banks (Kotak) use the agent's pick and need no company search.
   const companyFor = useCallback((bankId) => (manualCategories[bankId]
     ? manualCompany(companyByBank, manualCatByBank[bankId])
     : companyForBank(companyByBank, bankId)), [companyByBank, manualCategories, manualCatByBank]);
+  const setManualCategory = (bankId, v) => setManualCatByBank((m) => ({ ...m, [bankId]: v || null }));
 
   // Unlisted company (e.g. IndusInd): banks that need the year of incorporation.
   // The field pre-fills from any bank's company search until the agent edits it.
@@ -526,12 +540,14 @@ export default function UnderwritingDesk({ userId, orgId }) {
           ? closeAllSuggestion(plan, evaluateBank(p.policy, { ...profile, ...closeLoansPatch(profile.loans, plan.map((c) => c.id)) }).best)
           : null;
         return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, bureauTier, salaryBase, productInfo: p.policy?.product_info || null,
-          topUpNote: ownBankTopUpNote(p.policy, profile.loans), closeAll, result };
+          topUpNote: ownBankTopUpNote(p.policy, profile.loans),
+          categoryPick: noListBanks[p.bank_id] ? { options: noListBanks[p.bank_id], value: manualCatByBank[p.bank_id] || '' } : null,
+          closeAll, result };
       } catch (e) {
         return { bankId: p.bank_id, version: p.version, label, scorecard, riskSegment, salaryBase, error: e.message || String(e) };
       }
     });
-  }, [draft, policies, companyFor, incorporationYear, city]);
+  }, [draft, policies, companyFor, incorporationYear, city, noListBanks, manualCatByBank]);
 
   // Best bank first; the agent's "Counted for" pick (if any) moves its card to the top.
   const ranked = useMemo(() => rankResults(results), [results]);
@@ -663,7 +679,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               bankLabels={Object.fromEntries(policies.map((p) => [p.bank_id, p.policy?.bank || p.bank_id]))}
               manualCategories={manualCategories}
               manualValues={manualCatByBank}
-              setManualValue={(bankId, v) => setManualCatByBank((m) => ({ ...m, [bankId]: v || null }))}
+              setManualValue={setManualCategory}
               autoSearchKey={companyAutoKey}
               onManual={() => { if (companySourceRef.current !== 'manual') setCompanySource('manual'); }}
               payslipHint={payslipCompany}
@@ -717,6 +733,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               onBureauTier={(v) => patchDraft(bureauTierPatch(draft.bureauTierByBank, r.bankId, v))}
               onRiskSegment={(v) => patchDraft(riskSegmentPatch(draft.riskSegmentByBank, r.bankId, v, r.riskSegment && r.riskSegment.values))}
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
+              onCategory={(v) => setManualCategory(r.bankId, v)}
             />
           ))}
         </>
@@ -1156,8 +1173,10 @@ function CompanyPanel({ query, setQuery, byBank, setByBank, policyBankIds, bankL
                 value={manualValues[id] || ''}
                 onChange={(e) => setManualValue(id, e.target.value)}
               >
-                <option value="">—</option>
-                {manual.map((c) => <option key={c} value={c}>{c}</option>)}
+                {!manual.some((c) => typeof c === 'object' && c.value === '') && <option value="">—</option>}
+                {manual.map((c) => (typeof c === 'object'
+                  ? <option key={c.value} value={c.value}>{c.label}</option>
+                  : <option key={c} value={c}>{c}</option>))}
               </select>
             </label>
           </td>
@@ -1433,11 +1452,13 @@ function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, s
           </div>
         </div>
         <div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 20 }}>
-            <input type="checkbox" checked={!!draft.ownHouse} onChange={(e) => patchDraft({ ownHouse: e.target.checked })} />
-            Own house (on customer or spouse name)
-          </label>
-          <div style={S.hint}>Some banks allow a higher FOIR or multiplier for an own house.</div>
+          <label style={S.label}>Own house (on customer or spouse name)</label>
+          <select style={inp} value={ownHouseChoice(draft.ownHouse)} onChange={(e) => patchDraft(ownHousePatch(e.target.value))}>
+            <option value="">Not asked</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+          <div style={S.hint}>Higher FOIR / multiplier at some banks; Chola caps at ₹20L without one and needs it for an unlisted company.</div>
         </div>
         <div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginTop: 20 }}>
@@ -2234,7 +2255,7 @@ function IncomeHintBox({ hint }) {
   return <div style={{ margin: '0 0 12px', padding: '8px 12px', borderRadius: '8px', background: '#eef4fb', color: BLUE, fontSize: '12px', lineHeight: 1.5 }}>{hint.text}</div>;
 }
 
-function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed }) {
+function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed, onCategory }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const chipFor = (scenario, id) => btChipText(scenario, id, loans, cards, fmtINR);
@@ -2271,6 +2292,14 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
           {result && result.policyVersion ? `Policy ${result.policyVersion}` : entry.version ? `Policy ${entry.version}` : ''}
         </span>
       </div>
+      {entry.categoryPick && (
+        <div style={{ margin: '-6px 0 12px', padding: '6px 10px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{label} list not uploaded — pick the {label} category</span>
+          <select style={{ ...cellSel, width: 'auto', fontSize: '12px' }} value={entry.categoryPick.value} onChange={(e) => onCategory(e.target.value)}>
+            {entry.categoryPick.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      )}
       {isLowerRule(best) && <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>Lower of FOIR &amp; multiplier</div>}
       {isBothRule(best) && (
         <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>

@@ -1454,3 +1454,54 @@ describe('Own-bank enquiry block, ask the customer, top-up (23 Nov policies)', (
     expect(A.ownBankTopUpNote(require('./tata_pl_policy.json'), [{ lender: 'TATA CAPITAL', outstanding: 1 }])).toBeNull();   // no note in the policy
   });
 });
+
+describe('Chola (24 Nov): category pick while the list is not uploaded, own house, gross salary', () => {
+  const A = require('./underwritingAdapters');
+  const chola = require('./chola_pl_policy.json');
+  const kotakP = require('./kotak_pl_policy.json');
+  const hdfcP = require('./hdfc_pl_policy.json');
+  const policies = [{ bank_id: 'chola', policy: chola }, { bank_id: 'kotak', policy: kotakP }, { bank_id: 'hdfc_bank', policy: hdfcP }];
+
+  test('category options: CAT A–D, one Government option, Unlisted (blank)', () => {
+    expect(A.categoryPickOptions(chola)).toEqual([
+      { value: 'CAT A', label: 'CAT A' }, { value: 'CAT B', label: 'CAT B' }, { value: 'CAT C', label: 'CAT C' }, { value: 'CAT D', label: 'CAT D' },
+      { value: 'GOVERNMENT', label: 'Government (Central / State / PSU / Maharatna / Navratna / Mini Navratna)' },
+      { value: '', label: 'Unlisted' },
+    ]);
+  });
+
+  test('no-list banks: only a bank with unlisted rules and 0 company rows (Kotak stays manual, not counted = left out)', () => {
+    expect(Object.keys(A.noCompanyListBanks(policies, { chola: 0 }))).toEqual(['chola']);
+    expect(A.noCompanyListBanks(policies, { chola: 1200 })).toEqual({});
+    expect(A.noCompanyListBanks(policies, {})).toEqual({});
+    expect(A.noCompanyListBanks(policies, { chola: null })).toEqual({});
+  });
+
+  test('Chola with no pick = Unlisted (own house needed, CIBIL 725); a pick is used as the category', () => {
+    const base = { netSalary: 80000, cibilScore: 740, city: 'Pune', credit: {}, loans: [], cards: [] };
+    const unl = evaluateBank(chola, { ...base, company: A.manualCompany({ query: 'ACME' }, '') });
+    expect(unl.deviations.join()).toMatch(/Unlisted company: own house .* mandatory at Chola — confirm/);
+    expect(evaluateBank(chola, { ...base, ...A.ownHousePatch('no'), company: A.manualCompany({ query: 'ACME' }, '') }).status).toBe('NOT_ELIGIBLE');
+    expect(evaluateBank(chola, { ...base, cibilScore: 720, ...A.ownHousePatch('yes'), company: A.manualCompany({ query: 'ACME' }, '') }).reasons.join())
+      .toMatch(/CIBIL score 720 below Chola minimum 725 for UNLISTED/);
+    const catA = evaluateBank(chola, { ...base, company: A.manualCompany({ query: 'ACME' }, 'CAT A') });
+    expect(catA.deviations.join()).not.toMatch(/Unlisted/);
+    expect(catA.notes.join()).toMatch(/Own house not confirmed: max ₹20,00,000/);
+  });
+
+  test('own house select: Yes / No / Not asked <-> true / false / undefined', () => {
+    expect(['yes', 'no', ''].map(A.ownHousePatch)).toEqual([{ ownHouse: true }, { ownHouse: false }, { ownHouse: undefined }]);
+    expect([true, false, undefined, null].map(A.ownHouseChoice)).toEqual(['yes', 'no', '', '']);
+  });
+
+  test('payslip gross reaches the engine: Chola cards checked against 3 × gross salary', () => {
+    const d = buildProfileDraft(null, null, { payslipNetPay: 80000, payslipGrossPay: 100000 });
+    expect(d.grossSalary).toBe(100000);
+    const prof = { ...d, cibilScore: 760, city: 'Pune', credit: {}, loans: [], company: A.manualCompany({ query: 'ACME' }, 'CAT A'),
+      cards: [{ id: 'c1', issuer: 'HDFC', outstanding: 280000 }] };
+    const r = evaluateBank(chola, prof);
+    expect(r.obligations.cards.amount).toBe(0);   // 2.8L within 3 × 1L gross (would be over 3 × 80K net)
+    expect(r.obligations.cards.rule).toMatch(/within 3 × gross salary/);
+    expect(evaluateBank(chola, { ...prof, grossSalary: null }).obligations.cards.rule).toMatch(/above 3 × net salary/);
+  });
+});

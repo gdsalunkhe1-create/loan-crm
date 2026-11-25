@@ -1,0 +1,581 @@
+{
+  "bank": "Chola",
+  "bank_id": "chola",
+  "own_bank_match": [
+    "CHOLAMANDALAM",
+    "CHOLA",
+    "CIFCL"
+  ],
+  "product": "Personal Loan (salaried)",
+  "policy_version": "v1-2026-11-24",
+  "sources": {
+    "rules": "Chola flyers (Unlisted CAT update, Highlights, CIBIL -1 / Hybrid Flexi, 24–30 Nov offer) + Gauri's filled template, 24 Nov 2026"
+  },
+  "eligibility": {
+    "method": "lower of FOIR (7 years) and multiplier on net salary",
+    "combine": "lower",
+    "groups": {
+      "A_GOVT": {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "GOVERNMENT",
+          "Government",
+          "Central Government",
+          "State Government",
+          "PSU",
+          "Maharatna",
+          "Navratna",
+          "Mini Navratna"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 35000,
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 35000,
+            "salary_max_excl": null,
+            "foir_pct": 70
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": null,
+            "months": [
+              84
+            ]
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40001,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40000,
+            "multiplier": 18
+          },
+          {
+            "salary_min_incl": 40000,
+            "salary_max_excl": 50000,
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": null,
+            "multiplier": 26
+          }
+        ],
+        "note": "CAT A and Govt: FOIR 55% below ₹35K, 70% from ₹35K"
+      },
+      "BC": {
+        "categories": [
+          "CAT B",
+          "Category B",
+          "CAT C",
+          "Category C"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 35000,
+            "foir_pct": 55,
+            "foir_pct_hl": 70
+          },
+          {
+            "salary_min_incl": 35000,
+            "salary_max_excl": null,
+            "foir_pct": 65,
+            "foir_pct_hl": 70
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": null,
+            "months": [
+              84
+            ]
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40001,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40000,
+            "multiplier": 18
+          },
+          {
+            "salary_min_incl": 40000,
+            "salary_max_excl": 50000,
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": null,
+            "multiplier": 26
+          }
+        ],
+        "note": "CAT B / C: FOIR 55% below ₹35K, 65% from ₹35K, 70% with a live home loan"
+      },
+      "D": {
+        "categories": [
+          "CAT D",
+          "Category D"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "foir_pct": 55,
+            "foir_pct_hl": 70
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 40001,
+            "salary_max_excl": null,
+            "months": [
+              84
+            ]
+          },
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40001,
+            "months": [
+              60
+            ]
+          }
+        ],
+        "multiplier_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 40000,
+            "multiplier": 18
+          },
+          {
+            "salary_min_incl": 40000,
+            "salary_max_excl": 50000,
+            "multiplier": 20
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": null,
+            "multiplier": 26
+          }
+        ],
+        "note": "CAT D: FOIR 55%, 70% with a live home loan; 7 years"
+      },
+      "UNLISTED": {
+        "categories": [
+          "UNLISTED"
+        ],
+        "foir_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": 35000,
+            "foir_pct": 55
+          },
+          {
+            "salary_min_incl": 35000,
+            "salary_max_excl": 50000,
+            "foir_pct": 60
+          },
+          {
+            "salary_min_incl": 50000,
+            "salary_max_excl": null,
+            "foir_pct": 65
+          }
+        ],
+        "tenure_slabs": [
+          {
+            "salary_min_incl": 0,
+            "salary_max_excl": null,
+            "months": [
+              60,
+              72
+            ]
+          }
+        ],
+        "note": "Unlisted: FOIR only, 60 months (72 months only when loan is above ₹5L)"
+      }
+    },
+    "roi_slabs_by_loan_amount": [
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B"
+        ],
+        "loan_min_incl": 2000001,
+        "loan_max_excl": null,
+        "salary_min_incl": 175000,
+        "cibil_min_incl": 750,
+        "roi_pct": 12.25,
+        "valid_until": "2026-11-30",
+        "label": "Offer 24–30 Nov (PF 1%, 5 yrs exp)"
+      },
+      {
+        "categories": [
+          "CAT C",
+          "Category C",
+          "CAT D",
+          "Category D"
+        ],
+        "loan_min_incl": 1500001,
+        "loan_max_excl": null,
+        "salary_min_incl": 175000,
+        "cibil_min_incl": 750,
+        "roi_pct": 12.25,
+        "valid_until": "2026-11-30",
+        "label": "Offer 24–30 Nov (PF 1%, 5 yrs exp)"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "GOVERNMENT",
+          "Government",
+          "Central Government",
+          "State Government",
+          "PSU",
+          "Maharatna",
+          "Navratna",
+          "Mini Navratna"
+        ],
+        "loan_min_incl": 1000001,
+        "loan_max_excl": null,
+        "salary_min_incl": 75000,
+        "roi_pct": 13.5,
+        "label": "Special rate CAT A / Govt"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "GOVERNMENT",
+          "Government",
+          "Central Government",
+          "State Government",
+          "PSU",
+          "Maharatna",
+          "Navratna",
+          "Mini Navratna"
+        ],
+        "loan_min_incl": 750000,
+        "loan_max_excl": 1000001,
+        "salary_min_incl": 50000,
+        "salary_max_excl": 75000,
+        "roi_pct": 14.25,
+        "label": "Special rate CAT A / Govt"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B",
+          "CAT C",
+          "Category C",
+          "CAT D",
+          "Category D",
+          "GOVERNMENT",
+          "Government",
+          "Central Government",
+          "State Government",
+          "PSU",
+          "Maharatna",
+          "Navratna",
+          "Mini Navratna"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "roi_pct": 16.0,
+        "label": "Regular rate — PLACEHOLDER",
+        "placeholder": true
+      },
+      {
+        "categories": [
+          "UNLISTED"
+        ],
+        "loan_min_incl": 0,
+        "loan_max_excl": null,
+        "roi_pct": 26.0,
+        "range": "21-26",
+        "label": "Unlisted 21–26% (upper end used)"
+      }
+    ],
+    "roi_note": "Special CAT A / Govt rates and the 24–30 Nov offer are real; regular rate card not given yet (16% placeholder). Unlisted 21–26% (26% used)",
+    "max_loan": 3000000,
+    "min_cibil": 675,
+    "min_cibil_by_category": {
+      "UNLISTED": 725
+    },
+    "category_caps": [
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B",
+          "CAT C",
+          "Category C",
+          "CAT D",
+          "Category D",
+          "GOVERNMENT",
+          "Government",
+          "Central Government",
+          "State Government",
+          "PSU",
+          "Maharatna",
+          "Navratna",
+          "Mini Navratna"
+        ],
+        "cap": 500000,
+        "note": "CIBIL 675–700"
+      },
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B",
+          "CAT C",
+          "Category C",
+          "CAT D",
+          "Category D",
+          "GOVERNMENT",
+          "Government",
+          "Central Government",
+          "State Government",
+          "PSU",
+          "Maharatna",
+          "Navratna",
+          "Mini Navratna"
+        ],
+        "cibil_min_incl": 701,
+        "cap": 3000000
+      },
+      {
+        "categories": [
+          "CAT A",
+          "Category A",
+          "CAT B",
+          "Category B"
+        ],
+        "ntc": true,
+        "cap": 1000000,
+        "note": "CIBIL -1"
+      },
+      {
+        "categories": [
+          "UNLISTED"
+        ],
+        "cap": 500000
+      },
+      {
+        "categories": [
+          "UNLISTED"
+        ],
+        "served_min": 500000,
+        "cap": 750000,
+        "note": "₹5L–7.5L needs a ₹5L+ loan track for 6 months"
+      }
+    ],
+    "own_house_cap": {
+      "cap": 2000000,
+      "note": "above ₹20L own house is compulsory (house in spouse's name: spouse as co-applicant)"
+    }
+  },
+  "multiplier_by_salary": {
+    "apply_on": "salary",
+    "slabs": [],
+    "note": "Net salary × 18 (below ₹40K) / 20 (₹40–50K) / 26 (₹50K+); lower of FOIR and multiplier — TO CONFIRM lower vs both"
+  },
+  "min_net_salary": {
+    "_all": 20000,
+    "UNLISTED": 30000
+  },
+  "own_house_required_categories": [
+    "UNLISTED"
+  ],
+  "company": {
+    "unlisted_allowed": true,
+    "excluded_categories": [
+      "DELIST",
+      "Delist",
+      "Negative"
+    ],
+    "category_source": "Chola list in Company Category Checker (to be uploaded)",
+    "unlisted_rules": {
+      "min_company_age_years": 3,
+      "note": "Unlisted: Non-Govt, LLP / Pvt / Ltd regd with MCA, 3 yrs old, profitable last 2 yrs, 20+ employees on EPFO, not a small unit. Max ₹7.5L, CIBIL 725+, own house mandatory, only term loan, co-applicant mandatory if age 21–23"
+    }
+  },
+  "first_time_borrower": {
+    "trigger": "ntc_only",
+    "cap": 1000000,
+    "categories": [
+      "CAT A",
+      "Category A",
+      "CAT B",
+      "Category B"
+    ],
+    "note": "CIBIL -1: Non-Govt CAT A/B only — age ≤ 30, co-applicant available, loan ≤ ₹10L"
+  },
+  "co_applicant_income": true,
+  "co_applicant_note": "Main applicant must be from a listed company",
+  "other_income": {
+    "rental": {
+      "pct": 60
+    },
+    "quarterly": {
+      "pct": 50
+    },
+    "note": "Rent 60%; quarterly bonus counted (50% assumed — TO CONFIRM); other variable pay not counted"
+  },
+  "balance_transfer": {
+    "min_emis_paid": {
+      "bank": 6,
+      "nbfc": 6
+    },
+    "nbfc_mode": "all_except",
+    "lender_blacklist": [],
+    "own_bank_loans": "top_up",
+    "top_up_min_emis": 6,
+    "top_up_note": "Chola top-up after 6 EMIs — ASSUMED, to confirm",
+    "card_bt": true,
+    "max_card_bt_salary_multiple": 3,
+    "max_total": 6,
+    "note": "6 EMIs paid (bank and NBFC); foreclosure letter needed; max 6 loans/cards in BT; card BT only while card outstanding is within 3× gross salary; 1 month's card statement; repayment schedule accepted instead of SOA"
+  },
+  "obligations": {
+    "credit_card": {
+      "pct_of_outstanding": 5,
+      "exempt_if_total_outstanding_lte_salary_multiple": 3,
+      "exempt_salary_basis": "gross",
+      "prelogin_paydown": "all",
+      "rule": "Not counted while total outstanding is within 3× gross salary, else 5%; paid before login OK"
+    },
+    "pct_by_type": {
+      "GOLD": 0,
+      "KCC": 0,
+      "AGRI": 0
+    },
+    "home_loan_joint": {
+      "paid_by_co_applicant_pct": 0,
+      "rule": "Joint home loan: 100% if paid by applicant, 0% if paid by co-applicant"
+    }
+  },
+  "credit_rules": {
+    "loan_dpd": {
+      "reject_within_months": 6,
+      "deviation_within_months": 6,
+      "max_count_12m": 99,
+      "over_count": "deviation"
+    },
+    "card_dpd_12m": "deviation",
+    "max_new_unsecured": {
+      "months": 6,
+      "max": 1
+    }
+  },
+  "hard_rejects": [
+    {
+      "rule": "excluded_category"
+    },
+    {
+      "rule": "below_min_salary_for_category"
+    },
+    {
+      "rule": "own_bank_settlement_or_writeoff"
+    },
+    {
+      "rule": "own_bank_bad_history"
+    },
+    {
+      "rule": "heavy_dpd_late_payments_across_all_trades"
+    },
+    {
+      "rule": "settlement_or_writeoff_without_fresh_loan_after"
+    },
+    {
+      "rule": "settlement_or_writeoff_with_fresh_loan_after"
+    }
+  ],
+  "enquiries": {
+    "max_30d": 5,
+    "count_types": [
+      "Personal Loan"
+    ],
+    "deviation_possible": false,
+    "windows": [
+      {
+        "days": 120,
+        "max": 14
+      }
+    ],
+    "note": "Max 5 PL enquiries in 30 days (no deviation), 14 in 120 days"
+  },
+  "own_bank_enquiry_block": {
+    "days": 30,
+    "products": [
+      "Personal Loan"
+    ],
+    "note": "Own Chola PL enquiry within 30 days blocks login"
+  },
+  "subject_to_closure_allowed": true,
+  "checklist": [
+    "Age 21–58",
+    "Listed: total experience 3 yrs; loans above ₹20L: 5 yrs experience",
+    "Above ₹20L: own house compulsory (spouse's house → spouse as co-applicant)",
+    "₹25L–30L: credit manager FI compulsory",
+    "Unlisted: company 3 yrs on MCA, profitable last 2 yrs, 20+ employees (EPFO), current company 12 months (deviation up to 3 months), co-applicant if age 21–23, own house mandatory, no EMI bounce in last 3 months, no write-off / suit filed in last 3 yrs",
+    "Unlisted: current address visit by Chola staff; rented and PA in same city → PA FI + ownership proof",
+    "CIBIL -1 (CAT A/B only): applicant age ≤ 30 and co-applicant available, loan ≤ ₹10L",
+    "Offer 24–30 Nov: 12.25% / PF 1% only with income ₹1.75L+, CIBIL 750+, 5 yrs experience (TL; OD 13.25% / PF 1.75%)",
+    "Payslip waived if last 3 months salary is stable",
+    "BT: foreclosure letter needed; repayment schedule accepted; card BT 1 month's statement",
+    "Loans can be closed after login if eligibility falls short"
+  ],
+  "product_info": {
+    "rate": "Special CAT A/Govt 13.5% (₹75K+, >₹10L) / 14.25% (₹50–75K, ₹7.5–10L); offer 12.25% till 30 Nov",
+    "processing_fee": "Offer 1% (TL) / 1.75% (OD); regular to confirm",
+    "foreclosure": "After 6 months, 5%",
+    "part_payment": "Not allowed",
+    "insurance": "Yes",
+    "loan_amount": "₹1L – ₹30L",
+    "tenure": "Up to 84 months",
+    "tat": "Same-day login & disbursal (login before 11:30 AM)"
+  },
+  "open_items": [
+    "Regular rate card (16% placeholder)",
+    "Regular processing fee",
+    "Max loan CAT C / CAT D; when CAT A/B is ₹20L vs ₹30L",
+    "Grade 4 staff ₹7.5L — who?",
+    "Tenure for salary ₹40K or below (60 months assumed)",
+    "FOIR CAT D below ₹35K",
+    "Multiplier: lower of FOIR & multiplier, or both shown?",
+    "Quarterly bonus %",
+    "Chola top-up after how many EMIs (6 assumed)",
+    "OD obligation %",
+    "Settlement / write-off norms for listed",
+    "Unlisted company age: 3 yrs (flyer) or 2 yrs?",
+    "Hybrid Flexi (OD) as separate option",
+    "Chola company category list"
+  ]
+}

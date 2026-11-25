@@ -69,7 +69,8 @@ function roiSlabsFor(policy, score, category, salary, ownHouse, cityT) {
     && (s.salary_min_incl == null || (salary ?? 0) >= s.salary_min_incl)
     && (s.salary_max_excl == null || (salary ?? 0) < s.salary_max_excl)
     && (!s.own_house || ownHouse)
-    && (s.city_tier == null || s.city_tier === cityT));
+    && (s.city_tier == null || s.city_tier === cityT)
+    && (!s.valid_until || new Date().toISOString().slice(0, 10) <= s.valid_until));   // limited-time offers drop off by themselves
 }
 
 // FOIR slab: salary band, optionally limited by CIBIL score (cibil_min_incl / cibil_max_excl).
@@ -274,7 +275,16 @@ function hardChecks(policy, profile) {
   // NTC: -1, or a low "no history" score up to first_time_borrower.ntc_score_max (Bandhan: 1–18) is not a low score.
   const ntcMax = policy.first_time_borrower?.ntc_score_max;
   const isNtcScore = score === -1 || (ntcMax != null && score > 0 && score <= ntcMax);
-  if (minScore != null && score != null && !isNtcScore && score < minScore) reasons.push(`CIBIL score ${score} below ${policy.bank} minimum ${minScore}`);
+  const catMin = Object.entries(policy.eligibility?.min_cibil_by_category || {}).find(([k]) => norm(k) === norm(cat || ''))?.[1];
+  if (catMin != null && score != null && score !== -1 && score < catMin) reasons.push(`CIBIL score ${score} below ${policy.bank} minimum ${catMin} for ${cat}`);
+  else if (minScore != null && score != null && !isNtcScore && score < minScore) reasons.push(`CIBIL score ${score} below ${policy.bank} minimum ${minScore}`);
+  const ntcCats = policy.first_time_borrower?.categories;   // e.g. Chola: CIBIL -1 only for non-Govt CAT A / B
+  if (score === -1 && ntcCats && !ntcCats.some((x) => norm(x) === norm(cat || ''))) reasons.push(`CIBIL -1 (no history): ${policy.bank} does it only for ${ntcCats.filter((x) => /^CAT /.test(x)).join(' / ') || ntcCats.join(' / ')}`);
+  const ohReq = policy.own_house_required_categories;
+  if (ohReq && ohReq.some((x) => norm(x) === norm(cat || ''))) {
+    if (profile.ownHouse === false) reasons.push(`${cat === 'UNLISTED' ? 'Unlisted company' : cat}: ${policy.bank} needs an own house (self / parents / spouse)`);
+    else if (profile.ownHouse == null) deviations.push(`${cat === 'UNLISTED' ? 'Unlisted company' : cat}: own house (self / parents / spouse) is mandatory at ${policy.bank} — confirm`);
+  }
   const cr = policy.credit_rules || {};
   if (cr.loan_dpd && Array.isArray(c.dpdAccounts)) {
     const loans = c.dpdAccounts.filter((a) => !CARD_TYPES.includes(a.productType) && a.monthsAgo != null);
@@ -287,6 +297,13 @@ function hardChecks(policy, profile) {
       const msg = `${count12} late payments on loans in last 12 months (allowed ${cr.loan_dpd.max_count_12m})`;
       if (cr.loan_dpd.over_count === 'reject') reasons.push(msg); else deviations.push(msg);
     }
+  }
+  if (cr.max_new_unsecured) {
+    // e.g. Chola: 2+ unsecured loans taken in the last 6 months = score reject
+    const UNSEC = ['PL', 'CD', 'CONSUMER', 'BL', 'APP', 'EDU_UNSEC'];
+    const m = cr.max_new_unsecured;
+    const fresh = (profile.loans || []).filter((l) => UNSEC.includes(l.productType) && l.emisPaid != null && l.emisPaid <= m.months);
+    if (fresh.length > m.max) reasons.push(`${fresh.length} unsecured loans taken in the last ${m.months} months (${fresh.map((l) => l.lender).join(', ')}) — ${policy.bank} allows ${m.max}`);
   }
   if (cr.card_dpd_recent_months != null && Array.isArray(c.dpdAccounts)) {
     const recentCards = c.dpdAccounts.filter((a) => CARD_TYPES.includes(a.productType) && a.monthsAgo != null && a.monthsAgo <= cr.card_dpd_recent_months);
@@ -360,6 +377,12 @@ function hardChecks(policy, profile) {
       if (enq.deviation_possible) deviations.push(`${msg} — deviation needed`); else reasons.push(msg);
     }
   }
+  for (const w of enq.windows || []) {   // e.g. Chola: max 14 PL enquiries in 120 days
+    if (!Array.isArray(c.enquiryList) || !c.enquiryList.length) continue;
+    const types = enq.count_types;
+    const n = c.enquiryList.filter((e) => e.daysAgo != null && e.daysAgo <= w.days && (!types || types.some((t) => norm(e.product).includes(norm(t))))).length;
+    if (n > w.max) reasons.push(`${n} ${types ? types.join('/') + ' ' : ''}enquiries in ${w.days} days (max ${w.max})`);
+  }
   return { reasons, deviations, waits };
 }
 
@@ -410,6 +433,15 @@ function cardObligation(policy, profile) {
     paydownAccepted: accepted(c),
     remaining: Math.max(0, (c.outstanding || 0) - (accepted(c) ? (c.paidBeforeLoginWithProof || 0) : 0)),
   }));
+  if (rule.exempt_if_total_outstanding_lte_salary_multiple != null) {
+    // e.g. Chola: cards not counted while total outstanding is within 3 x gross salary (net used when gross is missing)
+    const useGross = rule.exempt_salary_basis === 'gross' && profile.grossSalary > 0;
+    const limit = rule.exempt_if_total_outstanding_lte_salary_multiple * (useGross ? profile.grossSalary : profile.netSalary);
+    const basis = `${rule.exempt_if_total_outstanding_lte_salary_multiple} × ${useGross ? 'gross' : 'net'} salary`;
+    if (total <= limit) return { total, amount: 0, rule: `Total CC outstanding within ${basis} — not obligated`, paydownToExempt: 0, ignoredPaydown, lines };
+    return { total, amount: (rule.pct_of_outstanding || 5) / 100 * total, rule: `${rule.pct_of_outstanding || 5}% of total CC outstanding (above ${basis})`,
+      paydownToExempt: total - limit, ignoredPaydown, lines };
+  }
   if (rule.exempt_if_total_outstanding_lte_net_salary && total <= profile.netSalary) {
     return { total, amount: 0, rule: 'Total CC outstanding ≤ net salary — not obligated', paydownToExempt: 0, ignoredPaydown, lines };
   }
@@ -580,7 +612,8 @@ export function evaluateBank(policy, profileIn) {
   // Category caps: the most generous matching rule applies, e.g. CAT C 15L, or 20L at salary 75K+.
   const ccaps = (policy.eligibility.category_caps || []).filter((r) => (r.categories || []).some((x) => norm(x) === norm(cat || ''))
     && (r.salary_min_incl == null || salary >= r.salary_min_incl)
-    && (r.cibil_min_incl == null || (profile.cibilScore ?? 0) >= r.cibil_min_incl)
+    && (r.ntc == null || r.ntc === (profile.cibilScore === -1))
+    && (r.ntc || r.cibil_min_incl == null || (profile.cibilScore ?? 0) >= r.cibil_min_incl)
     && (!r.risk_segments || r.risk_segments.includes(rseg))
     && (r.served_min == null || ((profile.credit || {}).servedLoanAmount || 0) >= r.served_min));
   if (ccaps.length) {
@@ -596,6 +629,11 @@ export function evaluateBank(policy, profileIn) {
       cap = cap != null ? Math.min(cap, cc2) : cc2;
       out.notes.push(`${hitC ? hitC.label : (cityCaps.default_label || 'Other city')}: max ${fmtINR(cc2)}${profile.city ? '' : ' (city not entered)'}`);
     }
+  }
+  const ohc = policy.eligibility.own_house_cap;   // e.g. Chola: above ₹20L only with own house
+  if (ohc && profile.ownHouse !== true && (cap == null || cap > ohc.cap)) {
+    cap = ohc.cap;
+    out.notes.push(`${profile.ownHouse === false ? 'No own house' : 'Own house not confirmed'}: max ${fmtINR(ohc.cap)}${ohc.note ? ` — ${ohc.note}` : ''}`);
   }
   const capBySal = pickSlab(policy.eligibility.max_loan_by_salary, salary)?.max_loan;
   if (capBySal != null) cap = cap != null ? Math.min(cap, capBySal) : capBySal;
@@ -647,6 +685,10 @@ export function evaluateBank(policy, profileIn) {
   } else if (profile.ownHouse && foirSlab?.foir_pct_own_house != null) {
     foirPct = foirSlab.foir_pct_own_house;
     out.notes.push(`Own house — FOIR ${foirPct}%`);
+  }
+  if (liveHlAny && foirSlab?.foir_pct_hl != null && foirSlab.foir_pct_hl > foirPct) {   // e.g. Chola CAT B/C/D: 70% with a live home loan
+    foirPct = foirSlab.foir_pct_hl;
+    out.notes.push(`Live home loan — FOIR ${foirPct}%`);
   }
   const hlBonus = policy.eligibility.foir_hl_bonus;   // e.g. { salary_min_incl: 75000, foir_pct: 75 }
   if (hlBonus && salary >= hlBonus.salary_min_incl
@@ -838,6 +880,11 @@ export function evaluateBank(policy, profileIn) {
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
+  if (out.best?.eligibleAmount > 0) {   // a placeholder rate (bank's rate card not given yet) is flagged only when it is the one used
+    const amt = out.best.eligibleAmount;
+    const used = [...roiSlabs].sort((x, y) => x.roi_pct - y.roi_pct).find((x) => amt >= (x.loan_min_incl ?? 0) && (x.loan_max_excl == null || amt < x.loan_max_excl));
+    if (used?.placeholder) out.warnings.push(`${policy.bank} regular rate card not given yet — ${used.roi_pct}% is a placeholder`);
+  }
   // Same rate add-ons as the best plan (card / app-loan BT, NTC, longer tenure), for the agent's own-amount EMI box.
   out.rateAdjust = { add: out.best?.rateAddOn || 0, min: out.best?.rateFloor || 0, tenureAdd: policy.eligibility.tenure_roi_add || null };
   // Max live unsecured loans after this loan (e.g. Bandhan: 3, waiver up to 5) — counts loans left after BT / closure + the new loan.

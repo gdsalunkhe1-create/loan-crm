@@ -794,3 +794,66 @@ test('L&T: no top-up — own L&T loan stays as obligation', () => {
   expect(l.bt.why).toMatch(/doesn't top up/);
   expect(l.obligation.amount).toBe(10000);
 });
+
+import chola from './chola_pl_policy.json';
+
+describe('Chola (24 Nov 2026)', () => {
+  const p = (o = {}) => ({ netSalary: 100000, grossSalary: 120000, ownHouse: true, cibilScore: 760, city: 'Pune', loans: [], cards: [], credit: {},
+    company: { categoriesByBank: { chola: 'CAT A' } }, ...o });
+
+  test('CAT A: FOIR 70% on 7 years, lower of FOIR and 26× net salary, special rate 13.5%, max ₹30L', () => {
+    const r = evaluateBank(chola, p());
+    expect(r.status).toBe('ELIGIBLE');
+    expect(r.foirPct).toBe(70);
+    expect(r.best.eligibleAmount).toBe(2600000);
+    expect(r.best.methods[0].roi).toBe(13.5);
+    expect(r.warnings.join()).not.toMatch(/placeholder/);
+    const small = evaluateBank(chola, p({ netSalary: 38000, grossSalary: 45000 }));   // ₹40K or below: 60 months, 18×
+    expect(small.foirPct).toBe(70);
+    expect(small.best.eligibleAmount).toBe(684000);
+    expect(small.warnings.join()).toMatch(/16% is a placeholder/);
+  });
+
+  test('Caps: above ₹20L only with own house, CIBIL 675–700 up to ₹5L, CIBIL -1 only CAT A/B up to ₹10L', () => {
+    expect(evaluateBank(chola, p({ ownHouse: undefined })).best.eligibleAmount).toBe(2000000);
+    expect(evaluateBank(chola, p({ cibilScore: 690 })).best.eligibleAmount).toBe(500000);
+    expect(evaluateBank(chola, p({ cibilScore: 660 })).status).toBe('NOT_ELIGIBLE');
+    expect(evaluateBank(chola, p({ cibilScore: -1 })).best.eligibleAmount).toBe(1000000);
+    const govt = evaluateBank(chola, p({ cibilScore: -1, company: { categoriesByBank: { chola: 'Central Government' } } }));
+    expect(govt.status).toBe('NOT_ELIGIBLE');
+    expect(govt.reasons.join()).toMatch(/CIBIL -1 \(no history\): Chola does it only for CAT A \/ CAT B/);
+  });
+
+  test('CAT B: 65%, 70% with a live home loan; cards free within 3× gross salary; gold loan not counted', () => {
+    const b = (o) => evaluateBank(chola, p({ company: { categoriesByBank: { chola: 'CAT B' } }, ...o }));
+    expect(b().foirPct).toBe(65);
+    expect(b({ loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 20000, emisPaid: 30, emisRemaining: 200 }] }).foirPct).toBe(70);
+    expect(b({ cards: [{ outstanding: 360000 }] }).obligations.cards.amount).toBe(0);
+    expect(b({ cards: [{ outstanding: 400000 }] }).obligations.cards.amount).toBe(20000);
+    expect(b({ loans: [{ id: 'g', lender: 'MUTHOOT', productType: 'GOLD', outstanding: 200000, emi: 0 }] }).obligations.loans[0].obligation.amount).toBe(0);
+  });
+
+  test('Credit: 2 unsecured loans in 6 months rejected; 6 PL enquiries in 30 days or 15 in 120 days rejected; own enquiry blocks', () => {
+    const two = evaluateBank(chola, p({ loans: [
+      { id: 'a', lender: 'BAJAJ FIN', productType: 'PL', outstanding: 200000, emi: 7000, emisPaid: 2, emisRemaining: 34 },
+      { id: 'b', lender: 'ICICI BANK', productType: 'PL', outstanding: 300000, emi: 9000, emisPaid: 4, emisRemaining: 44 }] }));
+    expect(two.reasons.join()).toMatch(/2 unsecured loans taken in the last 6 months/);
+    const enq = (list) => evaluateBank(chola, p({ credit: { enquiryList: list } }));
+    const mk = (n, start) => Array.from({ length: n }, (_, i) => ({ lender: 'X', product: 'Personal Loan', daysAgo: start + i }));
+    expect(enq(mk(5, 1)).status).toBe('ELIGIBLE');
+    expect(enq(mk(6, 1)).reasons.join()).toMatch(/6 Personal Loan enquiries in 30 days \(max 5\)/);
+    expect(enq([...mk(5, 1), ...mk(10, 40)]).reasons.join()).toMatch(/15 Personal Loan enquiries in 120 days \(max 14\)/);
+    expect(enq([{ lender: 'CHOLAMANDALAM INV', product: 'Personal Loan', daysAgo: 12 }]).eligibleAfterWait).toBe(true);
+  });
+
+  test('Unlisted: own house, CIBIL 725, company age, FOIR 55/60/65, max ₹7.5L with ₹5L+ loan track', () => {
+    const u = (o) => evaluateBank(chola, p({ company: { incorporationYear: 2018, categoriesByBank: { chola: null } }, ...o }));
+    expect(u({ ownHouse: false }).reasons.join()).toMatch(/Unlisted company: Chola needs an own house/);
+    expect(u({ cibilScore: 710 }).reasons.join()).toMatch(/below Chola minimum 725 for UNLISTED/);
+    expect(u({ netSalary: 28000 }).status).toBe('NOT_ELIGIBLE');   // ₹30K minimum
+    const ok = u({ netSalary: 60000 });
+    expect(ok.foirPct).toBe(65);
+    expect(ok.best.eligibleAmount).toBe(500000);
+    expect(u({ netSalary: 60000, credit: { servedLoanAmount: 600000 } }).best.eligibleAmount).toBe(750000);
+  });
+});
