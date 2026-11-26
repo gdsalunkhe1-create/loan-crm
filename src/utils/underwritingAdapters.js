@@ -508,20 +508,30 @@ export const isClosureNote = (note) => /^Subject to closure/.test(note);
 // eligibility — out.softFail) keeps them: closing a loan can fix those.
 // ---- Result card summary, own-amount EMI, income reminders ----
 
-// The method the card's summary strip shows. 'both' banks (HDFC): the best FOIR figure, with the
-// multiplier figure alongside; otherwise the method the engine picked (eligibleBy).
+// The method the card's summary strip shows: the one the engine picked (eligibleBy) — at every
+// bank the lower of the best FOIR figure and the multiplier figure (best.eligibleAmount).
 export function summaryMethod(best) {
   const methods = (best && best.methods) || [];
   if (!methods.length) return null;
-  if (best.eligibleRule === 'both') {
-    const firm = methods.filter((m) => !m.indicative);
-    const foir = firm.filter((m) => m.key.startsWith('foir')).reduce((a, m) => (!a || m.amount > a.amount ? m : a), null);
-    const multiplier = firm.find((m) => m.key.startsWith('multiplier')) || null;
-    return foir ? { method: foir, multiplier } : { method: multiplier, multiplier: null };
-  }
   const method = methods.find((m) => m.key === best.eligibleBy) || methods[0];
-  return { method, multiplier: null };
+  return { method };
 }
+
+// Card subtitle: "Lower of FOIR & multiplier" when the bank has a multiplier row, otherwise "FOIR".
+export const hasMultiplierRow = (best) => !!(best && (best.methods || []).some((m) => m.key === 'multiplier' || m.key.startsWith('multiplier_')));
+export const eligibilityRuleLabel = (best) => (hasMultiplierRow(best) ? 'Lower of FOIR & multiplier' : 'FOIR');
+
+// HDFC good profile (best.upside = the FOIR figure when the multiplier is lower):
+// "Good profile: up to ₹X (EMI ₹Y, 6 years) — confirm with HDFC"
+export function upsideLine(best, bankLabel, fmt) {
+  const u = best && best.upside;
+  if (!u || !(u.amount > 0)) return null;
+  const yrs = u.tenure ? `, ${Number((u.tenure / 12).toFixed(1))} years` : '';
+  return `Good profile: up to ${fmt(u.amount)} (EMI ${fmt(u.emi)}${yrs}) — confirm with ${shortBankName(bankLabel)}`;
+}
+
+// Kotak: "… scorecard not picked — lowest band (Amber) used; pick the scorecard band" (shown amber, with the selector).
+export const isLowBandNote = (n) => /scorecard not picked — lowest band/.test(n || '');
 
 // "Customer wants ₹… for [tenure]": the bank's method tenures plus 1–4 years, shortest first.
 export function emiTenureOptions(methods) {

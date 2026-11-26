@@ -386,7 +386,8 @@ function hardChecks(policy, profile) {
   return { reasons, deviations, waits };
 }
 
-function obligationOf(policy, loan) {
+const PRODUCT_LABEL = { GOLD: 'gold loans', KCC: 'KCC loans', OD: 'OD', AGRI: 'agri loans' };
+function obligationOf(policy, loan, allLoans = [loan]) {
   if (loan.closedBeforeLoginWithProof) return { amount: 0, rule: 'Closed before login (proof)' };
   if (loan.emisRemaining != null && loan.emisRemaining <= (policy.obligations?.loan_with_emis_remaining_lte ?? -1)) {
     return { amount: 0, rule: `Only ${loan.emisRemaining} EMI(s) left — not obligated` };
@@ -395,8 +396,16 @@ function obligationOf(policy, loan) {
   if (byType && byType[loan.productType] != null) {
     const r = byType[loan.productType];             // number, or { pct, exempt_below } e.g. gold loans under 5L not counted
     const pct = typeof r === 'object' ? r.pct : r;
-    if (typeof r === 'object' && r.exempt_below != null && (loan.outstanding || 0) < r.exempt_below) {
-      return { amount: 0, rule: `Below ${fmtINR(r.exempt_below)} — not counted` };
+    if (typeof r === 'object' && r.exempt_below != null) {
+      // e.g. Bandhan: gold loans not counted while the customer's TOTAL gold outstanding is under ₹5L (scope 'total', default); 'per_loan' checks each loan
+      const label = PRODUCT_LABEL[loan.productType] || loan.productType;
+      if (r.exempt_scope === 'per_loan') {
+        if ((loan.outstanding || 0) < r.exempt_below) return { amount: 0, rule: `Below ${fmtINR(r.exempt_below)} — not counted` };
+      } else {
+        const total = allLoans.filter((l) => l.productType === loan.productType && !l.closedBeforeLoginWithProof).reduce((n, l) => n + (l.outstanding || 0), 0);
+        if (total < r.exempt_below) return { amount: 0, rule: `Total ${label} ${fmtINR(total)} below ${fmtINR(r.exempt_below)} — not counted` };
+        return { amount: pct / 100 * (loan.outstanding || 0), rule: `${pct}% of outstanding (total ${label} ${fmtINR(total)} ≥ ${fmtINR(r.exempt_below)})` };
+      }
     }
     return { amount: pct / 100 * (loan.outstanding || 0), rule: `${pct}% of outstanding` };
   }
@@ -555,7 +564,7 @@ export function evaluateBank(policy, profileIn) {
 
   // Obligations are worked out even when the bank says no, so the table can still show what each bank counts.
   const obligationsOnly = () => ({
-    loans: (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l), bt: btCandidate(policy, l) })),
+    loans: (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l, profile.loans), bt: btCandidate(policy, l) })),
     cards: cardObligation(policy, profile),
   });
   if (profile.company && confirmed === false) {
@@ -589,7 +598,7 @@ export function evaluateBank(policy, profileIn) {
   if (profile._coApplicantAdded) out.notes.push(`Co-applicant income ${fmtINR(profile._coApplicantAdded)} added — eligibility on combined ${fmtINR(profile.netSalary)} (add the co-applicant's loans to the table)`);
 
   // Obligations
-  const loanLines = (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l), bt: btCandidate(policy, l) }));
+  const loanLines = (profile.loans || []).map((l) => ({ ...l, obligation: obligationOf(policy, l, profile.loans), bt: btCandidate(policy, l) }));
   const card = cardObligation(policy, profile);
   out.obligations = { loans: loanLines, cards: card };
   if (card.paydownToExempt > 0) out.warnings.push(`Paying ${fmtINR(Math.ceil(card.paydownToExempt))} on cards before login removes the CC obligation (${fmtINR(card.amount)}/month)`);
@@ -768,6 +777,7 @@ export function evaluateBank(policy, profileIn) {
   const ntcScoreBT = profile.cibilScore === -1 || profile.cibilScore === 0;
   const addons = policy.roi_addons || {};
   const scenarios = [];
+  let noteLowBand = false;
   for (let pass = 0; pass < 2; pass++) {
   for (let mask = 0; mask < 1 << cands.length; mask++) {
     if ((mask & forcedMask) !== forcedMask) continue;
@@ -861,11 +871,17 @@ export function evaluateBank(policy, profileIn) {
     for (const m of methods) m.emi = Math.round(emiFor(m.amount, m.roi, m.tenure));
     const firm = methods.filter((x) => !x.indicative);
     let top = firm.reduce((a, b) => (b.amount > a.amount ? b : a), firm[0]);
+    let upside = null;
     if (policy.eligibility.combine === 'lower') {
       // Bank gives the LOWER of its best FOIR figure and the multiplier figure.
       const bestFoir = firm.filter((x) => x.key.startsWith('foir')).reduce((a, b) => (!a || b.amount > a.amount ? b : a), null);
-      const mlt = firm.find((x) => x.key.startsWith('multiplier'));
+      // Scorecard banks (Kotak): use the band the agent picked; none picked → the lowest band (conservative).
+      const ind = methods.filter((x) => x.indicative && x.key.startsWith('multiplier'));
+      const mlt = firm.find((x) => x.key.startsWith('multiplier')) || (ind.length ? ind.reduce((a, b) => (b.amount < a.amount ? b : a)) : null);
       if (bestFoir && mlt) top = mlt.amount < bestFoir.amount ? mlt : bestFoir;
+      // Some banks (HDFC) may still sanction the FOIR figure for a good profile — shown as an upside, not the eligible amount.
+      if (policy.eligibility.foir_if_good_profile && top === mlt && bestFoir && bestFoir.amount > mlt.amount) upside = bestFoir;
+      if (top === mlt && mlt.indicative && !noteLowBand) { noteLowBand = true; out.notes.push(`${policy.bank} scorecard not picked — lowest band (${mlt.band}) used; pick the scorecard band`); }
     }
     scenarios.push({
       limitedBy: m && m < f60 ? 'multiplier' : 'foir',
@@ -878,6 +894,8 @@ export function evaluateBank(policy, profileIn) {
       eligibleAmount: top.amount,               // highest of the methods (or the lower of FOIR / multiplier when combine = 'lower')
       eligibleRule: policy.eligibility.combine === 'lower' ? 'lower' : (policy.eligibility.combine === 'both' ? 'both' : 'highest'),
       eligibleBy: top.key,
+      upside: upside ? { key: upside.key, label: upside.label, amount: upside.amount, tenure: upside.tenure, roi: upside.roi, emi: upside.emi,
+        netInHand: upside.amount - btOutstanding, note: policy.eligibility.foir_if_good_profile.note || null } : null,
       conservativeAmount: conservative,         // lower of FOIR 5y and multiplier (for reference)
       netInHand: top.amount - btOutstanding,    // in hand on the highest method
       netInHandConservative: conservative - btOutstanding,
@@ -891,6 +909,9 @@ export function evaluateBank(policy, profileIn) {
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
+  if (out.best?.upside) {
+    out.notes.push(`Good profile: ${policy.bank} may give the FOIR figure ${fmtINR(out.best.upside.amount)} (${out.best.upside.label}) instead of the multiplier ${fmtINR(out.best.eligibleAmount)} — bank's call${out.best.upside.note ? ` (${out.best.upside.note})` : ''}`);
+  }
   if (out.best?.eligibleAmount > 0) {   // a placeholder rate (bank's rate card not given yet) is flagged only when it is the one used
     const amt = out.best.eligibleAmount;
     const used = [...roiSlabs].sort((x, y) => x.roi_pct - y.roi_pct).find((x) => amt >= (x.loan_min_incl ?? 0) && (x.loan_max_excl == null || amt < x.loan_max_excl));

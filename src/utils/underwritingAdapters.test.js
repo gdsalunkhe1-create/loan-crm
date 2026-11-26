@@ -809,22 +809,26 @@ describe('Kotak v4: manual category, Amber, scorecard multiplier rows', () => {
     expect(scorecardTone(kotak.scorecard, 'Amber')).toBe(scorecardTone(kotak.scorecard, 'Yellow'));
   });
 
-  test('no scorecard picked: one indicative row per scorecard, never the highest', () => {
+  test('no scorecard picked: one indicative row per scorecard; the lowest band is used (lower of FOIR & multiplier)', () => {
     const best = evaluateBank(kotak, profileWith('CAT A')).best;
     const sc = best.methods.filter((m) => m.key.startsWith('multiplier_'));
     expect(sc.map((m) => m.band)).toEqual(Object.keys(kotak.multiplier_by_scorecard.values));
     sc.forEach((m) => { expect(m.indicative).toBe(true); expect(m.multiplier).toBeGreaterThan(0); });
-    expect(best.eligibleBy.startsWith('multiplier_')).toBe(false);
+    const lowest = sc.reduce((a, m) => (m.amount < a.amount ? m : a));
+    const bestFoir = Math.max(...best.methods.filter((m) => m.key.startsWith('foir')).map((m) => m.amount));
+    expect(best.eligibleAmount).toBe(Math.min(lowest.amount, bestFoir));
   });
 
-  test('scorecard picked: that row is firm and can be the highest', () => {
+  test('scorecard picked: that row is firm; eligible = lower of it and the best FOIR figure', () => {
     // A big HL EMI shrinks FOIR; Kotak's scorecard multiplier is on gross salary, so it wins.
     const hl = { id: 'hl', lender: 'SBI', productType: 'HL', emi: 100000, emisPaid: 50, emisRemaining: 150 };
     const best = evaluateBank(kotak, { ...profileWith('CAT A', 'Super green'), loans: [hl] }).best;
     const sc = best.methods.filter((m) => m.key.startsWith('multiplier_'));
     expect(sc).toHaveLength(1);
     expect(sc[0]).toMatchObject({ band: 'Super green', multiplier: 21, indicative: false, amount: 4200000 });
-    expect(best.eligibleBy).toBe(sc[0].key);
+    const foir = best.methods.filter((m) => m.key.startsWith('foir')).reduce((a, m) => (m.amount > a.amount ? m : a));
+    expect(best.eligibleBy).toBe(foir.amount < sc[0].amount ? foir.key : sc[0].key);
+    expect(best.eligibleAmount).toBe(Math.min(foir.amount, sc[0].amount));
   });
 });
 
@@ -1248,11 +1252,10 @@ describe('Treatment dropdowns reach the engine (Auto → BT / Closed, card Keep 
 describe('Result card summary, own-amount EMI, income hints', () => {
   const { emiFor, rateForAmount } = require('./underwritingEngine');
 
-  test('summaryMethod: picked method; "both" banks give the best FOIR figure plus the multiplier', () => {
+  test('summaryMethod: always the method the engine picked (no "both" rule any more)', () => {
     const methods = [{ key: 'foir_60', amount: 900000 }, { key: 'foir_72', amount: 1000000 }, { key: 'multiplier', amount: 1200000 }];
-    expect(summaryMethod({ eligibleBy: 'multiplier', eligibleRule: 'highest', methods }).method.key).toBe('multiplier');
-    const both = summaryMethod({ eligibleBy: 'multiplier', eligibleRule: 'both', methods });
-    expect([both.method.key, both.multiplier.key]).toEqual(['foir_72', 'multiplier']);
+    expect(summaryMethod({ eligibleBy: 'multiplier', eligibleRule: 'lower', methods })).toEqual({ method: methods[2] });
+    expect(summaryMethod({ eligibleBy: 'foir_72', eligibleRule: 'lower', methods }).method.key).toBe('foir_72');
     expect(summaryMethod({ methods: [] })).toBeNull();
   });
 
@@ -1355,6 +1358,8 @@ describe('Own-bank enquiry block, ask the customer, top-up (23 Nov policies)', (
   ];
   const profile = {
     netSalary: 90000, cibilScore: 770, city: 'Pune', salaryAccountBank: 'HDFC Bank',
+    // Kotak scorecard picked: with none, the lowest-band multiplier is the lower figure and Kotak takes no BT.
+    scorecardByBank: { kotak: 'Super green' },
     company: { name: 'ACME', category: null, categoryConfirmed: true, categoriesByBank: CATS, confirmedByBank: {} },
     credit: { enquiryList },
     loans: [
@@ -1623,5 +1628,55 @@ describe('BT summary, closed loans never in BT, Tata ₹50K BT minimum (25 Nov)'
 
   test('"Apply suggestion — close card" clears a BT treatment on the card', () => {
     expect(A.cardTreatmentPatch({ outstanding: 60000, treatment: 'bt' }, 'close')).toEqual({ action: 'close', paidBeforeLoginWithProof: 60000, treatment: 'auto' });
+  });
+});
+
+describe('Lower of FOIR & multiplier at every bank, HDFC good-profile upside, Kotak lowest band (25 Nov)', () => {
+  const A = require('./underwritingAdapters');
+  const { fmtINR } = require('./underwritingEngine');
+  const IDS = { axis: 'axis_bank', bandhan: 'bandhan', chola: 'chola', hdfc: 'hdfc_bank', icici: 'icici', indusind: 'indusind', kotak: 'kotak', lt: 'lt', poonawalla: 'poonawalla_fincorp', tata: 'tata_capital', yes: 'yes' };
+  const CATS = { axis_bank: 'CAT A', bandhan: 'CAT A', chola: 'CAT A', hdfc_bank: 'CAT A', icici: 'Preferred', indusind: 'CAT A', kotak: 'CAT A', lt: 'CAT A', poonawalla_fincorp: 'CAT A', tata_capital: 'CAT A', yes: 'Gold' };
+  const prof = (loans = []) => ({ netSalary: 100000, grossSalary: 120000, ownHouse: true, cibilScore: 780, city: 'Pune', salaryAccountBank: 'HDFC Bank', credit: {}, cards: [], loans,
+    company: { name: 'X', category: 'CAT A', categoryConfirmed: true, categoriesByBank: CATS, confirmedByBank: {} } });
+  const hl = { id: 'h', lender: 'SBI', productType: 'HL', outstanding: 3000000, emi: 10000, emisPaid: 24, emisRemaining: 200, treatment: 'auto' };
+
+  test('every bank: the strip amount is best.eligibleAmount = lower of best FOIR and multiplier; subtitle by multiplier row', () => {
+    for (const k of Object.keys(IDS)) {
+      const p = require(`./${k}_pl_policy.json`);
+      const r = evaluateBank(p, prof([hl]));
+      if (!r.best) continue;
+      expect([k, r.best.eligibleRule]).toEqual([k, 'lower']);
+      expect(A.summaryMethod(r.best).method.amount).toBe(r.best.eligibleAmount);
+      const foir = Math.max(...r.best.methods.filter((m) => m.key.startsWith('foir') && !m.indicative).map((m) => m.amount));
+      const mult = r.best.methods.filter((m) => m.key.startsWith('multiplier'));
+      const hasMult = mult.length > 0;
+      expect([k, A.eligibilityRuleLabel(r.best)]).toEqual([k, hasMult ? 'Lower of FOIR & multiplier' : 'FOIR']);
+      if (!hasMult) expect(r.best.eligibleAmount).toBe(foir);
+      else expect(r.best.eligibleAmount).toBeLessThanOrEqual(foir);
+    }
+  });
+
+  test('HDFC: multiplier on salary − obligations; FOIR figure as the good-profile upside line', () => {
+    const hdfc = require('./hdfc_pl_policy.json');
+    const r = evaluateBank(hdfc, prof([hl]));
+    expect(r.best.eligibleBy).toBe('multiplier');
+    expect(r.best.eligibleAmount).toBe(90000 * r.best.methods.find((m) => m.key === 'multiplier').multiplier);
+    expect(r.best.upside.key).toBe('foir_72');
+    expect(A.upsideLine(r.best, hdfc.bank, fmtINR)).toBe(`Good profile: up to ${fmtINR(r.best.upside.amount)} (EMI ${fmtINR(r.best.upside.emi)}, 6 years) — confirm with HDFC`);
+    expect(r.notes.join()).toMatch(/Good profile: HDFC Bank may give the FOIR figure/);
+    // Ranking keeps the eligible amount, not the upside.
+    expect(A.rankResults([{ bankId: 'hdfc_bank', result: r }])[0].result.best.eligibleAmount).toBe(r.best.eligibleAmount);
+    expect(A.upsideLine({ upside: null }, 'HDFC Bank', fmtINR)).toBeNull();
+  });
+
+  test('Kotak: no scorecard picked → lowest band sets the amount, note shown amber (with the selector)', () => {
+    const kotak = require('./kotak_pl_policy.json');
+    const r = evaluateBank(kotak, prof());
+    const low = r.notes.find(A.isLowBandNote);
+    expect(low).toMatch(/scorecard not picked — lowest band \(Amber\) used; pick the scorecard band/);
+    expect(r.best.eligibleBy).toBe('multiplier_amber');
+    expect(A.summaryMethod(r.best).method.key).toBe('multiplier_amber');
+    const picked = evaluateBank(kotak, { ...prof(), scorecardByBank: { kotak: 'Green' } });
+    expect(picked.notes.some(A.isLowBandNote)).toBe(false);
   });
 });

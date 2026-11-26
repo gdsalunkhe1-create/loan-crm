@@ -6,13 +6,13 @@
     "YESBANK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v2-2026-11-23",
+  "policy_version": "v4-2026-11-25",
   "sources": {
     "rules": "Gauri's Yes Bank template + FOIR/multiplier annexure + PL pricing Nov'26, 3 Nov 2026"
   },
   "eligibility": {
     "method": "show_both_foir_and_multiplier",
-    "combine": "both",
+    "combine": "lower",
     "groups": {
       "DGP": {
         "categories": [
@@ -1210,12 +1210,12 @@
     ],
     "roi_note": "15L+ 10.85%. Below 15L: Nov'26 rack rate by Non-Silver (Diamond/Gold/Platinum) or Silver × income × CIBIL (<730/-1 all tiers; 730+: Tier 1 / Tier 2 city below 10L, 'fresh loan >10L' column for 10–15L). IBT column not used.",
     "max_loan": 5000000,
-    "min_cibil": 700
+    "min_cibil": 700,
+    "combine_note": "Lower of best FOIR and multiplier (Gauri, 25 Nov 2026)"
   },
   "multiplier_by_salary": {
-    "apply_on": "salary_minus_hl",
     "slabs": [],
-    "note": "Net salary minus home-loan EMI only (other loans not deducted) × multiplier — TO CONFIRM"
+    "note": "(Net salary − all obligations after BT) × multiplier (Gauri, 25 Nov 2026)"
   },
   "bureau_tier": {
     "thick_min": 500000,

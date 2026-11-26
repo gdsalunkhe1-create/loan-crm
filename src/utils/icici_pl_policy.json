@@ -5,7 +5,7 @@
     "ICICI"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v12-2026-11-23",
+  "policy_version": "v13-2026-11-25",
   "sources": {
     "rules": "Gauri's policy notes, 14 Oct 2026"
   },
@@ -124,7 +124,9 @@
       }
     ],
     "roi_note": "15L+: 10.35% (CIBIL 775+), 10.65% (750–774) — offer for Elite, Super Prime, Preferred, doctors, professionals, Govt (not armed forces). 10–15L and below-750 rates unchanged; below 10L 13%. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
-    "max_loan": 12500000
+    "max_loan": 12500000,
+    "combine": "lower",
+    "combine_note": "Lower of best FOIR and multiplier (Gauri, 25 Nov 2026)"
   },
   "min_net_salary": {
     "_all": 40000

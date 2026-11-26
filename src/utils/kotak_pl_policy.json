@@ -5,7 +5,7 @@
     "KOTAK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v12-2026-11-23",
+  "policy_version": "v13-2026-11-25",
   "sources": {
     "rules": "Gauri's policy notes, 17 Oct 2026; multiplier grid to follow"
   },
@@ -150,7 +150,9 @@
       }
     ],
     "roi_unconfirmed": false,
-    "roi_note": "CAT A / B (CIBIL 730+, NTH ₹50K+): 9.99% for ₹25L+ with NTH ₹75K+, 10.04% ₹15L+, 10.60% ₹10–15L, 11.50% ₹5–10L, 12.99% below ₹5L. Not for top-ups. CAT C / D unchanged. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that."
+    "roi_note": "CAT A / B (CIBIL 730+, NTH ₹50K+): 9.99% for ₹25L+ with NTH ₹75K+, 10.04% ₹15L+, 10.60% ₹10–15L, 11.50% ₹5–10L, 12.99% below ₹5L. Not for top-ups. CAT C / D unchanged. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
+    "combine": "lower",
+    "combine_note": "Lower of best FOIR and multiplier (Gauri, 25 Nov 2026)"
   },
   "min_net_salary": {
     "_all": 35000

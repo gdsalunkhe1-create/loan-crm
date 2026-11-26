@@ -31,6 +31,7 @@ import {
   isWaitResult, autoBankEntry, canLogFromDate, askCustomerRows, hlCoApplicantPaysPatch, bankAskChips, topUpLoanNote, ownBankTopUpNote,
   noCompanyListBanks, ownHouseChoice, ownHousePatch,
   CARD_TREATMENTS, cardTreatmentChoice, cardTreatmentPatch, cardTreatmentNote, cardRuleText, btSummary,
+  eligibilityRuleLabel, upsideLine, isLowBandNote,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -2204,7 +2205,6 @@ function SummaryStrip({ summary }) {
       <div style={{ padding: '0 14px' }}>
         <div style={{ fontSize: '11px', color: '#7a8194' }}>Eligible</div>
         <div style={{ fontSize: '17px', fontWeight: 800, color: GREEN }}>{fmtINR(m.amount)}</div>
-        {summary.multiplier && <div style={{ fontSize: '11px', color: '#7a8194' }}>multiplier {fmtINR(summary.multiplier.amount)}</div>}
       </div>
       {item('EMI', m.emi > 0 ? `${fmtINR(m.emi)}/month` : '—')}
       {item('ROI', m.roi != null ? `${m.roi}%` : '—')}
@@ -2325,6 +2325,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
   const waiting = isWaitResult(entry);
   const badge = waiting ? WAIT_BADGE : st;
   const askChips = bankAskChips(result, fmtINR);
+  const lowBandNote = ((result && result.notes) || []).find(isLowBandNote) || null;
   const fadeTitle = needsInput ? 'Provisional — fix the input above' : afterWait ? 'Applies once the wait is over' : undefined;
 
   return (
@@ -2348,12 +2349,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
           </select>
         </div>
       )}
-      {isLowerRule(best) && <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>Lower of FOIR &amp; multiplier</div>}
-      {isBothRule(best) && (
-        <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>
-          FOIR and multiplier — bank decides (good banding → FOIR, bad banding → multiplier)
-        </div>
-      )}
+      {best && <div style={{ fontSize: '12px', color: '#7a8194', margin: '-8px 0 12px' }}>{eligibilityRuleLabel(best)}</div>}
 
       {error && (
         <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#b91c1c', fontSize: '13px' }}>
@@ -2375,6 +2371,9 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
       {summary && summary.method && (
         <div style={{ ...fade, marginTop: needsInput || afterWait ? '10px' : 0 }} title={fadeTitle}>
           <SummaryStrip summary={summary} />
+          {upsideLine(best, label, fmtINR) && (
+            <div style={{ fontSize: '12px', color: BLUE, fontWeight: 600, margin: '0 0 8px' }}>{upsideLine(best, label, fmtINR)}</div>
+          )}
           <BtSummaryTable result={result} loans={loans} cards={cards} eligible={summary.method.amount} defaultOpen={summaryOpen} />
           {!notEligible && !needsInput && <CustomerEmi result={result} method={summary.method} cibilScore={cibilScore} />}
         </div>
@@ -2405,7 +2404,13 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
 
       {/* Notes (blue) and warnings (amber) at the bottom, then the checklist and product line. */}
       {result && !notEligible && !needsInput && <MessageList items={result.reasons} color="#b91c1c" background="#fef2f2" />}
-      {result && !notEligible && <MessageList items={(result.notes || []).filter((n) => !isClosureNote(n))} color={BLUE} background="#eef4fb" />}
+      {result && !notEligible && lowBandNote && (
+        <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{lowBandNote}</span>
+          {entry.scorecard && <ScorecardSelect scorecard={entry.scorecard} value={scorecardValue} onChange={onScorecard} />}
+        </div>
+      )}
+      {result && !notEligible && <MessageList items={(result.notes || []).filter((n) => !isClosureNote(n) && !isLowBandNote(n))} color={BLUE} background="#eef4fb" />}
       {result && !notEligible && <MessageList items={[...odWarnings, ...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" />}
 
       {entry.topUpNote && <div style={{ fontSize: '12px', color: '#7a8194', margin: '8px 0 0' }}>{entry.topUpNote}</div>}
@@ -2465,10 +2470,6 @@ function OtherIncomeTable({ otherIncome, netSalary }) {
   );
 }
 
-// IndusInd: the bank gives the lower of its best FOIR figure and the multiplier figure.
-const isLowerRule = (scenario) => !!(scenario && scenario.eligibleRule === 'lower');
-// HDFC: FOIR and multiplier both shown; the bank picks by banding, so no row is marked.
-const isBothRule = (scenario) => !!(scenario && scenario.eligibleRule === 'both');
 
 const GREEN = '#166534';
 const MUTED = '#9aa1b2';
@@ -2479,7 +2480,9 @@ const isMultiplierMethod = (m) => m.key === 'multiplier' || m.key.startsWith('mu
 const multiplierText = (m) => (m.multiplier == null ? null : `${m.key === 'multiplier' && m.band ? `${m.band} · ` : ''}×${m.multiplier}`);
 
 // Every method side by side (FOIR per tenure + multipliers); the bank may sanction on any of them.
-// Indicative rows (scorecard not picked yet) are greyed and never the Highest.
+// Every bank: eligible = lower of the best FOIR figure and the multiplier figure (green badge on the row
+// that sets the amount — for Kotak with no scorecard picked, the greyed lowest band). HDFC good profile:
+// the FOIR row the bank may give instead (best.upside) has a blue badge.
 function EligibilityTable({ result }) {
   const best = result.best;
   const band = result.risk.band;
@@ -2496,7 +2499,8 @@ function EligibilityTable({ result }) {
           {best.methods.map((m) => {
             const isMult = isMultiplierMethod(m);
             const ind = !!m.indicative;
-            const highest = !ind && !isBothRule(best) && m.key === best.eligibleBy && m.amount > 0;
+            const highest = m.key === best.eligibleBy && m.amount > 0;
+            const upside = !!(best.upside && m.key === best.upside.key);
             const rowStyle = ind ? { color: MUTED, fontStyle: 'italic' } : highest ? { background: '#f0fdf4' } : undefined;
             const multText = isMult && multiplierText(m);
             return (
@@ -2505,7 +2509,8 @@ function EligibilityTable({ result }) {
                   <div style={{ fontSize: '13px', fontWeight: ind ? 400 : 600 }}>
                     {m.label}
                     {ind && <span style={{ fontSize: '11px' }}> (if scorecard is {m.band})</span>}
-                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px' }}>{isLowerRule(best) ? 'Eligible (lower of FOIR & multiplier)' : 'Highest'}</span>}
+                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px', fontStyle: 'normal' }}>Eligible (lower of FOIR &amp; multiplier)</span>}
+                    {upside && <span style={{ ...tag('#dbeafe', '#1e40af'), marginLeft: '6px' }}>Good profile — possible</span>}
                   </div>
                   {!isMult && <div style={{ fontSize: '11px', color: '#7a8194' }}>FOIR {result.foirPct}%</div>}
                   {multText && <div style={{ fontSize: '11px', color: ind ? MUTED : '#7a8194' }}>{multText}</div>}

@@ -245,7 +245,7 @@ test('Subject-to-closure plan suggests closing a small high-EMI loan', () => {
   expect(r.notes.join()).toMatch(/Subject to closure of KRAZYBEE/);
 });
 
-test('Both methods shown: FOIR can carry the case when the multiplier is below BT POS', () => {
+test('Lower of FOIR and multiplier (25 Nov 2026): a multiplier below BT POS cannot be carried by FOIR', () => {
   // salary 1L, CAT A; BT loans large enough that multiplier < BT POS but FOIR > BT POS
   const loans = [
     { id: 'tcl', lender: 'TCL', productType: 'PL', outstanding: 1400000, emi: 15000, emisPaid: 28, emisRemaining: 40, odStatus: 'term' },
@@ -257,8 +257,10 @@ test('Both methods shown: FOIR can carry the case when the multiplier is below B
   expect(Object.keys(by)).toEqual(['foir_60', 'foir_72', 'multiplier']);
   expect(by.multiplier.netInHand).toBeLessThan(0);
   expect(by.foir_60.netInHand).toBeGreaterThan(0);
-  expect(s.eligibleBy).toBe('foir_72');
-  expect(s.netInHand).toBeGreaterThan(0);
+  expect(s.eligibleBy).toBe('multiplier');   // lower of FOIR and multiplier
+  expect(s.netInHand).toBeLessThan(0);
+  expect(r.best.eligibleRule).toBe('lower');
+  expect(r.best.bt).toEqual([]);   // so the best plan is without BT
   expect(r.status).toBe('ELIGIBLE');
 });
 
@@ -269,7 +271,8 @@ test('Kotak: category/salary ROI, scorecard multiplier for all cards until one i
   const ms = r.best.methods.filter((m) => m.key.startsWith('multiplier_'));
   expect(ms.map((m) => m.multiplier)).toEqual([19, 17, 15, 12]);    // 50K-1L column, all scorecards
   expect(ms.every((m) => m.indicative)).toBe(true);
-  expect(r.best.eligibleBy.startsWith('foir')).toBe(true);           // indicative rows don't set "highest"
+  expect(r.best.eligibleBy).toBe('multiplier_amber');               // no scorecard picked: lowest band, lower of FOIR & multiplier (25 Nov)
+  expect(r.notes.join()).toMatch(/scorecard not picked — lowest band/);
   expect(r.best.methods.find((m) => m.key === 'foir_60').roi).toBe(10.04);   // Kotak Nov offer
   const g = evaluateBank(kotak, { ...kBase, scorecardByBank: { kotak: 'Green' } });
   const gm = g.best.methods.filter((m) => m.key.startsWith('multiplier_'));
@@ -323,7 +326,8 @@ test('Own-bank loan is closed through top-up, not BT (Vijay case: HDFC PL at HDF
   expect(own.bt.topUp).toBe(true);
   expect(own.bt.why).toMatch(/top-up/);
   expect(r.best.topUp).toEqual(['hdfc']);
-  expect(r.best.bt).toContain('axis');
+  expect(r.obligations.loans.find((l) => l.id === 'axis').bt.ok).toBe(true);
+  expect(r.scenarios.some((s) => s.bt.includes('axis') && s.bt.includes('hdfc'))).toBe(true);
   const i = evaluateBank(icici, { ...iBase, loans });
   expect(i.obligations.loans.find((l) => l.id === 'hdfc').bt.topUp).toBeUndefined();   // HDFC loan at ICICI is a normal BT
 });
@@ -441,7 +445,7 @@ test('27 Oct updates: HDFC both, multiple HDFC lates, HDFC BL, co-applicant, clo
   const h2 = evaluateBank(policy, { ...base, credit: { dpdAccounts: [{ lender: 'HDFC BANK', productType: 'CC', count12m: 1 }, { lender: 'HDFC BANK LTD', productType: 'PL', count12m: 2 }] } });
   expect(h2.status).toBe('NOT_ELIGIBLE');
   expect(evaluateBank(policy, { ...base, loans: [...base.loans, { id: 'bl', lender: 'HDFC BANK', productType: 'BL', outstanding: 500000, emi: 15000, emisPaid: 10 }] }).reasons.join()).toMatch(/business loan/);
-  expect(evaluateBank(policy, base).best.eligibleRule).toBe('both');
+  expect(evaluateBank(policy, base).best.eligibleRule).toBe('lower');   // was 'both' until 25 Nov 2026
   const co = evaluateBank(policy, { ...base, coApplicantNetSalary: 50000 });
   expect(co.foirPct).toBe(70);
   expect(co.notes.join()).toMatch(/Co-applicant income/);
@@ -541,16 +545,16 @@ test('Yes Bank: bureau tier FOIR/multiplier grids, HL-only multiplier base, rack
   expect(st.bureauTier).toBe('super_thick');
   expect(st.foirPct).toBe(75);
   expect(st.best.methods.find((m) => m.key === 'multiplier').multiplier).toBe(30);
-  expect(st.best.eligibleRule).toBe('both');
+  expect(st.best.eligibleRule).toBe('lower');   // was 'both' until 25 Nov 2026
   const thin = evaluateBank(yes, p({ netSalary: 120000, credit: { enquiryList: [], servedLoanAmount: 300000 } }));
   expect(thin.bureauTier).toBe('thin');
   expect(thin.best.methods.find((m) => m.key === 'multiplier').multiplier).toBe(28);
   expect(evaluateBank(yes, p({ netSalary: 120000, cibilScore: -1 })).foirPct).toBe(50);
   const s = evaluateBank(yes, p({ netSalary: 50000, company: { categoriesByBank: { yes: 'Silver Neo' } }, credit: { enquiryList: [], servedLoanAmount: 600000 } }));
   expect(s.foirPct).toBe(60);
-  // multiplier base: salary minus HL EMI only; PL EMIs not deducted
+  // multiplier base (25 Nov 2026): salary minus ALL obligations (HL 50% joint = 10,000 + PL 10,000)
   const hl = evaluateBank(yes, p({ netSalary: 120000, loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 20000, emisPaid: 30, emisRemaining: 200, isJoint: true }, { id: 'pl', lender: 'XYZ', productType: 'PL', outstanding: 100000, emi: 10000, emisPaid: 2, emisRemaining: 20 }] }));
-  expect(hl.best.methods.find((m) => m.key === 'multiplier').amount).toBe((120000 - 10000) * 30);   // joint HL 50% = 10,000
+  expect(hl.best.methods.find((m) => m.key === 'multiplier').amount).toBe((120000 - 10000 - 10000) * 30);
   // rates: Pune tier 1, loan under 10L, CIBIL 730+
   const r = evaluateBank(yes, p({ netSalary: 40000, loans: [{ id: 'x', lender: 'SBI', productType: 'HL', emi: 12000, emisPaid: 30, emisRemaining: 200 }] }));
   expect(r.best.methods[0].roi).toBe(14.0);
@@ -776,13 +780,13 @@ test('Own-bank top-up timing per bank (23 Nov 2026)', () => {
 });
 
 test('Hint: co-applicant on a solo home loan lowers the counted EMI', () => {
-  const pr = { ...base, netSalary: 100000, cards: [], cibilScore: 770, city: 'Pune', company: { categoriesByBank: { kotak: 'CAT A' }, category: 'CAT A', categoryConfirmed: true },
+  const pr = { ...base, netSalary: 100000, cards: [], cibilScore: 770, city: 'Pune', company: { categoriesByBank: { bandhan: 'CAT A' }, category: 'CAT A', categoryConfirmed: true },
     loans: [{ id: 'hl', lender: 'SBI', productType: 'HL', emi: 30000, emisPaid: 40, emisRemaining: 200 }] };
-  const r = evaluateBank(kotak, pr);
+  const r = evaluateBank(bandhan, pr);   // FOIR-only bank (Kotak is now multiplier-limited here)
   expect(r.incomeHints.hlCoApplicant.emi).toBe(30000);
   expect(r.incomeHints.hlCoApplicant.counted).toBe(0);
   expect(r.incomeHints.hlCoApplicant.gain).toBeGreaterThan(0);
-  const joint = evaluateBank(kotak, { ...pr, loans: [{ ...pr.loans[0], isJoint: true, hlEmiPaidBy: 'applicant' }] });
+  const joint = evaluateBank(bandhan, { ...pr, loans: [{ ...pr.loans[0], isJoint: true, hlEmiPaidBy: 'applicant' }] });
   expect(joint.incomeHints.hlCoApplicant).toBeUndefined();
 });
 
@@ -884,4 +888,36 @@ test('Tata Capital: loans under ₹50,000 outstanding not taken in BT; closed lo
   expect(bt.closed.ok).toBe(false);
   expect(r.best.bt).toEqual(['big']);
   expect(r.scenarios.every((s) => !s.bt.includes('closed') && !s.bt.includes('small'))).toBe(true);
+});
+
+test('Every bank gives the lower of FOIR and multiplier (25 Nov 2026)', () => {
+  for (const pol of [policy, icici, kotak, indusind, lt, bandhan, yes, pfl, axis, tata, chola]) expect(pol.eligibility.combine).toBe('lower');
+  const k = evaluateBank(kotak, { ...base, loans: [], netSalary: 150000, company: { category: 'CAT A', categoryConfirmed: true }, cibilScore: 800 });
+  const foirBest = Math.max(...k.best.methods.filter((m) => m.key.startsWith('foir')).map((m) => m.amount));
+  const mult = Math.min(...k.best.methods.filter((m) => m.key.startsWith('multiplier')).map((m) => m.amount));   // no scorecard picked: lowest band
+  expect(k.best.eligibleAmount).toBe(Math.min(foirBest, mult));
+});
+
+test('HDFC: lower of FOIR and (salary − obligations) × multiplier; FOIR figure shown as good-profile upside', () => {
+  const r = evaluateBank(policy, { ...base, loans: [{ id: 'pl', lender: 'XYZ FIN', productType: 'PL', outstanding: 300000, emi: 20000, emisPaid: 3, emisRemaining: 30 }] });
+  const mlt = r.best.methods.find((m) => m.key === 'multiplier');
+  const foirBest = Math.max(...r.best.methods.filter((m) => m.key.startsWith('foir')).map((m) => m.amount));
+  expect(r.best.eligibleAmount).toBe(Math.min(mlt.amount, foirBest));
+  expect(mlt.amount).toBe(Math.min((100000 - 20000) * mlt.multiplier, mlt.amount));
+  if (foirBest > mlt.amount) {
+    expect(r.best.upside.amount).toBe(foirBest);
+    expect(r.notes.join()).toMatch(/Good profile: HDFC Bank may give the FOIR figure/);
+  }
+  expect(evaluateBank(kotak, { ...base, loans: [] }).best.upside).toBeNull();   // only HDFC has this
+});
+
+test('Bandhan gold loans: exemption checks the TOTAL gold outstanding, not each loan', () => {
+  const g = (id, o) => ({ id, lender: 'INDIAN BANK', productType: 'GOLD', outstanding: o, emi: 0, emisPaid: 4 });
+  const pr = (loans) => ({ ...base, netSalary: 100000, cards: [], cibilScore: 770, city: 'Pune', company: { categoriesByBank: { bandhan: 'CAT A' }, category: 'CAT A', categoryConfirmed: true }, loans });
+  const many = evaluateBank(bandhan, pr([g('a', 177000), g('b', 112401), g('c', 139990), g('d', 94008), g('e', 201732)]));   // total ₹7,25,131
+  expect(many.obligations.loans.map((l) => Math.round(l.obligation.amount))).toEqual([1770, 1124, 1400, 940, 2017]);
+  expect(many.obligations.loans[0].obligation.rule).toMatch(/1% of outstanding \(total gold loans ₹7,25,131 ≥ ₹5,00,000\)/);
+  const few = evaluateBank(bandhan, pr([g('a', 177000), g('b', 112401)]));
+  expect(few.obligations.loans.every((l) => l.obligation.amount === 0)).toBe(true);
+  expect(few.obligations.loans[0].obligation.rule).toMatch(/Total gold loans ₹2,89,401 below ₹5,00,000 — not counted/);
 });

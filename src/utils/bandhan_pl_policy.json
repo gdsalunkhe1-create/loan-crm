@@ -5,7 +5,7 @@
     "BANDHAN"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v8-2026-11-23",
+  "policy_version": "v10-2026-11-26",
   "sources": {
     "rules": "Bandhan salaried policy one-pager (Nov 2026) + banker answers 28 Oct + pricing grid 1 Oct 2026"
   },
@@ -516,7 +516,9 @@
     "roi_note": "Offer (CIC 730+, fresh / external BT): CAT A / B / Govt 9.99% (₹15L+); CAT C 10.50% (₹15–20L), 10.25% (₹20L+). ₹10–15L 10.99%; below ₹10L the 1 Oct pricing grid. CAT D ₹15L+ not in the offer (10.99% used). Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
     "max_loan": 4000000,
     "max_loan_note": "₹40L for every category (banker). Above ₹15L: PL focus location + credit PD",
-    "min_cibil": 730
+    "min_cibil": 730,
+    "combine": "lower",
+    "combine_note": "Lower of best FOIR and multiplier (Gauri, 25 Nov 2026)"
   },
   "company": {
     "unlisted_allowed": false,
@@ -648,12 +650,13 @@
     "pct_by_type": {
       "GOLD": {
         "pct": 1,
-        "exempt_below": 500000
+        "exempt_below": 500000,
+        "exempt_scope": "total"
       },
       "KCC": 1.5,
       "OD": 1
     },
-    "pct_note": "Gold 1%, gold under ₹5L not counted; KCC 1.5% — TO CONFIRM; OD 1% assumed",
+    "pct_note": "Gold 1%; not counted while TOTAL gold outstanding is under ₹5L (Gauri, 26 Nov 2026); KCC 1.5% — TO CONFIRM; OD 1% assumed",
     "home_loan_joint": {
       "paid_by_co_applicant_pct": 0,
       "pct_of_emi": 50,

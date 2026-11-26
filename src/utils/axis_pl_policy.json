@@ -6,7 +6,7 @@
     "AXISBANK"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v3-2026-11-23",
+  "policy_version": "v4-2026-11-25",
   "sources": {
     "rules": "Gauri's Axis template, 6 Nov 2026 (rate grid photo not received)"
   },
@@ -201,7 +201,9 @@
     ],
     "roi_unconfirmed": false,
     "roi_note": "Festive offer (logins 6–30 Nov 2026, CIBIL 750+, fresh / external BT, not IBT): SCAT A/CAT A/STF 10.24% (15L+), 10.59% (10–15L); CAT B/Govt 10.65% / 10.69%; Govt employees 11.15% for 5–10L (income 50K+); CAT C 10.89% / 11.05%. CAT D / DU 14%. Below 10L or CIBIL under 750: not given — highest rate used and flagged. RATES EXPIRE 30 NOV 2026.",
-    "min_cibil": 700
+    "min_cibil": 700,
+    "combine": "lower",
+    "combine_note": "Lower of best FOIR and multiplier (Gauri, 25 Nov 2026)"
   },
   "min_net_salary": {
     "_all": {

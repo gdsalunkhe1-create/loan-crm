@@ -8,7 +8,7 @@
     "PFL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v4-2026-11-23",
+  "policy_version": "v5-2026-11-25",
   "sources": {
     "rules": "Gauri's template + Poonawalla FOIR norms, rate grid, policy norms update (proposed), 5 Nov 2026",
     "policy_norms_update": "Poonawalla \"Policy Norms Update\" flyer, 20 Nov 2026"
@@ -1518,7 +1518,9 @@
         ]
       }
     ],
-    "max_loan_note": "Super A / CAT A / Govt Ratna: 50L (VL/L & Medium), 60L for VL/L (PL V2) with HL/AL/PL track of 20L+ and income > 2L, 30L High risk. CAT B / Govt: 30L, 40L for VL/L with income > 1.5L. CAT C: 20L, 30L for VL/L with income > 1.5L"
+    "max_loan_note": "Super A / CAT A / Govt Ratna: 50L (VL/L & Medium), 60L for VL/L (PL V2) with HL/AL/PL track of 20L+ and income > 2L, 30L High risk. CAT B / Govt: 30L, 40L for VL/L with income > 1.5L. CAT C: 20L, 30L for VL/L with income > 1.5L",
+    "combine": "lower",
+    "combine_note": "Lower of best FOIR and multiplier (Gauri, 25 Nov 2026)"
   },
   "risk_segment": {
     "name": "Poonawalla risk segment",
