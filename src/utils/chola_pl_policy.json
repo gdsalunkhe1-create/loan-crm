@@ -7,7 +7,7 @@
     "CIFCL"
   ],
   "product": "Personal Loan (salaried)",
-  "policy_version": "v1-2026-11-24",
+  "policy_version": "v2-2026-11-27",
   "sources": {
     "rules": "Chola flyers (Unlisted CAT update, Highlights, CIBIL -1 / Hybrid Flexi, 24–30 Nov offer) + Gauri's filled template, 24 Nov 2026"
   },
@@ -398,7 +398,7 @@
     ],
     "own_house_cap": {
       "cap": 2000000,
-      "note": "above ₹20L own house is compulsory (house in spouse's name: spouse as co-applicant)"
+      "note": "house in spouse's name: spouse as co-applicant"
     }
   },
   "multiplier_by_salary": {
