@@ -819,7 +819,10 @@ describe('Chola (24 Nov 2026)', () => {
   });
 
   test('Caps: above ₹20L only with own house, CIBIL 675–700 up to ₹5L, CIBIL -1 only CAT A/B up to ₹10L', () => {
-    expect(evaluateBank(chola, p({ ownHouse: undefined })).best.eligibleAmount).toBe(2000000);
+    expect(evaluateBank(chola, p({ ownHouse: false })).best.eligibleAmount).toBe(2000000);
+    const notAsked = evaluateBank(chola, p({ ownHouse: undefined }));   // 27 Nov: not asked → full amount + OHP warning
+    expect(notAsked.best.eligibleAmount).toBe(2600000);
+    expect(notAsked.warnings.join()).toMatch(/Above ₹20,00,000: own house proof \(OHP\) is mandatory at Chola/);
     expect(evaluateBank(chola, p({ cibilScore: 690 })).best.eligibleAmount).toBe(500000);
     expect(evaluateBank(chola, p({ cibilScore: 660 })).status).toBe('NOT_ELIGIBLE');
     expect(evaluateBank(chola, p({ cibilScore: -1 })).best.eligibleAmount).toBe(1000000);
@@ -920,4 +923,26 @@ test('Bandhan gold loans: exemption checks the TOTAL gold outstanding, not each 
   const few = evaluateBank(bandhan, pr([g('a', 177000), g('b', 112401)]));
   expect(few.obligations.loans.every((l) => l.obligation.amount === 0)).toBe(true);
   expect(few.obligations.loans[0].obligation.rule).toMatch(/Total gold loans ₹2,89,401 below ₹5,00,000 — not counted/);
+});
+
+test('Prema-type case (27 Nov): Poonawalla metro 60L, city missing not capped; HDFC good profile gets FOIR', () => {
+  const P = (o) => ({ netSalary: 255723, grossSalary: 353014, cibilScore: 795, cards: [], credit: { servedLoanAmount: 9000000, dpdAccounts: [] }, salaryAccountBank: 'Standard Chartered',
+    company: { categoriesByBank: { poonawalla_fincorp: 'CAT A', hdfc_bank: 'CAT A' }, category: 'CAT A', categoryConfirmed: true }, loans: [], ...o });
+  expect(evaluateBank(pfl, P({ city: 'Hyderabad' })).best.eligibleAmount).toBe(6000000);
+  const noCity = evaluateBank(pfl, P({}));
+  expect(noCity.best.eligibleAmount).toBe(6000000);
+  expect(noCity.warnings.join()).toMatch(/City not entered — Poonawalla Fincorp city cap not applied/);
+  expect(evaluateBank(pfl, P({ city: 'Nashik' })).best.eligibleAmount).toBe(4000000);
+  const h = evaluateBank(policy, P({ city: 'Hyderabad' }));
+  expect(h.goodProfile.good).toBe(true);
+  expect(h.best.eligibleRule).toBe('good_profile_foir');
+  expect(h.best.eligibleBy.startsWith('foir')).toBe(true);
+  expect(h.best.eligibleAmount).toBeGreaterThan(h.best.methods.find((m) => m.key === 'multiplier').amount);
+  expect(h.notes.join()).toMatch(/Good profile \(CIBIL 795, CAT A/);
+  const off = evaluateBank(policy, P({ city: 'Hyderabad', goodProfileByBank: { hdfc_bank: false } }));
+  expect(off.best.eligibleBy).toBe('multiplier');
+  expect(off.best.upside.amount).toBe(h.best.eligibleAmount);
+  const low = evaluateBank(policy, P({ city: 'Hyderabad', cibilScore: 730 }));
+  expect(low.goodProfile).toEqual({ good: false, why: 'CIBIL below 750' });
+  expect(low.best.eligibleBy).toBe('multiplier');
 });

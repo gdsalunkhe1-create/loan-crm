@@ -32,6 +32,7 @@ import {
   noCompanyListBanks, ownHouseChoice, ownHousePatch,
   CARD_TREATMENTS, cardTreatmentChoice, cardTreatmentPatch, cardTreatmentNote, cardRuleText, btSummary,
   eligibilityRuleLabel, upsideLine, isLowBandNote, goldLoanSuggestion,
+  eligibleBadgeText, goodProfileChoice, goodProfilePatch, goodProfileWhyText, warningField, payslipCity,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -489,8 +490,12 @@ export default function UnderwritingDesk({ userId, orgId }) {
   );
   const searchedIncYear = useMemo(() => searchedIncorporationYear(companyByBank), [companyByBank]);
   const incorporationYear = draft && draft.incorporationYear !== undefined ? draft.incorporationYear : searchedIncYear;
-  // City pre-fills from the lead until the agent edits it (L&T: higher minimum salary in Mumbai).
-  const city = draft && draft.city !== undefined ? draft.city : (lead?.city || '');
+  // City pre-fills from the payslip's "Location" (else the lead) until the agent edits it
+  // (L&T: higher minimum salary in Mumbai; Poonawalla: city cap).
+  const cityFromPayslip = useMemo(() => payslipCity(payslipsView), [payslipsView]);
+  const cityPrefill = cityFromPayslip || lead?.city || '';
+  const cityPrefillFrom = cityFromPayslip ? 'payslip' : lead?.city ? 'lead' : null;
+  const city = draft && draft.city !== undefined ? draft.city : cityPrefill;
 
   const results = useMemo(() => {
     if (!draft) return [];
@@ -706,7 +711,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
               incorporationYear={incorporationYear}
               searchedIncYear={searchedIncYear}
               city={city}
-              cityFromLead={!!lead?.city && draft.city === undefined}
+              cityFrom={draft.city === undefined ? cityPrefillFrom : null}
             />
             <div ref={otherIncomeRef}><OtherIncomePanel draft={draft} patchDraft={patchDraft} openSignal={otherIncomeOpen} /></div>
           </div>
@@ -749,6 +754,8 @@ export default function UnderwritingDesk({ userId, orgId }) {
               onMarkClosed={(id) => patchDraft({ loans: draft.loans.map((l) => (l.id === id ? { ...l, ...treatmentPatch('closed') } : l)) })}
               onCategory={(v) => setManualCategory(r.bankId, v)}
               summaryOpen={ranked.indexOf(r) === 0 || r.bankId === countedForId}
+              goodProfileValue={goodProfileChoice(draft.goodProfileByBank, r.bankId)}
+              onGoodProfile={(v) => patchDraft(goodProfilePatch(draft.goodProfileByBank, r.bankId, v))}
             />
           ))}
         </>
@@ -1455,20 +1462,20 @@ function IncomePanel({ draft, patchDraft, payslips }) {
 
 // Own house (FOIR / multiplier bonus at some banks) and, for an unlisted company,
 // the year of incorporation the engine checks against the bank's minimum company age.
-function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, searchedIncYear, city, cityFromLead }) {
+function ApplicantPanel({ draft, patchDraft, unlistedBanks, incorporationYear, searchedIncYear, city, cityFrom }) {
   return (
     <Sub title="Residence &amp; company" bodyStyle={S.grid2}>
         <div>
           <label style={S.label}>City</label>
-          <input style={inp} value={city || ''} onChange={(e) => patchDraft({ city: e.target.value })} placeholder="e.g. Bengaluru" />
+          <input id={FIELD_IDS.city} style={inp} value={city || ''} onChange={(e) => patchDraft({ city: e.target.value })} placeholder="e.g. Bengaluru" />
           <div style={S.hint}>
-            Some banks set a higher minimum salary in metro cities (L&amp;T: Mumbai).
-            {cityFromLead ? ' From the lead — confirm.' : ''}
+            Some banks set a higher minimum salary or a loan cap by city (L&amp;T: Mumbai; Poonawalla: metro / tier 1).
+            {cityFrom === 'payslip' ? ' From the payslip location — confirm.' : cityFrom === 'lead' ? ' From the lead — confirm.' : ''}
           </div>
         </div>
         <div>
           <label style={S.label}>Own house (on customer or spouse name)</label>
-          <select style={inp} value={ownHouseChoice(draft.ownHouse)} onChange={(e) => patchDraft(ownHousePatch(e.target.value))}>
+          <select id={FIELD_IDS.ownHouse} style={inp} value={ownHouseChoice(draft.ownHouse)} onChange={(e) => patchDraft(ownHousePatch(e.target.value))}>
             <option value="">Not asked</option>
             <option value="yes">Yes</option>
             <option value="no">No</option>
@@ -2112,14 +2119,28 @@ const hasMultiplier = (best) => !!best && Object.values(best.multiplier || {}).s
 // The CC paydown suggestion is the most actionable warning, so it goes first.
 const orderWarnings = (ws) => [...ws].sort((a, b) => (/on cards before login/i.test(b) ? 1 : 0) - (/on cards before login/i.test(a) ? 1 : 0));
 
-function MessageList({ items, color, background }) {
+function MessageList({ items, color, background, action }) {
   if (!items || !items.length) return null;
   return (
     <div style={{ marginTop: '10px', padding: '8px 12px', borderRadius: '8px', background, color, fontSize: '12px', lineHeight: 1.6 }}>
-      {items.map((m, i) => <div key={i}>{m}</div>)}
+      {items.map((m, i) => <div key={i}>{m}{action && action(m)}</div>)}
     </div>
   );
 }
+
+// Input fields a card warning can point at ("City not entered" -> City, Chola OHP -> Own house).
+const FIELD_IDS = { city: 'uw-city', ownHouse: 'uw-own-house' };
+const FIELD_LINK_TEXT = { city: 'Enter city', ownHouse: 'Set own house' };
+const focusField = (field) => {
+  const el = document.getElementById(FIELD_IDS[field]);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.focus({ preventScroll: true });
+};
+const warningLink = (w) => {
+  const field = warningField(w);
+  return field ? <button type="button" style={{ ...btnLink, marginLeft: '8px', fontSize: '12px' }} onClick={() => focusField(field)}>{FIELD_LINK_TEXT[field]}</button> : null;
+};
 
 const TONES = {
   green: { color: '#166534', background: '#dcfce7', borderColor: '#86efac' },
@@ -2313,7 +2334,7 @@ function IncomeHintBox({ hint }) {
   return <div style={{ margin: '0 0 12px', padding: '8px 12px', borderRadius: '8px', background: '#eef4fb', color: BLUE, fontSize: '12px', lineHeight: 1.5 }}>{hint.text}</div>;
 }
 
-function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed, onCategory, summaryOpen }) {
+function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilScore, scorecardValue, onScorecard, onBureauTier, onRiskSegment, onMarkClosed, onCategory, summaryOpen, goodProfileValue, onGoodProfile }) {
   const { label, result, error } = entry;
   const st = result ? STATUS[result.status] || STATUS.NEEDS_INPUT : null;
   const chipFor = (scenario, id) => btChipText(scenario, id, loans, cards, fmtINR);
@@ -2397,6 +2418,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
 
       {showFigures && (
         <div style={fade || undefined} title={fadeTitle}>
+          {result.goodProfile && <GoodProfilePick goodProfile={result.goodProfile} value={goodProfileValue} onChange={onGoodProfile} />}
           <EligibilityTable result={result} />
           <OtherIncomeTable otherIncome={result.otherIncome} netSalary={netSalary} />
           {result.cardPlan && <CardPlanLine plan={result.cardPlan} cards={cards} />}
@@ -2421,7 +2443,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
         </div>
       )}
       {result && !notEligible && <MessageList items={(result.notes || []).filter((n) => !isClosureNote(n) && !isLowBandNote(n))} color={BLUE} background="#eef4fb" />}
-      {result && !notEligible && <MessageList items={[...odWarnings, ...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" />}
+      {result && !notEligible && <MessageList items={[...odWarnings, ...(result.deviations || []), ...orderWarnings(warnings)]} color="#9a3412" background="#fff7ed" action={warningLink} />}
 
       {entry.topUpNote && <div style={{ fontSize: '12px', color: '#7a8194', margin: '8px 0 0' }}>{entry.topUpNote}</div>}
       {result && result.checklist && result.checklist.length > 0 && <Checklist items={result.checklist} />}
@@ -2489,10 +2511,28 @@ const isMultiplierMethod = (m) => m.key === 'multiplier' || m.key.startsWith('mu
 // "A1-B9 · ×27" for the category grid; "×17" for a scorecard row (the label already names it).
 const multiplierText = (m) => (m.multiplier == null ? null : `${m.key === 'multiplier' && m.band ? `${m.band} · ` : ''}×${m.multiplier}`);
 
+// HDFC: "Good profile: [Auto | Yes | No]" above the method table; grey reason under it ("Auto: CIBIL below 750").
+function GoodProfilePick({ goodProfile, value, onChange }) {
+  const why = goodProfileWhyText(goodProfile, value);
+  return (
+    <div style={{ margin: '0 0 8px', fontSize: '12px' }}>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#374151' }}>
+        Good profile:
+        <select style={{ ...cellSel, width: 'auto', fontSize: '12px' }} value={value || ''} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Auto</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </label>
+      {why && <div style={{ fontSize: '11px', color: '#7a8194', marginTop: '2px' }}>{why}</div>}
+    </div>
+  );
+}
+
 // Every method side by side (FOIR per tenure + multipliers); the bank may sanction on any of them.
 // Every bank: eligible = lower of the best FOIR figure and the multiplier figure (green badge on the row
 // that sets the amount — for Kotak with no scorecard picked, the greyed lowest band). HDFC good profile:
-// the FOIR row the bank may give instead (best.upside) has a blue badge.
+// the FOIR row the bank may give instead (best.upside) has a blue badge; good profile (picked or auto): the FOIR row is the eligible one.
 function EligibilityTable({ result }) {
   const best = result.best;
   const band = result.risk.band;
@@ -2519,7 +2559,7 @@ function EligibilityTable({ result }) {
                   <div style={{ fontSize: '13px', fontWeight: ind ? 400 : 600 }}>
                     {m.label}
                     {ind && <span style={{ fontSize: '11px' }}> (if scorecard is {m.band})</span>}
-                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px', fontStyle: 'normal' }}>Eligible (lower of FOIR &amp; multiplier)</span>}
+                    {highest && <span style={{ ...tag('#dcfce7', GREEN), marginLeft: '6px', fontStyle: 'normal' }}>{eligibleBadgeText(best)}</span>}
                     {upside && <span style={{ ...tag('#dbeafe', '#1e40af'), marginLeft: '6px' }}>Good profile — possible</span>}
                   </div>
                   {!isMult && <div style={{ fontSize: '11px', color: '#7a8194' }}>FOIR {result.foirPct}%</div>}

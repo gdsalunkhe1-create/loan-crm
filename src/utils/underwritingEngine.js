@@ -637,15 +637,20 @@ export function evaluateBank(policy, profileIn) {
   if (cityCaps) {
     const hitC = (cityCaps.tiers || []).find((t) => wordStartMatch(profile.city || '', t.match));
     const cc2 = hitC ? hitC.cap : cityCaps.default_cap;
-    if (cc2 != null) {
+    if (!profile.city) {
+      out.warnings.push(`City not entered — ${policy.bank} city cap not applied (${(cityCaps.tiers || []).map((t) => `${t.label} ${fmtINR(t.cap)}`).join(', ')}${cityCaps.default_cap ? `, others ${fmtINR(cityCaps.default_cap)}` : ''})`);
+    } else if (cc2 != null) {
       cap = cap != null ? Math.min(cap, cc2) : cc2;
       out.notes.push(`${hitC ? hitC.label : (cityCaps.default_label || 'Other city')}: max ${fmtINR(cc2)}${profile.city ? '' : ' (city not entered)'}`);
     }
   }
+  let ohcPending = null;
   const ohc = policy.eligibility.own_house_cap;   // e.g. Chola: above ₹20L only with own house
-  if (ohc && profile.ownHouse !== true && (cap == null || cap > ohc.cap)) {
+  if (ohc && profile.ownHouse === false && (cap == null || cap > ohc.cap)) {
     cap = ohc.cap;
-    out.notes.push(`${profile.ownHouse === false ? 'No own house' : 'Own house not confirmed'}: max ${fmtINR(ohc.cap)}${ohc.note ? ` — ${ohc.note}` : ''}`);
+    out.notes.push(`No own house: max ${fmtINR(ohc.cap)}${ohc.note ? ` — ${ohc.note}` : ''}`);
+  } else if (ohc && profile.ownHouse == null && (cap == null || cap > ohc.cap)) {
+    ohcPending = ohc;   // flagged after the amount is known (only matters above the own-house limit)
   }
   const capBySal = pickSlab(policy.eligibility.max_loan_by_salary, salary)?.max_loan;
   if (capBySal != null) cap = cap != null ? Math.min(cap, capBySal) : capBySal;
@@ -778,6 +783,23 @@ export function evaluateBank(policy, profileIn) {
   const addons = policy.roi_addons || {};
   const scenarios = [];
   let noteLowBand = false;
+  // Good profile (HDFC): the bank gives the FOIR figure instead of the lower multiplier. Agent can override per bank.
+  const goodProfile = (() => {
+    const gp = policy.eligibility.foir_if_good_profile;
+    if (!gp) return { good: false };
+    const override = profile.goodProfileByBank?.[policy.bank_id];
+    if (override === true || override === false) return { good: override, why: override ? 'marked good profile by agent' : 'marked not good profile by agent' };
+    const c = profile.credit || {};
+    const fails = [];
+    if (gp.cibil_min != null && !((profile.cibilScore ?? 0) >= gp.cibil_min)) fails.push(`CIBIL below ${gp.cibil_min}`);
+    if (gp.categories && !gp.categories.some((x) => norm(x) === norm(cat || ''))) fails.push(`category ${cat || 'not set'}`);
+    if (gp.salary_min != null && salary < gp.salary_min) fails.push(`salary below ${fmtINR(gp.salary_min)}`);
+    if (gp.no_dpd_12m && (Array.isArray(c.dpdAccounts) ? c.dpdAccounts.some((a) => a.inLast12m) : !!c.overdueLast12m)) fails.push('late payment in last 12 months');
+    if (out.deviations.length) fails.push('deviation needed');
+    return fails.length ? { good: false, why: fails.join(', ') }
+      : { good: true, why: `CIBIL ${profile.cibilScore}, ${cat}, salary ${fmtINR(salary)}, no late payments` };
+  })();
+  out.goodProfile = policy.eligibility.foir_if_good_profile ? goodProfile : undefined;
   for (let pass = 0; pass < 2; pass++) {
   for (let mask = 0; mask < 1 << cands.length; mask++) {
     if ((mask & forcedMask) !== forcedMask) continue;
@@ -880,7 +902,9 @@ export function evaluateBank(policy, profileIn) {
       const mlt = firm.find((x) => x.key.startsWith('multiplier')) || (ind.length ? ind.reduce((a, b) => (b.amount < a.amount ? b : a)) : null);
       if (bestFoir && mlt) top = mlt.amount < bestFoir.amount ? mlt : bestFoir;
       // Some banks (HDFC) may still sanction the FOIR figure for a good profile — shown as an upside, not the eligible amount.
-      if (policy.eligibility.foir_if_good_profile && top === mlt && bestFoir && bestFoir.amount > mlt.amount) upside = bestFoir;
+      if (policy.eligibility.foir_if_good_profile && top === mlt && bestFoir && bestFoir.amount > mlt.amount) {
+        if (goodProfile.good) top = bestFoir; else upside = bestFoir;
+      }
       if (top === mlt && mlt.indicative && !noteLowBand) { noteLowBand = true; out.notes.push(`${policy.bank} scorecard not picked — lowest band (${mlt.band}) used; pick the scorecard band`); }
     }
     scenarios.push({
@@ -892,7 +916,7 @@ export function evaluateBank(policy, profileIn) {
       topUp: picked.filter((l) => l.bt?.topUp).map((l) => l.id),   // subset of bt closed via own-bank top-up
       methods,                                  // [{ key, label, tenure, amount, roi, netInHand }]
       eligibleAmount: top.amount,               // highest of the methods (or the lower of FOIR / multiplier when combine = 'lower')
-      eligibleRule: policy.eligibility.combine === 'lower' ? 'lower' : (policy.eligibility.combine === 'both' ? 'both' : 'highest'),
+      eligibleRule: goodProfile.good && policy.eligibility.foir_if_good_profile ? 'good_profile_foir' : policy.eligibility.combine === 'lower' ? 'lower' : (policy.eligibility.combine === 'both' ? 'both' : 'highest'),
       eligibleBy: top.key,
       upside: upside ? { key: upside.key, label: upside.label, amount: upside.amount, tenure: upside.tenure, roi: upside.roi, emi: upside.emi,
         netInHand: upside.amount - btOutstanding, note: policy.eligibility.foir_if_good_profile.note || null } : null,
@@ -909,6 +933,12 @@ export function evaluateBank(policy, profileIn) {
   out.foirPct = foirPct;
   out.scenarios = scenarios;
   out.best = scenarios[0];
+  if (out.best?.eligibleRule === 'good_profile_foir' && out.best.eligibleBy.startsWith('foir')) {
+    out.notes.push(`Good profile (${goodProfile.why}): ${policy.bank} FOIR eligibility used`);
+  }
+  if (ohcPending && out.best?.eligibleAmount > ohcPending.cap) {
+    out.warnings.push(`Above ${fmtINR(ohcPending.cap)}: own house proof (OHP) is mandatory at ${policy.bank} — confirm own house${ohcPending.note ? ` (${ohcPending.note})` : ''}`);
+  }
   if (out.best?.upside) {
     out.notes.push(`Good profile: ${policy.bank} may give the FOIR figure ${fmtINR(out.best.upside.amount)} (${out.best.upside.label}) instead of the multiplier ${fmtINR(out.best.eligibleAmount)} — bank's call${out.best.upside.note ? ` (${out.best.upside.note})` : ''}`);
   }

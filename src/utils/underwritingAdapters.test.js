@@ -1493,7 +1493,10 @@ describe('Chola (24 Nov): category pick while the list is not uploaded, own hous
       .toMatch(/CIBIL score 720 below Chola minimum 725 for UNLISTED/);
     const catA = evaluateBank(chola, { ...base, company: A.manualCompany({ query: 'ACME' }, 'CAT A') });
     expect(catA.deviations.join()).not.toMatch(/Unlisted/);
-    expect(catA.notes.join()).toMatch(/Own house not confirmed: max ₹20,00,000/);
+    // 27 Nov: own house not asked → no ₹20L cap (OHP warning only above ₹20L); "No" → capped.
+    expect(catA.notes.join()).not.toMatch(/max ₹20,00,000/);
+    const noOh = evaluateBank(chola, { ...base, ...A.ownHousePatch('no'), company: A.manualCompany({ query: 'ACME' }, 'CAT A') });
+    expect(noOh.notes.join()).toMatch(/No own house: max ₹20,00,000/);
   });
 
   test('own house select: Yes / No / Not asked <-> true / false / undefined', () => {
@@ -1645,12 +1648,13 @@ describe('Lower of FOIR & multiplier at every bank, HDFC good-profile upside, Ko
       const p = require(`./${k}_pl_policy.json`);
       const r = evaluateBank(p, prof([hl]));
       if (!r.best) continue;
-      expect([k, r.best.eligibleRule]).toEqual([k, 'lower']);
+      // HDFC: this profile (CIBIL 780, CAT A, ₹1L) is a good profile → FOIR figure (27 Nov).
+      expect([k, r.best.eligibleRule]).toEqual([k, k === 'hdfc' ? 'good_profile_foir' : 'lower']);
       expect(A.summaryMethod(r.best).method.amount).toBe(r.best.eligibleAmount);
       const foir = Math.max(...r.best.methods.filter((m) => m.key.startsWith('foir') && !m.indicative).map((m) => m.amount));
       const mult = r.best.methods.filter((m) => m.key.startsWith('multiplier'));
       const hasMult = mult.length > 0;
-      expect([k, A.eligibilityRuleLabel(r.best)]).toEqual([k, hasMult ? 'Lower of FOIR & multiplier' : 'FOIR']);
+      expect([k, A.eligibilityRuleLabel(r.best)]).toEqual([k, k === 'hdfc' ? 'FOIR (good profile)' : hasMult ? 'Lower of FOIR & multiplier' : 'FOIR']);
       if (!hasMult) expect(r.best.eligibleAmount).toBe(foir);
       else expect(r.best.eligibleAmount).toBeLessThanOrEqual(foir);
     }
@@ -1658,7 +1662,7 @@ describe('Lower of FOIR & multiplier at every bank, HDFC good-profile upside, Ko
 
   test('HDFC: multiplier on salary − obligations; FOIR figure as the good-profile upside line', () => {
     const hdfc = require('./hdfc_pl_policy.json');
-    const r = evaluateBank(hdfc, prof([hl]));
+    const r = evaluateBank(hdfc, { ...prof([hl]), goodProfileByBank: { hdfc_bank: false } });   // agent: not a good profile
     expect(r.best.eligibleBy).toBe('multiplier');
     expect(r.best.eligibleAmount).toBe(90000 * r.best.methods.find((m) => m.key === 'multiplier').multiplier);
     expect(r.best.upside.key).toBe('foir_72');
@@ -1731,5 +1735,64 @@ describe('Bandhan gold on TOTAL outstanding: EMI-cell hint per bank, cross-bank 
     const s = A.goldLoanSuggestion([...policies, { bank_id: 'axis_bank', policy: axis }], r, [g1, g2], fmtINR);
     expect(s.banks.map((b) => b.bankId)).toEqual(['chola', 'axis_bank']);
     expect(s.banks[1].text).toMatch(/^Axis: .* — gold loans not counted$/);
+  });
+});
+
+describe('Prema case (27 Nov): payslip city, HDFC good profile picker, warning links', () => {
+  const A = require('./underwritingAdapters');
+  const { fmtINR } = require('./underwritingEngine');
+  const hdfc = require('./hdfc_pl_policy.json');
+  const pfl = require('./poonawalla_pl_policy.json');
+  const chola = require('./chola_pl_policy.json');
+  const P = (o) => ({ netSalary: 255723, grossSalary: 353014, cibilScore: 795, cards: [], loans: [], city: 'Hyderabad', salaryAccountBank: 'Standard Chartered',
+    credit: { servedLoanAmount: 9000000, dpdAccounts: [] },
+    company: { name: 'Optum', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { hdfc_bank: 'CAT A', poonawalla_fincorp: 'CAT A', chola: 'CAT A' }, confirmedByBank: {} }, ...o });
+
+  test('payslip "Location" -> city (Optum style, labelled, header table skipped); latest payslip wins', () => {
+    expect(A.extractPayslipCity('Employee Name PREMA K Location Hyderabad Department Ops')).toBe('Hyderabad');
+    expect(A.extractPayslipCity('Work Location : NEW DELHI\nGrade B2')).toBe('New Delhi');
+    expect(A.extractPayslipCity('', ['Employee Details Payment & Leave Details Location Details', 'Location Pune'])).toBe('Pune');
+    expect(A.extractPayslipCity('Net Pay 50,000')).toBeNull();
+    // Prema's Optum payslip: next field on the same line / blank lines between label and value.
+    expect(A.extractPayslipCity('Location Hyderabad LWOP Days 0.00')).toBe('Hyderabad');
+    expect(A.extractPayslipCity('Location\n\nHyderabad\n\nLWOP Days')).toBe('Hyderabad');
+    expect(A.payslipCity([{ month: '2026-09', text: 'Location Chennai' }, { month: '2026-10', text: 'Location Hyderabad' }, { month: '2026-11', text: 'no city' }])).toBe('Hyderabad');
+    expect(A.payslipCity([])).toBeNull();
+  });
+
+  test('good profile picker: Auto / Yes / No <-> goodProfileByBank; grey reason text', () => {
+    expect(A.goodProfileChoice(undefined, 'hdfc_bank')).toBe('');
+    expect(A.goodProfileChoice({ hdfc_bank: false }, 'hdfc_bank')).toBe('no');
+    expect(A.goodProfilePatch({ hdfc_bank: false }, 'hdfc_bank', 'yes')).toEqual({ goodProfileByBank: { hdfc_bank: true } });
+    expect(A.goodProfilePatch({ hdfc_bank: true }, 'hdfc_bank', '')).toEqual({ goodProfileByBank: {} });
+    const low = evaluateBank(hdfc, P({ cibilScore: 730 }));
+    expect(A.goodProfileWhyText(low.goodProfile, '')).toBe('Auto: CIBIL below 750');
+    const set = evaluateBank(hdfc, P({ goodProfileByBank: { hdfc_bank: false } }));
+    expect(A.goodProfileWhyText(set.goodProfile, 'no')).toBe('Marked not good profile by agent');
+    expect(evaluateBank(pfl, P()).goodProfile).toBeUndefined();   // picker only where the policy has foir_if_good_profile
+  });
+
+  test('good → FOIR row badge, no upside line; not good → lower-of badge + upside line; strip & ranking follow eligibleAmount', () => {
+    const good = evaluateBank(hdfc, P());
+    expect(A.eligibleBadgeText(good.best)).toBe('Eligible (good profile — FOIR)');
+    expect(A.eligibilityRuleLabel(good.best)).toBe('FOIR (good profile)');
+    expect(A.summaryMethod(good.best).method.key).toBe(good.best.eligibleBy);
+    expect(A.summaryMethod(good.best).method.amount).toBe(good.best.eligibleAmount);
+    expect(A.upsideLine(good.best, hdfc.bank, fmtINR)).toBeNull();
+    expect(good.notes.join()).toMatch(/Good profile \(CIBIL 795, CAT A, salary ₹2,55,723, no late payments\): HDFC Bank FOIR eligibility used/);
+    const not = evaluateBank(hdfc, P({ goodProfileByBank: { hdfc_bank: false } }));
+    expect(A.eligibleBadgeText(not.best)).toBe('Eligible (lower of FOIR & multiplier)');
+    expect(A.upsideLine(not.best, hdfc.bank, fmtINR)).toBe(`Good profile: up to ${fmtINR(good.best.eligibleAmount)} (EMI ${fmtINR(not.best.upside.emi)}, ${Number((not.best.upside.tenure / 12).toFixed(1))} years) — confirm with HDFC`);
+    const ranked = A.rankResults([{ bankId: 'hdfc_bank', result: not }, { bankId: 'hdfc_good', result: good }]);
+    expect(ranked[0].bankId).toBe('hdfc_good');
+  });
+
+  test('warnings that point at a field: city (Poonawalla) and own house (Chola OHP)', () => {
+    const noCity = evaluateBank(pfl, P({ city: '' }));
+    const w = noCity.warnings.find((x) => A.warningField(x) === 'city');
+    expect(w).toBe('City not entered — Poonawalla Fincorp city cap not applied (Metro ₹60,00,000, Tier 1 ₹50,00,000, others ₹40,00,000)');
+    const ohp = evaluateBank(chola, P({ ownHouse: undefined }));
+    expect(ohp.warnings.filter((x) => A.warningField(x) === 'ownHouse')).toHaveLength(1);
+    expect(A.warningField('Some other warning')).toBeNull();
   });
 });

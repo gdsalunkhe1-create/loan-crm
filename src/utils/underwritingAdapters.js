@@ -518,8 +518,38 @@ export function summaryMethod(best) {
 }
 
 // Card subtitle: "Lower of FOIR & multiplier" when the bank has a multiplier row, otherwise "FOIR".
+// HDFC good profile (eligibleRule 'good_profile_foir'): "FOIR (good profile)".
 export const hasMultiplierRow = (best) => !!(best && (best.methods || []).some((m) => m.key === 'multiplier' || m.key.startsWith('multiplier_')));
-export const eligibilityRuleLabel = (best) => (hasMultiplierRow(best) ? 'Lower of FOIR & multiplier' : 'FOIR');
+export const isGoodProfileFoir = (best) => !!(best && best.eligibleRule === 'good_profile_foir' && String(best.eligibleBy || '').startsWith('foir'));
+export const eligibilityRuleLabel = (best) => (isGoodProfileFoir(best) ? 'FOIR (good profile)' : hasMultiplierRow(best) ? 'Lower of FOIR & multiplier' : 'FOIR');
+// Green badge on the method row the eligible amount comes from.
+export const eligibleBadgeText = (best) => (isGoodProfileFoir(best) ? 'Eligible (good profile — FOIR)' : 'Eligible (lower of FOIR & multiplier)');
+
+// "Good profile: [Auto | Yes | No]" (HDFC) <-> profile.goodProfileByBank[bankId] = undefined / true / false.
+export const goodProfileChoice = (byBank, bankId) => {
+  const v = byBank && byBank[bankId];
+  return v === true ? 'yes' : v === false ? 'no' : '';
+};
+export function goodProfilePatch(byBank, bankId, choice) {
+  const next = { ...(byBank || {}) };
+  if (choice === 'yes') next[bankId] = true;
+  else if (choice === 'no') next[bankId] = false;
+  else delete next[bankId];
+  return { goodProfileByBank: next };
+}
+// Grey line under the picker: "Auto: CIBIL below 750" / "Auto: CIBIL 795, CAT A, …" / "Marked good profile by agent".
+export function goodProfileWhyText(gp, choice) {
+  if (!gp || !gp.why) return null;
+  return choice ? gp.why.charAt(0).toUpperCase() + gp.why.slice(1) : `Auto: ${gp.why}`;
+}
+
+// Warnings that point at an input field (the card shows a link that focuses it):
+// "City not entered — … city cap not applied …" -> 'city'; "Above ₹20,00,000: own house proof (OHP) …" -> 'ownHouse'.
+export function warningField(w) {
+  if (/^City not entered — .*city cap not applied/.test(w || '')) return 'city';
+  if (/own house proof \(OHP\) is mandatory/.test(w || '')) return 'ownHouse';
+  return null;
+}
 
 // HDFC good profile (best.upside = the FOIR figure when the multiplier is lower):
 // "Good profile: up to ₹X (EMI ₹Y, 6 years) — confirm with HDFC"
@@ -1324,6 +1354,32 @@ const monthKey = (label) => {
   const idx = m ? MONTH_NAMES.indexOf(m[1]) : -1;
   return idx >= 0 ? +m[2] * 12 + idx : -1;
 };
+
+// Work location printed on the payslip ("Location Hyderabad", "Work Location: Pune", "Location : NEW DELHI")
+// -> "Hyderabad" / "Pune" / "New Delhi"; null when there is none. Table headers ("Location Details") are skipped.
+const CITY_STOP_RE = /\s+(?:\d|Details?\b|Code\b|Cost\b|Center\b|Centre\b|Employee|Emp\b|Name\b|Designation|Department|Dept\b|Grade|DOJ|Date|Bank|A\/c|Account|PAN\b|UAN\b|PF\b|ESI|Days|Month|Pay\b|Period|Gender|Branch|Level|Band\b|LWOP\b|LOP\b|Leave|Paid\b|Working\b|Present\b|Absent\b|Arrears?\b)/i;
+const titleCase = (s) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+export function extractPayslipCity(text, headerLines = []) {
+  for (const src of [...(headerLines || []), text]) {
+    const re = /\b(?:Work\s+|Base\s+|Job\s+)?Location\s*[:\-–]?\s*([A-Za-z][A-Za-z .()-]{1,60})/gi;
+    let m;
+    while ((m = re.exec(String(src || '')))) {
+      let v = m[1];
+      const stop = v.match(CITY_STOP_RE);
+      if (stop) v = v.slice(0, stop.index);
+      v = tidy(v.replace(/\(.*$/, ''));
+      if (/^Details?\b/i.test(v) || v.length < 3 || v.split(' ').length > 3) continue;
+      return titleCase(v);
+    }
+  }
+  return null;
+}
+// City across several payslips: the latest month's that has one (null if none).
+export function payslipCity(payslips) {
+  const withCity = (payslips || []).map((p) => ({ ...p, city: p.city || extractPayslipCity(p.text, p.headerLines) })).filter((p) => p.city);
+  if (!withCity.length) return null;
+  return withCity.reduce((best, p) => (monthKey(p.month) >= monthKey(best.month) ? p : best)).city;
+}
 
 // Employer to use across several payslips: the latest month's (upload order
 // breaks ties / missing months). `differs` = more than one distinct employer.

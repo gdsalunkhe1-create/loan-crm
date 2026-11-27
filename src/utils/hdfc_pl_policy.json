@@ -1,7 +1,7 @@
 {
   "bank": "HDFC Bank",
   "product": "Personal Loan (salaried)",
-  "policy_version": "v20-2026-11-25",
+  "policy_version": "v21-2026-11-27",
   "sources": {
     "multiplier_grid": "HDFC_Multiplier.pdf (file metadata dated Dec 2018 - confirm still current)",
     "rules": "Gauri's policy notes, 12 Oct 2026"
@@ -82,9 +82,17 @@
     "roi_note": "Diwali offer: Super A / CAT A / Staff / Govt 10.25% (₹15L+), 10.75% (₹10–15L); other categories 10.75% (₹10–20L). Offer needs CIBIL above 750, salary ₹50K+ and good internal band. Below ₹10L: 11%. Festive offer rates valid for logins till 30 Nov 2026 — send the regular card after that.",
     "combine": "lower",
     "method_note": "Gauri: bad banding -> bank applies multiplier, good banding -> FOIR. Show both, don't decide.",
-    "combine_note": "Lower of FOIR and multiplier ((net salary − obligations) × multiplier); FOIR figure possible for a good profile (Gauri, 25 Nov 2026)",
+    "combine_note": "Lower of FOIR and (salary − obligations) × multiplier; good profile → FOIR eligibility (Gauri, 27 Nov 2026)",
     "foir_if_good_profile": {
-      "note": "good profile — confirm with HDFC credit"
+      "cibil_min": 750,
+      "categories": [
+        "SUPER A",
+        "CAT A",
+        "CAT B"
+      ],
+      "salary_min": 100000,
+      "no_dpd_12m": true,
+      "note": "Good profile = CIBIL 750+, Super A / CAT A / CAT B, net salary ₹1L+, no late payment in 12 months, no deviation — ASSUMED criteria, agent can override"
     }
   },
   "min_net_salary": {
