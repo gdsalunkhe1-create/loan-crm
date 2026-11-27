@@ -31,7 +31,7 @@ import {
   isWaitResult, autoBankEntry, canLogFromDate, askCustomerRows, hlCoApplicantPaysPatch, bankAskChips, topUpLoanNote, ownBankTopUpNote,
   noCompanyListBanks, ownHouseChoice, ownHousePatch,
   CARD_TREATMENTS, cardTreatmentChoice, cardTreatmentPatch, cardTreatmentNote, cardRuleText, btSummary,
-  eligibilityRuleLabel, upsideLine, isLowBandNote,
+  eligibilityRuleLabel, upsideLine, isLowBandNote, goldLoanSuggestion,
 } from '../utils/underwritingAdapters';
 import {
   parseCibilFile, parseBankStatementFile, parsePayslipFile, matchEmployerToCompanyList, READ_TIMEOUT_MSG,
@@ -561,6 +561,15 @@ export default function UnderwritingDesk({ userId, orgId }) {
   const [otherIncomeOpen, setOtherIncomeOpen] = useState(0);
   const otherIncomeRef = useRef(null);
   // Opens Other income (if the field is there) and focuses the field; no field = just scroll to the panel.
+  // Gold loans counted at some banks while another counts them at 0% (Chola, Axis): one line above Bank results.
+  const goldHint = useMemo(() => (draft ? goldLoanSuggestion(policies, results, draft.loans, fmtINR) : null), [policies, results, draft]);
+  // "Pick Chola category": scroll to that bank's card and focus its category selector.
+  const focusBankCategory = (bankId) => {
+    const sel = document.getElementById(`uw-cat-${bankId}`);
+    const target = sel || document.getElementById(`uw-bank-${bankId}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (sel) sel.focus({ preventScroll: true });
+  };
   const focusIncomeField = (field) => {
     if (!field || OTHER_INCOME_FIELDS.some(([k]) => k === field)) setOtherIncomeOpen((n) => n + 1);
     setTimeout(() => {
@@ -715,6 +724,7 @@ export default function UnderwritingDesk({ userId, orgId }) {
           {askRows.length > 0 && (
             <AskCustomerPanel rows={askRows} onAdd={focusIncomeField} onDismiss={dismissAsk} onHlYes={applyHlCoApplicant} />
           )}
+          {goldHint && <GoldLoanHint hint={goldHint} onPick={focusBankCategory} />}
           {askPopup && askRows.length > 0 && (
             <AskCustomerPopup
               rows={askRows}
@@ -2329,7 +2339,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
   const fadeTitle = needsInput ? 'Provisional — fix the input above' : afterWait ? 'Applies once the wait is over' : undefined;
 
   return (
-    <div style={card}>
+    <div style={card} id={`uw-bank-${entry.bankId}`}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
         {rank > 0 && <span style={{ fontSize: '12px', fontWeight: 700, color: '#7a8194' }}>#{rank}</span>}
         <h3 style={{ ...cardHeader, margin: 0 }}>{label}</h3>
@@ -2344,7 +2354,7 @@ function ResultCard({ entry, incomeHint, rank, loans, cards, netSalary, cibilSco
       {entry.categoryPick && (
         <div style={{ margin: '-6px 0 12px', padding: '6px 10px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 600 }}>{label} list not uploaded — pick the {label} category</span>
-          <select style={{ ...cellSel, width: 'auto', fontSize: '12px' }} value={entry.categoryPick.value} onChange={(e) => onCategory(e.target.value)}>
+          <select id={`uw-cat-${entry.bankId}`} style={{ ...cellSel, width: 'auto', fontSize: '12px' }} value={entry.categoryPick.value} onChange={(e) => onCategory(e.target.value)}>
             {entry.categoryPick.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
@@ -2563,6 +2573,22 @@ function TopUpNote({ note }) {
 // "Ask the customer before logging — can raise eligibility" (amber panel above the bank cards).
 const ASK_AMBER = { background: '#fffbeb', border: '1px solid #fcd34d', color: '#78350f' };
 const askBankText = (row) => row.banks.map((b) => (b.pct ? `${b.label} ${b.pct}` : b.label)).join(' · ');
+// "Gold loans ₹7,25,131 (2 loans) are counted at Bandhan ₹7,251/month. Chola doesn't count gold loans — …"
+function GoldLoanHint({ hint, onPick }) {
+  return (
+    <div style={{ ...card, background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '13px', padding: '12px 16px' }}>
+      <div style={{ fontWeight: 700, marginBottom: '4px' }}>Gold loans</div>
+      <div>{hint.head}</div>
+      {hint.banks.map((b) => (
+        <div key={b.bankId} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
+          <span style={{ fontWeight: b.prompt ? 600 : 400 }}>{b.text}</span>
+          {b.prompt && <button style={{ ...btnSecSm, padding: '2px 10px', fontSize: '12px' }} onClick={() => onPick(b.bankId)}>{b.button}</button>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AskCustomerPanel({ rows, onAdd, onDismiss, onHlYes }) {
   return (
     <div style={{ ...ASK_AMBER, margin: '0 0 12px', padding: '10px 14px', borderRadius: '8px' }}>

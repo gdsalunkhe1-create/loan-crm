@@ -1013,8 +1013,8 @@ describe('Merged obligations table helpers', () => {
     expect(isZeroBalanceCard({ outstanding: 0, manual: true })).toBe(false);
     expect(isZeroBalanceCard({ outstanding: 500 })).toBe(false);
     expect(['GOLD', 'OD', 'KCC', 'PL'].map((t) => isBulletLoan({ productType: t }))).toEqual([true, true, true, false]);
-    expect(bulletNote(null)).toBe('bullet — 1% of outstanding counted');
-    expect(bulletNote({ obligation: { rule: '2% of outstanding' } })).toBe('bullet — 2% of outstanding counted');
+    expect(bulletNote(null)).toBe('bullet');   // no bank calculation: no claim about what is counted
+    expect(bulletNote({ obligation: { amount: 2000, rule: '2% of outstanding' } })).toBe('bullet — 2% of outstanding counted');
     expect(termEmiTotal([{ productType: 'PL', emi: 10000 }, { productType: 'GOLD', emi: 3000 }, { productType: 'HL', emi: 20000 }])).toBe(30000);
     expect(countedObligationsTotal(null)).toBe(null);
     expect(countedObligationsTotal({ loans: [{ obligation: { amount: 10000 } }, { obligation: { amount: 500 } }], cards: { amount: 2500 } })).toBe(13000);
@@ -1678,5 +1678,58 @@ describe('Lower of FOIR & multiplier at every bank, HDFC good-profile upside, Ko
     expect(A.summaryMethod(r.best).method.key).toBe('multiplier_amber');
     const picked = evaluateBank(kotak, { ...prof(), scorecardByBank: { kotak: 'Green' } });
     expect(picked.notes.some(A.isLowBandNote)).toBe(false);
+  });
+});
+
+describe('Bandhan gold on TOTAL outstanding: EMI-cell hint per bank, cross-bank gold suggestion (26 Nov)', () => {
+  const A = require('./underwritingAdapters');
+  const { fmtINR } = require('./underwritingEngine');
+  const bandhan = require('./bandhan_pl_policy.json');
+  const chola = require('./chola_pl_policy.json');
+  const g1 = { id: 'g1', lender: 'MUTHOOT FINANCE', productType: 'GOLD', outstanding: 435730, emi: 0, emisPaid: 0, emisRemaining: null, treatment: 'auto' };
+  const g2 = { id: 'g2', lender: 'MANAPPURAM', productType: 'GOLD', outstanding: 289401, emi: 0, emisPaid: 0, emisRemaining: null, treatment: 'auto' };
+  const prof = (loans, cholaCat = '') => ({ netSalary: 120000, grossSalary: 140000, ownHouse: true, cibilScore: 780, city: 'Pune', credit: {}, cards: [], loans,
+    company: { ...A.manualCompany({ query: 'ACME' }, cholaCat), categoriesByBank: { bandhan: 'CAT A', chola: cholaCat || null }, confirmedByBank: {} } });
+  const policies = [{ bank_id: 'bandhan', policy: bandhan }, { bank_id: 'chola', policy: chola }];
+  const options = A.noCompanyListBanks(policies, { chola: 0 }).chola;
+  const run = (loans, cholaCat = '') => [
+    { bankId: 'bandhan', label: bandhan.bank, result: evaluateBank(bandhan, prof(loans)) },
+    { bankId: 'chola', label: chola.bank, categoryPick: { options, value: cholaCat }, result: evaluateBank(chola, prof(loans, cholaCat)) },
+  ];
+
+  test('EMI-cell hint follows the bank: below ₹5L total not counted, above it 1% counted, Chola 0%', () => {
+    const below = evaluateBank(bandhan, prof([g2])).obligations.loans[0];
+    expect(A.bulletNote(below)).toBe('bullet — Total gold loans ₹2,89,401 below ₹5,00,000 — not counted');
+    const above = evaluateBank(bandhan, prof([g1, g2])).obligations.loans[0];
+    expect(A.bulletNote(above)).toBe('bullet — 1% of outstanding counted (total gold loans ₹7,25,131 ≥ ₹5,00,000)');
+    expect(A.bulletNote(evaluateBank(chola, prof([g1, g2], 'CAT A')).obligations.loans[0])).toBe('bullet — not counted');
+  });
+
+  test('gold ₹7.25L: Bandhan counts it, Chola prompt to pick the category; with a pick, Chola amount', () => {
+    const s = A.goldLoanSuggestion(policies, run([g1, g2]), [g1, g2], fmtINR);
+    expect(s.head).toBe('Gold loans ₹7,25,131 (2 loans) are counted at Bandhan ₹7,251/month.');
+    expect(s.banks).toEqual([{ bankId: 'chola', prompt: true, text: "Chola doesn't count gold loans — check the customer's Chola category.", button: 'Pick Chola category' }]);
+    const picked = run([g1, g2], 'CAT A');
+    const p = A.goldLoanSuggestion(policies, picked, [g1, g2], fmtINR);
+    const ch = picked.find((r) => r.bankId === 'chola').result;
+    expect(ch.status).toMatch(/ELIGIBLE|DEVIATION/);
+    expect(p.banks[0]).toEqual({ bankId: 'chola', prompt: false,
+      text: `Chola (CAT A): eligible ${fmtINR(ch.best.eligibleAmount)} — gold loans not counted` });
+  });
+
+  test('no line when no bank counts the gold (total under ₹5L at Bandhan) or there is no gold', () => {
+    expect(A.goldLoanSuggestion(policies, run([g2]), [g2], fmtINR)).toBeNull();
+    expect(A.goldLoanSuggestion(policies, run([]), [], fmtINR)).toBeNull();
+    // Closed gold loans don't count.
+    const closed = [{ ...g1, closedBeforeLoginWithProof: true }, g2];
+    expect(A.goldLoanSuggestion(policies, run(closed), closed, fmtINR)).toBeNull();
+  });
+
+  test('banks come from the policies (pct_by_type.GOLD === 0), not a fixed list', () => {
+    const axis = require('./axis_pl_policy.json');
+    const r = [...run([g1, g2], 'CAT A'), { bankId: 'axis_bank', label: axis.bank, result: evaluateBank(axis, { ...prof([g1, g2]), company: { name: 'X', category: 'CAT A', categoryConfirmed: true, categoriesByBank: { axis_bank: 'CAT A' } } }) }];
+    const s = A.goldLoanSuggestion([...policies, { bank_id: 'axis_bank', policy: axis }], r, [g1, g2], fmtINR);
+    expect(s.banks.map((b) => b.bankId)).toEqual(['chola', 'axis_bank']);
+    expect(s.banks[1].text).toMatch(/^Axis: .* — gold loans not counted$/);
   });
 });

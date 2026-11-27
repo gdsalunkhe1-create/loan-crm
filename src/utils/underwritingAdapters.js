@@ -854,10 +854,56 @@ export const isZeroBalanceCard = (c) => !c.manual && !(c.outstanding > 0);
 const BULLET_TYPES = ['GOLD', 'OD', 'KCC'];
 export const isBulletLoan = (l) => BULLET_TYPES.includes(l.productType);
 
-// "bullet — 1% of outstanding counted", with the selected bank's % when it has a calculation.
+// EMI-cell hint on bullet rows, following the selected bank's obligation rule:
+// "bullet — 1% of outstanding counted", "bullet — Total gold loans ₹2,89,401 below ₹5,00,000 — not counted",
+// "bullet — not counted" (bank counts 0%). No bank calculation yet: just "bullet".
 export function bulletNote(line) {
-  const m = line && String(line.obligation.rule || '').match(/[\d.]+% of outstanding/);
-  return `bullet — ${m ? m[0] : '1% of outstanding'} counted`;
+  const ob = line && line.obligation;
+  if (!ob) return 'bullet';
+  const rule = String(ob.rule || '');
+  if (ob.amount === 0) return /^0% of outstanding/.test(rule) || !rule ? 'bullet — not counted' : `bullet — ${rule}`;
+  return `bullet — ${/% of outstanding/.test(rule) ? rule.replace('% of outstanding', '% of outstanding counted') : rule}`;
+}
+
+// Gold-loan suggestion across banks: live gold loans counted at some banks while another bank's policy
+// counts gold at 0% (obligations.pct_by_type.GOLD === 0, e.g. Chola, Axis). Built from policies + results.
+//   head:  "Gold loans ₹7,25,131 (2 loans) are counted at Bandhan ₹7,251/month."
+//   banks: per no-gold bank — a category prompt (no company list, nothing picked) or its result line.
+const isLiveGold = (l) => l.productType === 'GOLD' && !l.closedBeforeLoginWithProof && (l.outstanding || 0) > 0;
+const goldPct = (policy) => {
+  const g = policy && policy.obligations && policy.obligations.pct_by_type && policy.obligations.pct_by_type.GOLD;
+  return g == null ? null : typeof g === 'object' ? g.pct : g;
+};
+export function goldLoanSuggestion(policies, results, loans, fmt) {
+  const gold = (loans || []).filter(isLiveGold);
+  if (!gold.length) return null;
+  const total = gold.reduce((s, l) => s + (l.outstanding || 0), 0);
+  const byId = new Map((results || []).map((r) => [r.bankId, r]));
+  const counting = (results || []).map((r) => {
+    const lines = (r.result && r.result.obligations && r.result.obligations.loans) || [];
+    const monthly = lines.filter((l) => l.productType === 'GOLD').reduce((s, l) => s + ((l.obligation && l.obligation.amount) || 0), 0);
+    return { bankId: r.bankId, short: shortBankName(r.label), monthly };
+  }).filter((x) => x.monthly > 0);
+  const noGold = (policies || []).filter((p) => goldPct(p.policy) === 0 && byId.has(p.bank_id));
+  if (!counting.length || !noGold.length) return null;
+  const head = `Gold loans ${fmt(total)} (${gold.length} loan${gold.length === 1 ? '' : 's'}) are counted at ${counting.map((c) => `${c.short} ${fmt(c.monthly)}/month`).join(', ')}.`;
+  const banks = noGold.map((p) => {
+    const entry = byId.get(p.bank_id);
+    const short = shortBankName(entry.label);
+    const pick = entry.categoryPick;
+    if (pick && !pick.value) {
+      return { bankId: p.bank_id, prompt: true, text: `${short} doesn't count gold loans — check the customer's ${short} category.`, button: `Pick ${short} category` };
+    }
+    const cat = pick && pick.value ? ` (${pick.value})` : '';
+    const res = entry.result;
+    const ok = res && (res.status === 'ELIGIBLE' || res.status === 'DEVIATION') && res.best;
+    const status = entry.error || !res ? "couldn't evaluate"
+      : ok ? `eligible ${fmt(res.best.eligibleAmount)}`
+        : res.eligibleAfterWait ? "can't log yet — recent enquiry"
+          : res.status === 'NEEDS_INPUT' ? 'needs input' : 'not eligible';
+    return { bankId: p.bank_id, prompt: false, text: `${short}${cat}: ${status} — gold loans not counted` };
+  });
+  return { head, banks, total, count: gold.length };
 }
 
 // EMI total of the obligations table: term loans only (bullet loans have no real EMI).
