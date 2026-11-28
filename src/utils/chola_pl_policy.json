@@ -398,7 +398,7 @@
     ],
     "own_house_cap": {
       "cap": 2000000,
-      "note": "house in spouse's name: spouse as co-applicant"
+      "note": "if the house is in spouse's name, add spouse as co-applicant"
     }
   },
   "multiplier_by_salary": {
